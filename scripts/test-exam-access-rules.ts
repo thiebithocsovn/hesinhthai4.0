@@ -28,7 +28,8 @@ try {
   await assertSucceeds(setDoc(doc(teacher, 'students/roster-one'), { id: 'roster-one', teacherId: exam.teacherId, name: 'Nguyễn Văn An', code: '654321', classId: 'class-8a' }));
   await assertSucceeds(setDoc(doc(teacher, 'students/zz-old-guest'), { id: 'zz-old-guest', teacherId: exam.teacherId, name: 'Nguyễn Văn An', code: '123456', examId: exam.id }));
   await assertSucceeds(setDoc(doc(other, 'classes/class-9b'), { id: 'class-9b', teacherId: 'teacher-two', name: '9B' }));
-  const rosterMetadata = await loadExamRosterMetadata(teacher, exam.teacherId, exam.id);
+  // rules-unit-testing exposes a compat Firestore facade; modular collection/getDocs unwraps its delegate.
+  const rosterMetadata = await loadExamRosterMetadata(teacher as unknown as Parameters<typeof loadExamRosterMetadata>[0], exam.teacherId, exam.id);
   assert.deepEqual(rosterMetadata.classNames, { 'class-8a': '8A' });
   const lookup = await createStudentRosterLookupKey(exam.teacherId, exam.id, 'Nguyễn Văn An');
   assert.equal(rosterMetadata.studentDirectory[lookup].classId, 'class-8a');
