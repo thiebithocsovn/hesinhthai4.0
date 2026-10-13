@@ -22,7 +22,7 @@ jobs:
       VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
       VITE_ADMIN_EMAIL: ${{ vars.VITE_ADMIN_EMAIL }}
       VITE_FIREBASE_APP_CHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APP_CHECK_SITE_KEY }}
-      VITE_FIRESTORE_CACHE_MODE: memory
+      VITE_FIRESTORE_CACHE_MODE: ${{ vars.VITE_FIRESTORE_CACHE_MODE || 'memory' }}
     steps:
       - name: Checkout target repository
         uses: actions/checkout@v4
@@ -76,6 +76,8 @@ jobs:
           npm run test:smart-timetable
           npm run test:question-engine
           npm run test:question-pptx
+          npm run test:plicker-student-sync
+          npm run test:hardening
           npm run test:security-hardening
           npm run test:pwa
 
@@ -110,6 +112,22 @@ jobs:
             git commit -m "Restore ecosystem application and fix GitHub Pages deployment"
             git push origin HEAD:main
           fi
+
+      - name: Deploy Firestore rules only when explicitly enabled
+        if: github.ref == 'refs/heads/main' && vars.ENABLE_FIRESTORE_RULES_DEPLOY == 'true'
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/hesinhthai-firebase.json
+        run: |
+          if [[ -z "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]]; then
+            echo '::error::ENABLE_FIRESTORE_RULES_DEPLOY is enabled but FIREBASE_SERVICE_ACCOUNT_JSON is not configured.'
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          npm run deploy:firestore
 
       - name: Setup GitHub Pages
         if: github.ref == 'refs/heads/main'
