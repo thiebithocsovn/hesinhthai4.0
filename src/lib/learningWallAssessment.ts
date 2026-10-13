@@ -336,12 +336,18 @@ export function wallProgressRows(posts: WallPost[]) {
   for (const post of posts) {
     const assessments = [...(post.aiAssessmentHistory || []), ...(post.aiAssessment ? [post.aiAssessment] : [])];
     for (const assessment of assessments) {
-    if (assessment.review.status !== 'approved') continue;
-    for (const error of assessment.analysis.errors.filter(item => item.decision === 'confirmed')) {
+      if (assessment.review.status !== 'approved') continue;
+      const groups = new Map<string, WallLearningError[]>();
+      for (const error of assessment.analysis.errors.filter(item => item.decision === 'confirmed')) {
+        const skill = error.skill.trim().toLocaleLowerCase('vi');
+        groups.set(skill, [...(groups.get(skill) || []), error]);
+      }
+      for (const [skill, errors] of groups) {
       const student = assessment.studentCode.trim() || `post:${post.id}`;
-      const key = JSON.stringify([post.authorId || '', post.boardId || post.categoryId, student, error.skill.trim().toLocaleLowerCase('vi')]);
+      const key = JSON.stringify([post.authorId || '', post.boardId || post.categoryId, student, skill]);
       const plan = assessment.practice;
-      const exercises = new Set(plan?.exercises.filter(exercise => exercise.errorId === error.id).map(exercise => exercise.id));
+      const errorIds = new Set(errors.map(error => error.id));
+      const exercises = new Set(plan?.exercises.filter(exercise => errorIds.has(exercise.errorId)).map(exercise => exercise.id));
       const attempts = (plan?.attempts || []).filter(attempt => exercises.has(attempt.exerciseId));
       // All assigned exercises for an error must have a resolved latest attempt.
       const latest = [...exercises].map(id => attempts.filter(attempt => attempt.exerciseId === id)
@@ -353,7 +359,7 @@ export function wallProgressRows(posts: WallPost[]) {
       const previous = rows.get(key);
       const count = (previous?.attempts || 0) + attempts.length;
       if (!previous || updatedAt >= previous.updatedAt) rows.set(key, { key, studentName: post.studentName,
-        studentCode: assessment.studentCode, skill: error.skill, attempts: count, verdict, updatedAt, postId: post.id });
+        studentCode: assessment.studentCode, skill: errors[0].skill, attempts: count, verdict, updatedAt, postId: post.id });
       else previous.attempts = count;
     }
     }

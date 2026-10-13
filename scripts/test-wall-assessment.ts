@@ -91,8 +91,12 @@ assessment = recordWallPracticeAttempt(assessment, 'x2', 'Dừng lại và báo 
 rows = wallProgressRows([{ ...post, aiAssessment: assessment }]);
 assert.equal(rows[0].verdict, 'resolved'); assert.equal(rows[0].attempts, 2);
 const regressed = recordWallPracticeAttempt(assessment, 'x1', 'Em lại chia sẻ OTP.', 'Còn đưa OTP cho người lạ.', 'remains', 'teacher-one');
-regressed.practice!.attempts.forEach(attempt => { attempt.createdAt = 123; });
+regressed.practice!.attempts = regressed.practice!.attempts.map(attempt => ({ ...attempt, createdAt: 123 }));
 assert.equal(wallProgressRows([{ ...post, aiAssessment: regressed }])[0].verdict, 'remains', 'Later appended evidence wins even when timestamps tie.');
+const sameSkillErrors: WallAssessment = { ...assessment, analysis: { ...assessment.analysis,
+  errors: [...assessment.analysis.errors, { ...assessment.analysis.errors[0], id: 'e2' }] },
+  practice: { ...assessment.practice!, exercises: [...assessment.practice!.exercises, { ...assessment.practice!.exercises[0], id: 'x3', errorId: 'e2' }] } };
+assert.equal(wallProgressRows([{ ...post, aiAssessment: sameSkillErrors }])[0].verdict, 'improving', 'A resolved error cannot mask another unassessed error in the same skill.');
 assert.ok(wallProgressCsv([{ ...post, aiAssessment: assessment }]).includes('Đã khắc phục'));
 const oppositeOrder = Object.fromEntries(Object.entries(assessment).reverse()) as unknown as WallAssessment;
 assert.equal(wallAssessmentVersion(assessment), wallAssessmentVersion(oppositeOrder), 'Firestore map ordering must not cause false write conflicts.');
