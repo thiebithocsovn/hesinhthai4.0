@@ -112,7 +112,7 @@ function addSlideChrome(
     bold: true,
     color: COLORS.black,
     margin: 0.04,
-    valign: 'mid',
+    valign: 'middle',
     breakLine: false,
     fit: 'shrink',
   });
@@ -153,7 +153,7 @@ function addButton(
     bold: true,
     color: COLORS.white,
     align: 'center',
-    valign: 'mid',
+    valign: 'middle',
     margin: 0.04,
     hyperlink: { slide: targetSlide },
   });
@@ -180,7 +180,7 @@ function addCard(
     bold: options.bold,
     color: options.color || COLORS.slate,
     margin: 0.14,
-    valign: 'mid',
+    valign: 'middle',
     fit: 'shrink',
   });
 }
@@ -220,13 +220,14 @@ function addChoicePayload(pptx: PptxGenJS, slide: Slide, question: QuestionDefin
 }
 
 function addTrueFalsePayload(pptx: PptxGenJS, slide: Slide, question: QuestionDefinition, reveal: boolean): void {
-  if (question.payload.type !== 'true_false') return;
+  const payload = question.payload;
+  if (payload.type !== 'true_false') return;
   const entries = [
     { label: 'ĐÚNG', value: true },
     { label: 'SAI', value: false },
   ];
   entries.forEach((entry, index) => {
-    const correct = entry.value === question.payload.correct;
+    const correct = entry.value === payload.correct;
     addCard(pptx, slide, entry.label, {
       x: 2.05 + index * 4.8,
       y: 2.72,
@@ -269,7 +270,7 @@ function addMatrixPayload(pptx: PptxGenJS, slide: Slide, question: QuestionDefin
       fontSize: 15.5,
       color: COLORS.slate,
       margin: 0.04,
-      valign: 'mid',
+      valign: 'middle',
       fit: 'shrink',
     });
     addCard(pptx, slide, reveal ? (statement.correct ? 'ĐÚNG' : 'SAI') : '?', {
@@ -540,7 +541,7 @@ function addCover(pptx: PptxGenJS, bank: QuestionBankForPptx): void {
     bold: true,
     color: COLORS.white,
     margin: 0,
-    valign: 'mid',
+    valign: 'middle',
     fit: 'shrink',
   });
   slide.addText(`${bank.questions.length} câu hỏi • hỗ trợ đủ 10 dạng cơ bản`, {
@@ -628,7 +629,7 @@ function addEndSlide(pptx: PptxGenJS, coverSlide: number): void {
     bold: true,
     color: COLORS.white,
     align: 'center',
-    valign: 'mid',
+    valign: 'middle',
     margin: 0,
   });
   slide.addText('Có thể quay lại đầu bài giảng để sử dụng lại ngay.', {
@@ -659,7 +660,6 @@ export async function exportQuestionBankToPptx(bank: QuestionBankForPptx): Promi
   pptx.theme = {
     headFontFace: 'Aptos Display',
     bodyFontFace: 'Aptos',
-    lang: 'vi-VN',
   };
 
   const coverSlide = 1;
