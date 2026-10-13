@@ -88,7 +88,7 @@ function addSlideChrome(pptx: PptxGenJS, slide: Slide, question: QuestionDefinit
   slide.addText(`CÂU ${index + 1} / ${total}`, { x: 0.55, y: 0.16, w: 1.8, h: 0.3, fontFace: 'Aptos Display', fontSize: 16, bold: true, color: COLORS.white, margin: 0 });
   slide.addText(QUESTION_TYPE_LABELS[question.payload.type], { x: 2.35, y: 0.16, w: 4.8, h: 0.3, fontFace: 'Aptos', fontSize: 15, bold: true, color: COLORS.white, margin: 0 });
   slide.addText(label, { x: 9.8, y: 0.16, w: 2.95, h: 0.3, fontFace: 'Aptos', fontSize: 15, bold: true, align: 'right', color: COLORS.white, margin: 0 });
-  slide.addText(question.prompt, { x: 0.72, y: 0.95, w: 11.9, h: 1.08, fontFace: 'Aptos Display', fontSize: fontSizeFor(question.prompt, 25), bold: true, color: COLORS.black, margin: 0.04, valign: 'mid', fit: 'shrink' });
+  slide.addText(question.prompt, { x: 0.72, y: 0.95, w: 11.9, h: 1.08, fontFace: 'Aptos Display', fontSize: fontSizeFor(question.prompt, 25), bold: true, color: COLORS.black, margin: 0.04, valign: 'middle', fit: 'shrink' });
 }
 
 function addFooter(slide: Slide, text: string): void {
@@ -97,7 +97,7 @@ function addFooter(slide: Slide, text: string): void {
 
 function addButton(pptx: PptxGenJS, slide: Slide, label: string, box: Box, targetSlide: number, accent = COLORS.indigo): void {
   slide.addShape(pptx.ShapeType.rect, { ...box, fill: { color: accent }, line: { color: accent }, hyperlink: { slide: targetSlide } } as any);
-  slide.addText(label, { ...box, fontFace: 'Aptos', fontSize: 15, bold: true, color: COLORS.white, align: 'center', valign: 'mid', margin: 0.04, hyperlink: { slide: targetSlide } });
+  slide.addText(label, { ...box, fontFace: 'Aptos', fontSize: 15, bold: true, color: COLORS.white, align: 'center', valign: 'middle', margin: 0.04, hyperlink: { slide: targetSlide } });
 }
 
 function addCard(pptx: PptxGenJS, slide: Slide, text: string, box: Box, options: { fill?: string; line?: string; color?: string; bold?: boolean; prefix?: string; targetSlide?: number } = {}): void {
@@ -105,7 +105,7 @@ function addCard(pptx: PptxGenJS, slide: Slide, text: string, box: Box, options:
   const line = options.line || COLORS.line;
   const hyperlink = options.targetSlide ? { slide: options.targetSlide } : undefined;
   slide.addShape(pptx.ShapeType.rect, { ...box, fill: { color: fill }, line: { color: line, width: 1.2 }, ...(hyperlink ? { hyperlink } : {}) } as any);
-  slide.addText(`${options.prefix || ''}${text}`, { ...box, fontFace: 'Aptos', fontSize: fontSizeFor(text, 18), bold: options.bold, color: options.color || COLORS.slate, margin: 0.14, valign: 'mid', fit: 'shrink', ...(hyperlink ? { hyperlink } : {}) });
+  slide.addText(`${options.prefix || ''}${text}`, { ...box, fontFace: 'Aptos', fontSize: fontSizeFor(text, 18), bold: options.bold, color: options.color || COLORS.slate, margin: 0.14, valign: 'middle', fit: 'shrink', ...(hyperlink ? { hyperlink } : {}) });
 }
 
 function choiceLayout(question: QuestionDefinition) {
@@ -134,10 +134,11 @@ function addChoicePayload(pptx: PptxGenJS, slide: Slide, question: QuestionDefin
 }
 
 function addTrueFalsePayload(pptx: PptxGenJS, slide: Slide, question: QuestionDefinition, reveal: boolean, targets: number[] = [], selected: boolean | null = null): void {
-  if (question.payload.type !== 'true_false') return;
+  const payload = question.payload;
+  if (payload.type !== 'true_false') return;
   const entries = [{ label: 'ĐÚNG', value: true }, { label: 'SAI', value: false }];
   entries.forEach((entry, index) => {
-    const correct = entry.value === question.payload.correct;
+    const correct = entry.value === payload.correct;
     const chosen = selected === entry.value;
     const style = chosen ? (correct
       ? { fill: COLORS.greenSoft, line: COLORS.green, color: COLORS.green, bold: true, prefix: '✓ ' }
@@ -155,7 +156,7 @@ function addMatrixPayload(pptx: PptxGenJS, slide: Slide, question: QuestionDefin
   statements.forEach((statement, index) => {
     const y = 2.12 + index * (h + 0.08);
     slide.addShape(pptx.ShapeType.rect, { x: 0.92, y, w: 8.2, h, fill: { color: COLORS.white }, line: { color: COLORS.line } });
-    slide.addText(`${String.fromCharCode(97 + index)}. ${statement.text}`, { x: 1.08, y: y + 0.03, w: 7.82, h: h - 0.06, fontFace: 'Aptos', fontSize: 14.5, color: COLORS.slate, margin: 0.04, valign: 'mid', fit: 'shrink' });
+    slide.addText(`${String.fromCharCode(97 + index)}. ${statement.text}`, { x: 1.08, y: y + 0.03, w: 7.82, h: h - 0.06, fontFace: 'Aptos', fontSize: 14.5, color: COLORS.slate, margin: 0.04, valign: 'middle', fit: 'shrink' });
     [true, false].forEach((value, valueIndex) => {
       const chosen = selected?.statementIndex === index && selected.value === value;
       const correct = value === statement.correct;
@@ -256,7 +257,7 @@ function addCover(pptx: PptxGenJS, bank: QuestionBankForPptx): void {
   const slide = pptx.addSlide();
   slide.background = { color: COLORS.navy };
   slide.addText('BÀI GIẢNG TRẮC NGHIỆM TƯƠNG TÁC', { x: 0.75, y: 1.12, w: 11.8, h: 0.45, fontFace: 'Aptos', fontSize: 16, bold: true, color: 'A5B4FC', margin: 0 });
-  slide.addText(bank.title, { x: 0.72, y: 1.72, w: 11.85, h: 2.15, fontFace: 'Aptos Display', fontSize: fontSizeFor(bank.title, 34), bold: true, color: COLORS.white, margin: 0, valign: 'mid', fit: 'shrink' });
+  slide.addText(bank.title, { x: 0.72, y: 1.72, w: 11.85, h: 2.15, fontFace: 'Aptos Display', fontSize: fontSizeFor(bank.title, 34), bold: true, color: COLORS.white, margin: 0, valign: 'middle', fit: 'shrink' });
   slide.addText(`${bank.questions.length} câu hỏi • bấm đáp án để nhận phản hồi đúng/sai`, { x: 0.76, y: 4.12, w: 9.2, h: 0.42, fontFace: 'Aptos', fontSize: 18, color: 'CBD5E1', margin: 0 });
   slide.addText('Lớp Học Thông Minh 4.0', { x: 0.76, y: 6.55, w: 5.2, h: 0.3, fontFace: 'Aptos', fontSize: 13, bold: true, color: 'A5B4FC', margin: 0 });
 }
@@ -285,7 +286,7 @@ function addEndSlide(pptx: PptxGenJS, coverSlide: number): void {
   const slide = pptx.addSlide();
   slide.background = { color: COLORS.navy };
   slide.addText('HOÀN THÀNH', { x: 0.9, y: 1.55, w: 11.5, h: 0.55, fontFace: 'Aptos', fontSize: 18, bold: true, color: 'A5B4FC', align: 'center', margin: 0 });
-  slide.addText('Cảm ơn các em đã tham gia!', { x: 0.9, y: 2.35, w: 11.5, h: 1.15, fontFace: 'Aptos Display', fontSize: 36, bold: true, color: COLORS.white, align: 'center', valign: 'mid', margin: 0 });
+  slide.addText('Cảm ơn các em đã tham gia!', { x: 0.9, y: 2.35, w: 11.5, h: 1.15, fontFace: 'Aptos Display', fontSize: 36, bold: true, color: COLORS.white, align: 'center', valign: 'middle', margin: 0 });
   addButton(pptx, slide, '↺  QUAY LẠI TRANG ĐẦU', { x: 4.45, y: 5.25, w: 4.45, h: 0.62 }, coverSlide, COLORS.indigo);
 }
 
@@ -325,7 +326,7 @@ export async function exportQuestionBankToPptx(bank: QuestionBankForPptx): Promi
   pptx.company = 'Lớp Học Thông Minh 4.0';
   pptx.subject = 'Bài giảng trắc nghiệm tương tác 10 dạng';
   pptx.title = bank.title;
-  pptx.theme = { headFontFace: 'Aptos Display', bodyFontFace: 'Aptos', lang: 'vi-VN' };
+  pptx.theme = { headFontFace: 'Aptos Display', bodyFontFace: 'Aptos', lang: 'vi-VN' } as typeof pptx.theme & { lang: string };
 
   const coverSlide = 1;
   const { plans } = buildPlans(bank.questions);

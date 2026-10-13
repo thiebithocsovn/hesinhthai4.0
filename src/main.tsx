@@ -18,7 +18,7 @@ function deferHeadShakeReporting(): void {
   if ('requestIdleCallback' in window) {
     window.requestIdleCallback(loadReporting, { timeout: 5000 });
   } else {
-    window.setTimeout(loadReporting, 2500);
+    globalThis.setTimeout(loadReporting, 2500);
   }
 }
 

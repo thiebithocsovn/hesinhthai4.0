@@ -2,7 +2,7 @@ name: Restore, verify and publish Hesinhthai 4.0
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/types-firebase-deployment-20261013]
   workflow_dispatch:
 
 permissions:
@@ -15,17 +15,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     env:
       VITE_APP_BASE_PATH: /hesinhthai4.0/
       VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
       VITE_ADMIN_EMAIL: ${{ vars.VITE_ADMIN_EMAIL }}
       VITE_FIREBASE_APP_CHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APP_CHECK_SITE_KEY }}
-      VITE_FIRESTORE_CACHE_MODE: memory
+      VITE_FIRESTORE_CACHE_MODE: ${{ vars.VITE_FIRESTORE_CACHE_MODE || 'memory' }}
     steps:
       - name: Checkout target repository
         uses: actions/checkout@v4
@@ -68,12 +65,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Check TypeScript and report legacy errors
-        shell: bash
-        run: |
-          if ! npm run lint; then
-            echo '::warning::Existing TypeScript errors in the upstream code; continuing build to assess runtime readiness.'
-          fi
+      - name: Validate TypeScript (required)
+        run: npm run lint
 
       - name: Run learning wall and app checks
         run: |
@@ -81,6 +74,21 @@ jobs:
           npm run test:platform
           npm run test:auth-flow
           npm run test:smart-timetable
+          npm run test:question-engine
+          npm run test:question-pptx
+          npm run test:plicker-student-sync
+          npm run test:hardening
+          npm run test:security-hardening
+          npm run test:pwa
+
+      - name: Setup Java for Firestore emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Validate Firebase data access using Firestore emulator
+        run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:learning-wall-rules && LEARNING_WALL_RULES_FILE=firestore.learning-wall.rules npm run test:learning-wall-rules && npm run test:exam-access-rules && EXAM_RULES_FILE=firestore.learning-wall.rules npm run test:exam-access-rules"
 
       - name: Build static website
         run: npm run build:static
@@ -93,6 +101,7 @@ jobs:
           printf '' > dist/.nojekyll
 
       - name: Save restored source and fixes
+        if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -104,14 +113,40 @@ jobs:
             git push origin HEAD:main
           fi
 
+      - name: Deploy Firestore rules only when explicitly enabled
+        if: github.ref == 'refs/heads/main' && vars.ENABLE_FIRESTORE_RULES_DEPLOY == 'true'
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/hesinhthai-firebase.json
+        run: |
+          if [[ -z "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]]; then
+            echo '::error::ENABLE_FIRESTORE_RULES_DEPLOY is enabled but FIREBASE_SERVICE_ACCOUNT_JSON is not configured.'
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          npm run deploy:firestore
+
       - name: Setup GitHub Pages
+        if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5
 
       - name: Upload website
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy website
         id: deployment
         uses: actions/deploy-pages@v4

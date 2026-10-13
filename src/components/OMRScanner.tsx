@@ -49,8 +49,8 @@ export default function OMRScanner({ examId, exams, students, classes, teacherId
       );
       const querySnapshot = await getDocs(q);
       const fetchedResults = querySnapshot.docs
-        .map(item => ({ id: item.id, ...item.data() }))
-        .filter(result => result.teacherId === examOwnerUid && result.examId === examId);
+        .filter(item => item.data().teacherId === examOwnerUid && item.data().examId === examId)
+        .map(item => ({ id: item.id, ...item.data() }));
       setAllExamResults(fetchedResults);
     } catch (err) {
       console.error("Error fetching results:", err);
