@@ -55,11 +55,13 @@ const assert = require('node:assert/strict');
       await button('Lưu lần luyện tập').click();
       await page.waitForFunction(n=>window.saved.aiAssessment.practice.attempts.length===n,exercise==='x1'?1:2);
     }
+    await page.locator('.lw-ai-table .is-resolved').waitFor();
     assert.equal(await page.locator('.lw-ai-table .is-resolved').count(),1);
     await page.setViewportSize({width:390,height:844}); await step('2. Giáo viên duyệt').click();
     await page.screenshot({path:'wall-ai-ui-results/review-mobile.png'});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile page must not overflow');
     await page.getByRole('button',{name:'Đóng',exact:true}).click(); await button('📈 Tiến bộ học sinh').click();
+    await page.locator('.lw-ai-table .is-resolved').waitFor();
     assert.equal(await page.locator('.lw-ai-table .is-resolved').count(),1);
     await page.getByRole('button',{name:'Đóng',exact:true}).click();
     await page.getByRole('button',{name:/✨ Phân tích AI/}).click();
@@ -68,6 +70,7 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(()=>window.saved.aiAssessmentHistory?.length===1);
     assert.equal((await page.evaluate(()=>window.saved)).aiAssessmentHistory[0].practice.attempts.length,2);
     await page.goto('http://127.0.0.1:3199/hesinhthai4.0/scripts/fixtures/wall-assessment-preview.html?guest');
+    await page.locator('.lw-post').waitFor();
     assert.equal(await page.getByRole('button',{name:/Phân tích AI/}).count(),0,'Guests cannot access private AI workflow');
     assert.deepEqual(errors,[]); console.log('Wall AI UI passed: cross-post refusal, teacher cause verification/grading, personalized practice editing, student worksheet redaction, progress, history, mobile layout, guest privacy.');
   } finally { if (browser) await browser.close(); await vite.close(); }
