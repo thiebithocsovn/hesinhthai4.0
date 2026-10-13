@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict';
+import { boardPosts, canSubmitToSharedWall, createWallLink, newWallShareId, readWallShareId, safeWallUrl, safeWallImage, safeWallAttachment, sharedWallPost, exportWallCsv, orderWallPosts, reactionCount, validWallLocation, assertWallSize, youtubeEmbed, type WallCategory, type WallPost } from '../src/lib/learningWall.ts';
+
+const board: WallCategory = { id: 'class-one', title: 'Lớp 8A', authorId: 'teacher-one' };
+const categories: WallCategory[] = [board, { id: 'section-one', title: 'Nhóm 1', parentId: board.id, authorId: 'teacher-one' }, { id: 'foreign', title: 'Không được lấy', parentId: board.id, authorId: 'teacher-two' }];
+const legacy: WallPost = { id: 'legacy', categoryId: 'section-one', studentName: 'Bình', authorId: 'teacher-one', teacherId: 'teacher-one', imageSrc: 'data:image/jpeg;base64,YQ==', createdAt: { seconds: 100 }, score: 0, comments: [{ id: 'c', text: 'Nhận xét riêng' }], likedBy: ['teacher-one'], likes: 2 };
+const direct: WallPost = { id: 'root-post', categoryId: board.id, studentName: 'An', authorId: 'teacher-one', title: 'Tiêu đề', text: '=HYPERLINK("x")', createdAt: 200_000 };
+const foreign: WallPost = { ...legacy, id: 'foreign-post', authorId: 'teacher-two', teacherId: 'teacher-two' };
+assert.deepEqual(boardPosts(board, categories, [legacy, direct, foreign, { ...foreign, categoryId: 'foreign' }]).map(post => post.id), ['legacy', 'root-post'], 'Legacy category posts and new direct board posts survive; foreign owners stay excluded even for admin.');
+assert.equal(reactionCount(legacy), 3);
+assert.equal(reactionCount({ ...legacy, likedBy: ['x', 'x'] }), 3);
+assert.deepEqual(orderWallPosts([legacy, direct], 'newest').map(post => post.id), ['root-post', 'legacy']);
+assert.deepEqual(orderWallPosts([legacy, direct], 'oldest').map(post => post.id), ['legacy', 'root-post']);
+assert.equal(orderWallPosts([legacy, direct], 'name', 'BÌNH')[0].id, 'legacy');
+assert.equal(orderWallPosts([legacy, { ...direct, pinned: true }], 'oldest')[0].id, direct.id);
+for (const url of ['javascript:alert(1)', 'data:text/html,a', 'file:///etc/passwd', 'https://user:pass@example.com', '//example.com']) assert.equal(safeWallUrl(url), '');
+assert.equal(safeWallUrl('https://example.com/path'), 'https://example.com/path');
+assert.equal(safeWallImage('data:image/svg+xml;base64,YQ=='), '');
+assert.equal(safeWallAttachment({ id: 'x', name: 'attack', kind: 'file', url: 'data:text/html;base64,YQ==' }), '');
+assert.equal(youtubeEmbed('https://youtube.com.evil.test/watch?v=abcdefghijk'), '');
+assert.equal(youtubeEmbed('https://youtu.be/abcdefghijk'), 'https://www.youtube-nocookie.com/embed/abcdefghijk');
+const publicPost = sharedWallPost({ ...legacy, attachments: [{ id: 'f', kind: 'link', name: 'Tài liệu', url: 'https://example.com', privateNote: 'secret' } as any] });
+for (const key of ['authorId', 'teacherId', 'ownerUid', 'score', 'comments', 'likedBy']) assert.equal(key in publicPost, false, `${key} must never be published`);
+assert.equal(JSON.stringify(publicPost).includes('secret'), false);
+const csv = exportWallCsv([legacy, direct]); assert.ok(csv.startsWith('\uFEFF')); assert.ok(csv.includes('"0"')); assert.ok(csv.includes("'=HYPERLINK"));
+assert.throws(() => assertWallSize({ text: 'a'.repeat(800_000) }));
+assert.equal(validWallLocation(21.5, 105.7), true); assert.equal(validWallLocation(NaN, 105), false); assert.equal(validWallLocation(91, 0), false);
+const token = newWallShareId(); assert.match(token, /^[a-f0-9]{48}$/); assert.equal(readWallShareId(`#wall=${token}`), token); assert.equal(readWallShareId('#wall=guess'), '');
+const url = new URL(createWallLink('/4.0/', 'https://school.test', token)); assert.equal(url.searchParams.get('app'), 'learning-wall'); assert.equal(url.hash, `#wall=${token}`); assert.ok(!url.search.includes(token));
+assert.equal(canSubmitToSharedWall(null), false);
+assert.equal(canSubmitToSharedWall({ enabled: true, permission: 'write' }), true);
+assert.equal(canSubmitToSharedWall({ enabled: true, permission: 'read' }), false);
+assert.equal(canSubmitToSharedWall({ enabled: false, permission: 'write' }), false);
+assert.equal(canSubmitToSharedWall({ enabled: false, permission: 'read' }), false);
+console.info('Learning Wall: legacy compatibility, owner isolation, redaction, media safety, CSV, layouts and sharing tests passed.');
+
+// Custom appearance is scoped to a board and uses only safe, public media fields.
+const { normalizeWallAppearance, wallBackgroundStyle, safeBackgroundImage, safeBackgroundColor, sharedWallAppearance, readSharedWallAppearance, WALL_APPEARANCE_ID, MAX_BACKGROUND_LENGTH } = await import('../src/lib/learningWallBackground.ts');
+const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aH1cAAAAASUVORK5CYII=';
+assert.equal(safeBackgroundColor('#ABC123'), '#abc123');
+for (const value of ['red', '#fff', 'url(javascript:x)', '#123456; color:red']) assert.equal(safeBackgroundColor(value), '');
+for (const value of ['https://tracker.test/photo.png', 'data:image/svg+xml;base64,YQ==', 'data:text/html;base64,YQ==', 'data:image/png;base64,' + 'a'.repeat(MAX_BACKGROUND_LENGTH)]) assert.equal(safeBackgroundImage(value), '');
+assert.throws(() => normalizeWallAppearance({ bgType: 'color', bgValue: 'url(x)' }));
+assert.throws(() => normalizeWallAppearance({ bgType: 'image', bgValue: 'https://tracker.test/image.jpg' }));
+assert.deepEqual(normalizeWallAppearance({ bgType: 'image', bgValue: '' }), { bgType: 'color', bgValue: '' });
+assert.equal(wallBackgroundStyle({ wallBackground: 'blue', bgType: 'color', bgValue: '#123456' }).backgroundImage, 'none');
+assert.ok(wallBackgroundStyle({ bgType: 'image', bgValue: image }).backgroundImage.includes(image));
+assert.equal(wallBackgroundStyle({ bgType: 'image', bgValue: 'javascript:alert(1)' }).backgroundImage.includes('javascript'), false);
+const colored = { ...board, bgType: 'color' as const, bgValue: '#123456' };
+const sharedAppearance = sharedWallAppearance(colored)!;
+for (const key of ['authorId', 'teacherId', 'ownerUid', 'score', 'comments', 'likedBy', 'bgValue']) assert.equal(key in sharedAppearance, false);
+assert.deepEqual(readSharedWallAppearance({ ...sharedAppearance, id: WALL_APPEARANCE_ID }, board.id), { bgType: 'color', bgValue: '#123456' });
+assert.deepEqual(readSharedWallAppearance({ ...sharedAppearance, id: WALL_APPEARANCE_ID }, 'other-board'), {});
+assert.deepEqual(readSharedWallAppearance({ ...sharedAppearance, id: 'student-post' }, board.id), {});
+assert.equal(sharedWallAppearance({ ...board, bgValue: '' }), null);
+const photo = sharedWallAppearance({ ...board, bgType: 'image', bgValue: image })!;
+assert.deepEqual(readSharedWallAppearance({ ...photo, id: WALL_APPEARANCE_ID }, board.id), { bgType: 'image', bgValue: image });
+console.info('Learning Wall backgrounds: safe color/image input, scoped public appearance and reset passed.');
+
+const { wallSubmissionData, submissionPostAttachments, submissionFiles, WALL_FILE_EXTENSIONS, MAX_WALL_FILE_BYTES } = await import('../src/lib/learningWall.ts');
+const binary = 'data:application/octet-stream;base64,' + Buffer.from('student document').toString('base64');
+for (const extension of WALL_FILE_EXTENSIONS) {
+  const file = { id: 'file-one', kind: 'file' as const, name: `Bài làm.${extension.toUpperCase()}`, url: binary, size: 16 };
+  const submitted = wallSubmissionData({ studentName: ' An ', categoryId: board.id, attachments: [file] });
+  assert.equal(submitted.studentName, 'An');
+  assert.deepEqual(submissionPostAttachments({ ...submitted, id: 's' })[0], file);
+  assert.deepEqual(sharedWallPost({ id: 'approved', ...submitted, attachments: submissionPostAttachments({ ...submitted, id: 's' }) }).attachments[0].url, binary);
+}
+const file = { id: 'file-one', kind: 'file' as const, name: 'Bài làm.docx', url: binary };
+assert.equal('attachments' in wallSubmissionData({ studentName: 'An', categoryId: board.id, text: 'Legacy text' }), false);
+assert.equal(wallSubmissionData({ studentName: 'An', categoryId: board.id, attachments: [file, { ...file, id: 'f2', name: 'Bảng tính.xlsx' }] }).attachments?.length, 2);
+for (const patch of [{ name: 'attack.html' }, { url: 'data:text/html;base64,YQ==' }, { url: 'https://example.com/file.docx' }, { url: 'data:application/octet-stream;base64,YQ=' }, { name: '../file.docx' }, { id: 'unsafe/id' }]) assert.throws(() => submissionFiles([{ ...file, ...patch }]));
+assert.throws(() => submissionFiles([file, file, file]));
+assert.throws(() => submissionFiles([{ ...file, url: 'data:application/octet-stream;base64,' + Buffer.alloc(MAX_WALL_FILE_BYTES + 1).toString('base64') }]));
+assert.throws(() => wallSubmissionData({ studentName: 'An', attachments: [file, { ...file, id: 'f2', url: 'data:application/octet-stream;base64,' + Buffer.alloc(MAX_WALL_FILE_BYTES).toString('base64') }], imageSrc: 'data:image/jpeg;base64,' + 'a'.repeat(480_000) }));
+assert.throws(() => wallSubmissionData({ studentName: '', attachments: [file] }));
+console.info('Student file submissions: accepted formats, legacy compatibility, exact bytes through approval/publication, malformed files and size limits passed.');

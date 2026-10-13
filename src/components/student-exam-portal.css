@@ -1,0 +1,174 @@
+.student-exam-portal {
+  --sep-blue: #1354b8;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(108deg, #c4d8ff 0%, #e9ebff 49%, #e0dcff 100%);
+  color: #14243b;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.sep-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  min-height: 950px;
+  pointer-events: none;
+}
+
+.sep-header {
+  position: relative;
+  display: flex;
+  width: min(1090px, calc(100% - 112px));
+  min-height: 144px;
+  margin: 0 auto;
+  align-items: center;
+  gap: 18px;
+  padding: 26px 0 30px;
+  color: var(--sep-blue);
+}
+
+.sep-cap { width: 96px; height: 78px; flex-shrink: 0; }
+.sep-brand { margin: 0 0 6px; font-size: 24px; font-weight: 600; letter-spacing: .035em; }
+.sep-header h1 { margin: 0; font-size: 32px; line-height: 1.2; font-weight: 800; }
+.sep-idea { position: absolute; right: 0; bottom: -4px; width: 330px; height: 160px; pointer-events: none; }
+
+.sep-main {
+  position: relative;
+  width: min(1090px, calc(100% - 112px));
+  flex: 1;
+  margin: 0 auto 76px;
+}
+
+.sep-book-art {
+  position: absolute;
+  z-index: -1;
+  top: -14px;
+  left: -65px;
+  width: calc(100% + 130px);
+  height: calc(100% + 70px);
+  min-height: 630px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.sep-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 620px;
+  gap: 112px;
+  padding: 50px 72px 100px;
+}
+
+.sep-login, .sep-notices { min-width: 0; }
+.sep-login { position: relative; }
+.sep-login::after { position: absolute; top: 52px; right: -57px; bottom: 90px; width: 2px; background: #e5e5e5; content: ''; }
+.sep-columns h2 { margin: 0; color: #172538; font-size: 20px; line-height: 1.4; font-weight: 700; }
+.sep-intro { margin: 8px 0 23px; color: #586a83; font-size: 13px; line-height: 1.6; }
+.sep-form { display: flex; flex-direction: column; gap: 20px; }
+.sep-field { display: flex; flex-direction: column; gap: 7px; }
+.sep-field label { font-size: 14px; line-height: 1.4; }
+.sep-required { color: #e12c36; }
+.sep-input-wrap { position: relative; }
+.sep-form input, .sep-form select { width: 100%; min-width: 0; height: 40px; border: 1px solid #d5d9e0; border-radius: 5px; background: #fff; padding: 8px 12px; color: #172538; font: inherit; font-size: 14px; outline: none; transition: border-color .15s, box-shadow .15s; }
+.sep-form input::placeholder { color: #7d8798; opacity: 1; }
+.sep-form input:focus, .sep-form select:focus { border-color: var(--sep-blue); box-shadow: 0 0 0 3px #1354b81a; }
+.sep-form select:disabled { background: #f4f6f9; color: #69778a; }
+.sep-form input[aria-invalid='true'] { border-color: #cf3943; }
+.sep-input-wrap input { padding-right: 48px; }
+.sep-input-wrap input::-ms-reveal { display: none; }
+.sep-code-toggle { position: absolute; top: 0; right: 0; display: grid; width: 44px; height: 40px; place-items: center; border-radius: 5px; color: #596579; cursor: pointer; }
+.sep-code-toggle:hover { color: var(--sep-blue); background: #f1f6ff; }
+.sep-code-help { margin: -6px 0 2px; color: #596579; font-size: 12px; line-height: 1.7; }
+.sep-submit, .sep-help-button { display: flex; width: 100%; min-height: 40px; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--sep-blue); border-radius: 5px; padding: 9px 14px; font: inherit; font-size: 14px; font-weight: 700; line-height: 1.4; cursor: pointer; }
+.sep-submit { background: var(--sep-blue); color: white; transition: background .15s; }
+.sep-submit:hover { background: #0c439d; }
+.sep-submit:disabled { cursor: wait; opacity: .7; }
+.sep-help-button { margin-top: 15px; background: white; color: var(--sep-blue); }
+.sep-help-button:hover { background: #f0f5ff; }
+.sep-back:focus-visible, .sep-submit:focus-visible, .sep-help-button:focus-visible, .sep-code-toggle:focus-visible { outline: 3px solid #729fea; outline-offset: 3px; }
+.sep-help { margin-top: 14px; border-left: 3px solid #89b1f2; background: #f3f7ff; padding: 14px 15px; font-size: 13px; line-height: 1.75; }
+.sep-help ol { margin: 0; padding-left: 17px; list-style: decimal; }
+.sep-help li + li { margin-top: 5px; }
+.sep-login-error { border: 1px solid #f3c0c4; border-radius: 5px; background: #fff3f4; padding: 10px 12px; color: #a2222e; font-size: 13px; line-height: 1.6; }
+.sep-loading-icon { animation: sep-spin 1s linear infinite; }
+@keyframes sep-spin { to { transform: rotate(360deg); } }
+
+.sep-notice-intro { margin: 9px 0 18px; font-size: 14px; line-height: 1.65; }
+.sep-schedule { display: flex; flex-direction: column; gap: 12px; }
+.sep-exam { border: 1px solid #dee6f2; border-radius: 5px; background: #f9fbff; padding: 16px; }
+.sep-exam-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.sep-exam h3 { margin: 0; overflow-wrap: anywhere; color: #172538; font-size: 14px; line-height: 1.5; font-weight: 700; }
+.sep-exam-state { flex-shrink: 0; border-radius: 4px; padding: 4px 7px; background: #e8f5ee; color: #23744b; font-size: 11px; font-weight: 700; }
+.sep-exam-state[data-state='upcoming'] { background: #fff0d6; color: #945f0d; }
+.sep-exam-date { display: flex; align-items: flex-start; gap: 6px; margin: 9px 0 0; color: #586a83; font-size: 12px; line-height: 1.6; }
+.sep-exam-date svg { margin-top: 2px; flex-shrink: 0; }
+.sep-exam-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; border-top: 1px solid #e6ecf6; padding-top: 10px; color: #586a83; font-size: 12px; }
+.sep-exam-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.sep-empty, .sep-schedule-loading { border-radius: 5px; background: #f3f6fc; padding: 15px 16px; color: #586a83; font-size: 13px; line-height: 1.7; }
+.sep-empty p { margin: 7px 0 0; }
+.sep-empty strong { color: #30445f; font-weight: 600; }
+.sep-schedule-loading { display: flex; align-items: center; gap: 8px; }
+.sep-notice-footnote { margin: 20px 0 0; border-top: 1px solid #e4e9f1; padding-top: 16px; color: #64738a; font-size: 12px; line-height: 1.8; }
+.sep-student-note { margin: 20px 0 0; color: #253b59; font-size: 13px; line-height: 1.75; }
+.sep-student-note strong { color: #172538; }
+
+.sep-footer { position: relative; display: flex; width: min(1090px, calc(100% - 112px)); margin: 0 auto; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0 24px; color: #476591; font-size: 12px; }
+.sep-footer p { margin: 0; }
+.sep-back { display: inline-flex; min-height: 36px; align-items: center; gap: 6px; border-radius: 4px; color: var(--sep-blue); font: inherit; font-weight: 600; cursor: pointer; }
+.sep-back:hover { text-decoration: underline; }
+
+@media (min-width: 1500px) {
+  .sep-header { min-height: 160px; }
+  .sep-columns { min-height: 650px; padding-top: 50px; }
+}
+
+@media (max-width: 1100px) {
+  .sep-header, .sep-main, .sep-footer { width: calc(100% - 96px); }
+  .sep-brand { font-size: 19px; }
+  .sep-header h1 { font-size: 29px; }
+  .sep-idea { width: 250px; height: 135px; }
+  .sep-cap { width: 78px; }
+  .sep-columns { gap: 68px; padding: 46px 42px 100px; }
+  .sep-login::after { right: -35px; }
+  .sep-book-art { left: -40px; width: calc(100% + 80px); }
+}
+
+@media (max-width: 760px) {
+  .sep-header, .sep-main, .sep-footer { width: calc(100% - 40px); }
+  .sep-header { min-height: 122px; gap: 12px; padding: 24px 0; }
+  .sep-cap { width: 66px; height: 57px; }
+  .sep-brand { font-size: 13px; letter-spacing: .015em; margin-bottom: 6px; }
+  .sep-header h1 { font-size: 24px; }
+  .sep-idea { display: none; }
+  .sep-main { margin-bottom: 28px; border-radius: 6px; background: white; box-shadow: 8px 8px 0 #abc8f3; }
+  .sep-book-art { display: none; }
+  .sep-columns { min-height: auto; grid-template-columns: 1fr; gap: 32px; padding: 28px 24px 34px; }
+  .sep-login::after { display: none; }
+  .sep-notices { border-top: 1px solid #e4e9f1; padding-top: 28px; }
+  .sep-columns h2 { font-size: 18px; }
+  .sep-form input, .sep-form select { height: 44px; font-size: 16px; }
+  .sep-code-toggle { height: 44px; }
+  .sep-submit, .sep-help-button { min-height: 44px; }
+  .sep-footer { flex-direction: column; align-items: flex-start; gap: 5px; padding-bottom: 20px; }
+  .sep-exam-top { flex-wrap: wrap; }
+}
+
+@media (max-width: 360px) {
+  .sep-header, .sep-main, .sep-footer { width: calc(100% - 28px); }
+  .sep-header { gap: 9px; }
+  .sep-cap { width: 50px; }
+  .sep-brand { font-size: 11px; }
+  .sep-header h1 { font-size: 21px; }
+  .sep-columns { padding: 24px 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sep-loading-icon { animation: none; }
+  .sep-form input, .sep-form select, .sep-submit { transition: none; }
+}

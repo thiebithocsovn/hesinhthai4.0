@@ -1,0 +1,23 @@
+IN TỰ ĐỘNG TẠI MÁY GIÁO VIÊN
+
+1. Kết nối máy in giấy với máy giáo viên; chọn máy in đó làm mặc định trong Windows.
+2. Cập nhật Google Chrome 144 trở lên.
+3. Chạy Cau_hinh_in_giao_vien.cmd, chọn 1. Cấu hình áp dụng cho Chrome của tài khoản Windows hiện tại.
+4. Mở lại Chrome. Nếu chính sách cơ quan ghi đè, kiểm tra chrome://policy và liên hệ người phụ trách CNTT.
+5. Đăng nhập giáo viên vào website; vào Quản lý kỳ thi.
+6. Trong cấu hình kỳ thi, bật “Tự động in tại máy giáo viên khi nhận bài nộp”; Lưu.
+7. Chọn kỳ thi tại trạm in giáo viên. In thử một phiếu, xác nhận giấy ra không cần bấm In.
+8. Đánh dấu máy đã sẵn sàng và bật trạm một lần TRƯỚC khi học sinh nộp bài. Giữ cửa sổ này mở, máy giáo viên không ngủ.
+9. Mỗi học sinh nộp bài: dữ liệu về Firebase, máy giáo viên chấm lại đúng mã đề, cập nhật điểm và lần lượt gửi lệnh in.
+10. Học sinh nhận phiếu và ký. Máy học sinh không mở lệnh in.
+
+Phiếu đã gửi lệnh không được tự động gửi lại khi tải trang hoặc có hai trạm cùng theo dõi.
+Nếu chương trình đóng đúng lúc gửi lệnh, trạng thái có thể chưa rõ; kiểm tra hàng đợi Windows và giấy đã in trước khi dùng nút In lại tại Kết quả.
+Trạng thái “đã gửi lệnh” không bảo đảm máy in vật lý đã ra giấy: hết giấy, mất kết nối hoặc hàng đợi Windows tạm dừng cần được xử lý trên máy giáo viên.
+Trạm chỉ nhận bài nộp từ lúc bật; các bài cũ có thể in bằng nút In lại tại Kết quả.
+Danh sách bài nộp, điểm và trạng thái in thuộc tài khoản giáo viên. Website không cần thêm máy chủ riêng.
+
+Chọn 2 trong tệp CMD để tắt chế độ in không cần xác nhận sau buổi thi.
+Nguồn chính sách Chrome:
+https://chromeenterprise.google/intl/es-419_ALL/policies/silent-printing-enabled/
+https://chromeenterprise.google/policies/print-preview-use-system-default-printer/

@@ -1,0 +1,150 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
+import { doc, setDoc, updateDoc, getDoc, getDocs, collection, serverTimestamp, deleteDoc, writeBatch } from 'firebase/firestore';
+
+if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error('Start the local demo emulator and set FIRESTORE_EMULATOR_HOST=127.0.0.1:8088. Production is never used.');
+const [host, port] = process.env.FIRESTORE_EMULATOR_HOST.split(':');
+const rulesFile = process.env.LEARNING_WALL_RULES_FILE || 'firestore.rules';
+const environment = await initializeTestEnvironment({ projectId: 'demo-learning-wall', firestore: { host, port: Number(port), rules: readFileSync(new URL(`../${rulesFile}`, import.meta.url), 'utf8') } });
+const token = 'a'.repeat(48);
+const wallPath = `shared_learning_walls/${token}`;
+let checks = 0;
+async function allowed(promise) { await assertSucceeds(promise); checks++; }
+async function denied(promise) { await assertFails(promise); checks++; }
+try {
+  await environment.clearFirestore();
+  await environment.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teachers/teacher-one'), { id: 'teacher-one', status: 'active' });
+    await setDoc(doc(db, 'teachers/teacher-two'), { id: 'teacher-two', status: 'active' });
+    await setDoc(doc(db, 'teachers/inactive'), { id: 'inactive', status: 'inactive' });
+    await setDoc(doc(db, 'categories/class-one'), { title: 'Lớp 8A', authorId: 'teacher-one' });
+    await setDoc(doc(db, 'categories/section-one'), { title: 'Nhóm 1', parentId: 'class-one', authorId: 'teacher-one' });
+    await setDoc(doc(db, 'wall_posts/private'), { categoryId: 'class-one', authorId: 'teacher-one', teacherId: 'teacher-one', score: 0, comments: [{ text: 'private' }] });
+  });
+  const first = environment.authenticatedContext('teacher-one').firestore();
+  const second = environment.authenticatedContext('teacher-two').firestore();
+  const admin = environment.authenticatedContext('administrator', { admin: true }).firestore();
+  const guest = environment.unauthenticatedContext().firestore();
+  const anotherGuest = environment.unauthenticatedContext().firestore();
+  const locked = environment.authenticatedContext('inactive').firestore();
+  const wall = { authorId: 'teacher-one', title: 'Lớp 8A', description: '', icon: '📚', layout: 'wall', background: 'sage', sections: [{ id: 'class-one', title: 'Bài chung' }, { id: 'section-one', title: 'Nhóm 1' }], sectionIds: ['class-one', 'section-one'], enabled: true, permission: 'write', updatedAt: serverTimestamp() };
+  const post = { categoryId: 'class-one', title: 'Đa thức', text: 'Bài học', studentName: 'An', imageSrc: '', attachments: [], createdAt: 123, color: '#ffffff', pinned: false };
+  const submission = { title: 'Bài làm', text: 'Nội dung', studentName: 'An', categoryId: 'class-one', imageSrc: '', link: '', createdAt: serverTimestamp() };
+  await allowed(setDoc(doc(first, wallPath), wall));
+  await denied(setDoc(doc(second, wallPath), wall));
+  await denied(setDoc(doc(guest, wallPath), wall));
+  await denied(getDoc(doc(second, 'wall_posts/private')));
+  await denied(getDoc(doc(guest, 'categories/class-one')));
+  await denied(getDoc(doc(guest, 'wall_posts/private')));
+  await allowed(getDoc(doc(admin, 'wall_posts/private')));
+  await denied(getDocs(collection(guest, 'shared_learning_walls')));
+  await denied(getDocs(collection(second, 'shared_learning_walls')));
+  await allowed(getDoc(doc(guest, wallPath)));
+  await allowed(setDoc(doc(first, `${wallPath}/posts/p1`), post));
+  // Public background media stays under the same owner-only write policy.
+  const appearancePath = `${wallPath}/posts/wall-board-background`;
+  const appearance = { ...post, title: '', studentName: '', text: '#345678', imageSrc: '' };
+  const saveBackground = writeBatch(first);
+  saveBackground.update(doc(first, 'categories/class-one'), { bgType: 'color', bgValue: '#345678' });
+  saveBackground.set(doc(first, wallPath), wall);
+  saveBackground.set(doc(first, appearancePath), appearance);
+  await allowed(saveBackground.commit());
+  await allowed(getDoc(doc(guest, appearancePath)));
+  await denied(updateDoc(doc(guest, appearancePath), { text: '#ffffff' }));
+  await denied(deleteDoc(doc(second, appearancePath)));
+  await denied(setDoc(doc(first, appearancePath), { ...appearance, categoryId: 'another-board' }));
+  await allowed(updateDoc(doc(first, appearancePath), { text: '', imageSrc: 'data:image/png;base64,YQ==' }));
+  const resetBackground = writeBatch(first);
+  resetBackground.update(doc(first, 'categories/class-one'), { bgType: 'color', bgValue: '', wallBackground: 'sage' });
+  resetBackground.set(doc(first, wallPath), wall);
+  resetBackground.delete(doc(first, appearancePath));
+  await allowed(resetBackground.commit());
+
+  await allowed(getDocs(collection(guest, `${wallPath}/posts`)));
+  await denied(setDoc(doc(guest, `${wallPath}/posts/forged`), post));
+  await denied(setDoc(doc(second, `${wallPath}/posts/forged`), post));
+  await denied(updateDoc(doc(second, wallPath), { permission: 'write', updatedAt: serverTimestamp() }));
+  await denied(updateDoc(doc(first, wallPath), { authorId: 'teacher-two', updatedAt: serverTimestamp() }));
+  await denied(setDoc(doc(first, `${wallPath}/posts/leak`), { ...post, score: 7 }));
+  await denied(setDoc(doc(first, `${wallPath}/posts/leak`), { ...post, comments: [] }));
+  await allowed(setDoc(doc(guest, `${wallPath}/submissions/student1`), submission));
+  await allowed(setDoc(doc(anotherGuest, `${wallPath}/submissions/another-student`), { ...submission, studentName: 'Bình', categoryId: 'section-one' }));
+  await allowed(setDoc(doc(second, `${wallPath}/submissions/signed-in-visitor`), submission));
+  const studentFile = { id: 'file-one', kind: 'file', name: 'Bài làm.docx', url: 'data:application/octet-stream;base64,YQ==', size: 1 };
+  const fileSubmission = { ...submission, title: '', text: '', attachments: [studentFile] };
+  for (const extension of ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'csv', 'rtf', 'odt', 'ods', 'odp', 'zip', 'rar', '7z', 'sb3']) {
+    await allowed(setDoc(doc(guest, `${wallPath}/submissions/file-${extension}`), { ...fileSubmission, attachments: [{ ...studentFile, name: `Bài làm.${extension.toUpperCase()}` }] }));
+  }
+  await allowed(setDoc(doc(guest, `${wallPath}/submissions/two-files`), { ...fileSubmission, attachments: [studentFile, { ...studentFile, id: 'file-two', name: 'Bảng tính.xlsx' }] }));
+  await denied(getDoc(doc(guest, `${wallPath}/submissions/file-docx`)));
+  await denied(getDoc(doc(second, `${wallPath}/submissions/file-docx`)));
+  await allowed(getDoc(doc(first, `${wallPath}/submissions/file-docx`)));
+  const approveFile = writeBatch(first);
+  approveFile.set(doc(first, 'wall_posts/approved-file'), { ...post, authorId: 'teacher-one', teacherId: 'teacher-one', attachments: [studentFile] });
+  approveFile.set(doc(first, `${wallPath}/posts/approved-file`), { ...post, attachments: [studentFile] });
+  approveFile.delete(doc(first, `${wallPath}/submissions/file-docx`));
+  await allowed(approveFile.commit());
+  assert.equal((await getDoc(doc(guest, `${wallPath}/posts/approved-file`))).data().attachments[0].url, studentFile.url);
+  for (const patch of [{ kind: 'image' }, { name: 'script.html' }, { url: 'data:text/html;base64,YQ==' }, { url: 'https://example.com/file.docx' }, { size: 327681 }, { teacherId: 'teacher-one' }]) {
+    await denied(setDoc(doc(guest, `${wallPath}/submissions/bad-file`), { ...fileSubmission, attachments: [{ ...studentFile, ...patch }] }));
+  }
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/bad-file`), { ...fileSubmission, attachments: [studentFile, studentFile, studentFile] }));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/bad-file`), { ...fileSubmission, attachments: 'invalid' }));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/bad-file`), { ...fileSubmission, categoryId: 'another-board' }));
+  const largestFile = { ...studentFile, size: 327680, url: 'data:application/octet-stream;base64,' + Buffer.alloc(327680).toString('base64') };
+  await allowed(setDoc(doc(guest, `${wallPath}/submissions/size-limit`), { ...fileSubmission, attachments: [largestFile] }));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/bad-file`), { ...fileSubmission, attachments: [largestFile, { ...largestFile, id: 'file-two' }] }));
+  await denied(getDoc(doc(guest, `${wallPath}/submissions/student1`)));
+  await denied(getDocs(collection(guest, `${wallPath}/submissions`)));
+  await denied(getDoc(doc(second, `${wallPath}/submissions/student1`)));
+  await allowed(getDoc(doc(first, `${wallPath}/submissions/student1`)));
+  await denied(updateDoc(doc(guest, `${wallPath}/submissions/student1`), { text: 'overwrite' }));
+  await denied(deleteDoc(doc(guest, `${wallPath}/submissions/student1`)));
+  await denied(deleteDoc(doc(guest, `${wallPath}/posts/p1`)));
+  await denied(setDoc(doc(guest, 'wall_posts/guest-private-post'), { ...post, authorId: 'teacher-one', teacherId: 'teacher-one' }));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/student2`), { ...submission, categoryId: 'other-class' }));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/student2`), { ...submission, score: 10 }));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/student2`), { ...submission, link: 'javascript:alert(1)' }));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/student2`), { ...submission, imageSrc: 'data:image/svg+xml;base64,YQ==' }));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/student2`), { ...submission, text: 'a'.repeat(12001) }));
+  await allowed(updateDoc(doc(first, wallPath), { permission: 'read', updatedAt: serverTimestamp() }));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/closed-file`), fileSubmission));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/student2`), submission));
+  await allowed(getDoc(doc(guest, wallPath)));
+  await allowed(updateDoc(doc(first, wallPath), { permission: 'write', updatedAt: serverTimestamp() }));
+  await allowed(setDoc(doc(guest, `${wallPath}/submissions/reopened`), submission));
+  // A stale publication must not accept work for an archived board.
+  await allowed(updateDoc(doc(first, 'categories/class-one'), { wallArchived: true }));
+  await denied(setDoc(doc(anotherGuest, `${wallPath}/submissions/archived`), submission));
+  await allowed(updateDoc(doc(first, 'categories/class-one'), { wallArchived: false }));
+  await allowed(setDoc(doc(anotherGuest, `${wallPath}/submissions/restored`), submission));
+  await allowed(updateDoc(doc(first, wallPath), { enabled: false, updatedAt: serverTimestamp() }));
+  await denied(getDoc(doc(guest, wallPath)));
+  await denied(getDoc(doc(guest, `${wallPath}/posts/p1`)));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/student2`), submission));
+  await allowed(getDoc(doc(first, `${wallPath}/submissions/student1`)));
+  await denied(getDoc(doc(locked, 'wall_posts/private')));
+  await allowed(deleteDoc(doc(first, `${wallPath}/submissions/student1`)));
+  // A teacher can remove their own class while closing its public link in the same commit.
+  await allowed(setDoc(doc(first, 'categories/owner-created'), { title: 'Lớp mới', authorId: 'teacher-one', ownerUid: 'teacher-one', parentId: null }));
+  await denied(updateDoc(doc(second, 'categories/owner-created'), { wallDeleted: true }));
+  await denied(updateDoc(doc(guest, 'categories/owner-created'), { wallDeleted: true }));
+  await allowed(updateDoc(doc(first, 'categories/owner-created'), { wallDeleted: true }));
+  await allowed(updateDoc(doc(first, 'categories/owner-created'), { wallDeleted: false }));
+  await allowed(updateDoc(doc(first, wallPath), { enabled: true, updatedAt: serverTimestamp() }));
+  const trash = writeBatch(first);
+  trash.update(doc(first, 'categories/class-one'), { wallDeleted: true });
+  trash.update(doc(first, wallPath), { enabled: false, updatedAt: serverTimestamp() });
+  await allowed(trash.commit());
+  await denied(getDoc(doc(guest, wallPath)));
+  await denied(setDoc(doc(guest, `${wallPath}/submissions/deleted-class`), submission));
+  await allowed(getDoc(doc(first, 'wall_posts/private')));
+  await allowed(getDoc(doc(first, 'categories/section-one')));
+  await allowed(updateDoc(doc(first, 'categories/class-one'), { wallDeleted: false }));
+  await denied(getDoc(doc(guest, wallPath)));
+  assert.equal((await getDoc(doc(first, wallPath))).data().enabled, false, 'Restoring a class never reopens sharing automatically.');
+  assert.equal((await getDoc(doc(first, 'wall_posts/private'))).data().score, 0);
+  console.info(`Learning Wall Firestore emulator: ${checks} permission checks passed (${rulesFile}); private legacy data preserved.`);
+} finally { await environment.cleanup(); }

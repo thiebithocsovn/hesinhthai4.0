@@ -1,0 +1,52 @@
+{
+  "id": "./",
+  "name": "Lớp Học Thông Minh 4.0 — Hệ sinh thái giáo dục",
+  "short_name": "Lớp học 4.0",
+  "description": "13 ứng dụng giáo dục, trò chơi tương tác, quản lý lớp học và kỳ thi dành cho giáo viên Việt Nam.",
+  "lang": "vi-VN",
+  "dir": "ltr",
+  "start_url": "./?source=installed",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0f172a",
+  "background_color": "#f8fafc",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "./icons/plicker-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/plicker-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/plicker-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Trang chủ hệ sinh thái",
+      "short_name": "Trang chủ",
+      "url": "./?source=shortcut"
+    },
+    {
+      "name": "Tương tác thẻ Plicker",
+      "short_name": "Quét thẻ",
+      "url": "./?app=plicker&role=scanner&source=shortcut"
+    },
+    {
+      "name": "GestureClass",
+      "short_name": "GestureClass",
+      "url": "./gestureclass/"
+    }
+  ]
+}

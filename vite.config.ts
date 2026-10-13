@@ -7,7 +7,7 @@ import { defineConfig, loadEnv } from 'vite';
 export default defineConfig(({ mode }) => {
     const environment = loadEnv(mode, process.cwd(), 'VITE_');
     const configuredBasePath = environment.VITE_APP_BASE_PATH?.trim();
-    const deploymentBasePath = configuredBasePath || (process.env.CF_PAGES === '1' ? '/' : '/4.0/');
+    const deploymentBasePath = configuredBasePath || (process.env.CF_PAGES === '1' ? '/' : '/hesinhthai4.0/');
     const applicationBasePath = deploymentBasePath === '/'
       ? '/'
       : `/${deploymentBasePath.replace(/^\/+|\/+$/g, '')}/`;
