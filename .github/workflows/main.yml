@@ -1,1 +1,113 @@
+name: Restore, verify and publish Hesinhthai 4.0
 
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      VITE_APP_BASE_PATH: /hesinhthai4.0/
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      VITE_ADMIN_EMAIL: ${{ vars.VITE_ADMIN_EMAIL }}
+      VITE_FIREBASE_APP_CHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APP_CHECK_SITE_KEY }}
+      VITE_FIRESTORE_CACHE_MODE: memory
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Restore missing application files from the original repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch main https://github.com/trungtuyen/4.0.git "$RUNNER_TEMP/hesinhthai-upstream"
+          cd "$RUNNER_TEMP/hesinhthai-upstream"
+          git fetch --depth 1 origin 46a643e4715102048a6966b300852b5544351340
+          git checkout --detach 46a643e4715102048a6966b300852b5544351340
+          cd "$GITHUB_WORKSPACE"
+          rsync -a --ignore-existing --exclude='.git/' --exclude='.github/' --exclude='node_modules/' "$RUNNER_TEMP/hesinhthai-upstream/" ./
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('vite.config.ts')
+          content = path.read_text(encoding='utf-8')
+          content = content.replace(" : '/4.0/'", " : '/hesinhthai4.0/'")
+          path.write_text(content, encoding='utf-8')
+          for file in ('src/ecosystem.ts', 'src/components/LearningWall.tsx'):
+              path = Path(file)
+              content = path.read_text(encoding='utf-8')
+              content = content.replace('Tường học tập', 'Tường Học tập Ai')
+              path.write_text(content, encoding='utf-8')
+          PY
+          test -f src/main.tsx
+          test -f public/service-worker.js
+          test -f scripts/test-application-catalog.ts
+          echo "Source tree restored."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Validate TypeScript
+        run: npm run lint
+
+      - name: Run learning wall and app checks
+        run: |
+          npm run test:learning-wall
+          npm run test:platform
+          npm run test:auth-flow
+          npm run test:smart-timetable
+
+      - name: Build static website
+        run: npm run build:static
+
+      - name: Ensure GitHub Pages files exist
+        run: |
+          test -s dist/index.html
+          test -f dist/smartclass.webmanifest
+          test -f dist/service-worker.js
+          printf '' > dist/.nojekyll
+
+      - name: Save restored source and fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Restore ecosystem application and fix GitHub Pages deployment"
+            git push origin HEAD:main
+          fi
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4
