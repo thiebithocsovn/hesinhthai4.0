@@ -1,0 +1,430 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function emailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (emailVerified() && request.auth.token.email == 'tuyenthcskimhy@gmail.com') ||
+        ('admin' in request.auth.token && request.auth.token.admin == true) ||
+        ('role' in request.auth.token && request.auth.token.role == 'admin') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 &&
+        id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isActiveTeacher() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/teachers/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/teachers/$(request.auth.uid)).data.id == request.auth.uid &&
+        get(/databases/$(database)/documents/teachers/$(request.auth.uid)).data.status == 'active';
+    }
+
+    function ownsField(data, ownerField) {
+      return ownerField in data && isActiveTeacher() && isOwner(data[ownerField]);
+    }
+
+    function mayAccess(data, ownerField) {
+      return isAdmin() || ownsField(data, ownerField);
+    }
+
+    function ownerRemainsUnchanged(ownerField) {
+      return ownerField in existing() && ownerField in incoming() &&
+        existing()[ownerField] == incoming()[ownerField];
+    }
+
+    function wallPostOwnerIsConsistent() {
+      return !('teacherId' in incoming()) || incoming().teacherId == incoming().authorId;
+    }
+
+    function categoryOwnerIsConsistent() {
+      return !('ownerUid' in incoming()) || incoming().ownerUid == incoming().authorId;
+    }
+
+    function isProtectedExamIdentifier(identifier) {
+      return identifier is string && identifier.matches('^[a-f0-9]{64}$');
+    }
+
+    function publicScheduleIsSafe(scheduleId) {
+      return isProtectedExamIdentifier(scheduleId) &&
+        incoming().keys().hasAll([
+          'id', 'teacherId', 'title', 'durationMinutes', 'questionCount', 'status', 'createdAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'id', 'teacherId', 'title', 'durationMinutes', 'questionCount', 'status', 'createdAt', 'startTime'
+        ]) &&
+        incoming().id == scheduleId &&
+        isValidId(incoming().teacherId) &&
+        incoming().title is string && incoming().title.size() <= 240 &&
+        incoming().durationMinutes is int && incoming().durationMinutes > 0 &&
+        incoming().questionCount is int && incoming().questionCount >= 0 &&
+        incoming().status == 'published';
+    }
+
+    function encryptedExamAccessIsSafe(accessId) {
+      return isProtectedExamIdentifier(accessId) &&
+        incoming().keys().hasAll([
+          'teacherId', 'examId', 'status', 'version', 'iterations', 'salt', 'iv', 'ciphertext', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'teacherId', 'examId', 'status', 'version', 'iterations', 'salt', 'iv', 'ciphertext', 'updatedAt'
+        ]) &&
+        isValidId(incoming().teacherId) && isValidId(incoming().examId) &&
+        incoming().status == 'published' && incoming().version == 1 &&
+        incoming().iterations is int && incoming().iterations >= 100000 &&
+        incoming().iterations <= 500000 &&
+        incoming().salt is string && incoming().iv is string &&
+        incoming().ciphertext is string && incoming().ciphertext.size() > 0;
+    }
+
+    function enrolledStudentBelongsToTeacher(studentId, teacherId) {
+      return isValidId(studentId) && isValidId(teacherId) &&
+        exists(/databases/$(database)/documents/students/$(studentId)) &&
+        get(/databases/$(database)/documents/students/$(studentId)).data.teacherId == teacherId;
+    }
+
+    function examQuestionCountMatches(examId, questionCount) {
+      return get(/databases/$(database)/documents/exams/$(examId)).data.questions is list &&
+        get(/databases/$(database)/documents/exams/$(examId)).data.questions.size() == questionCount;
+    }
+
+    function activeSessionBelongsToStudent(sessionId, studentId, examId, teacherId) {
+      return exists(/databases/$(database)/documents/exam_sessions/$(sessionId)) &&
+        get(/databases/$(database)/documents/exam_sessions/$(sessionId)).data.status == 'taking' &&
+        get(/databases/$(database)/documents/exam_sessions/$(sessionId)).data.studentId == studentId &&
+        get(/databases/$(database)/documents/exam_sessions/$(sessionId)).data.examId == examId &&
+        get(/databases/$(database)/documents/exam_sessions/$(sessionId)).data.teacherId == teacherId;
+    }
+
+    function guestStudentIsSafe(studentId) {
+      return incoming().keys().hasAll(['id', 'teacherId', 'name', 'code', 'examId']) &&
+        incoming().keys().hasOnly(['id', 'teacherId', 'name', 'code', 'examId']) &&
+        incoming().id == studentId && isValidId(studentId) &&
+        isValidId(incoming().teacherId) && isValidId(incoming().examId) &&
+        incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 160 &&
+        incoming().code is string && incoming().code.matches('^[0-9]{6}$');
+    }
+
+    function guestResultIsSafe(resultId) {
+      return incoming().keys().hasAll([
+          'id', 'examId', 'studentId', 'score', 'totalQuestions', 'submittedAt',
+          'answers', 'cheatEvents', 'examVersion', 'teacherId'
+        ]) &&
+        incoming().keys().hasOnly([
+          'id', 'examId', 'studentId', 'score', 'totalQuestions', 'submittedAt',
+          'answers', 'cheatEvents', 'examVersion', 'teacherId'
+        ]) &&
+        incoming().id == resultId &&
+        isValidId(incoming().examId) && isValidId(incoming().studentId) &&
+        isValidId(incoming().teacherId) &&
+        incoming().score is int && incoming().score >= 0 &&
+        incoming().totalQuestions is int && incoming().totalQuestions > 0 &&
+        incoming().totalQuestions <= 500 &&
+        incoming().score <= incoming().totalQuestions &&
+        incoming().submittedAt is string && incoming().submittedAt.size() <= 64 &&
+        incoming().answers is map && incoming().cheatEvents is map &&
+        incoming().examVersion is string && incoming().examVersion.size() <= 128 &&
+        enrolledStudentBelongsToTeacher(incoming().studentId, incoming().teacherId) &&
+        examQuestionCountMatches(incoming().examId, incoming().totalQuestions) &&
+        activeSessionBelongsToStudent(resultId, incoming().studentId,
+          incoming().examId, incoming().teacherId);
+    }
+
+    function guestSessionIsSafe(sessionId) {
+      return incoming().keys().hasAll([
+          'id', 'examId', 'studentId', 'startTime', 'lastActive', 'status', 'teacherId', 'examVersion'
+        ]) &&
+        incoming().keys().hasOnly([
+          'id', 'examId', 'studentId', 'startTime', 'lastActive', 'status', 'teacherId', 'examVersion'
+        ]) &&
+        incoming().id == sessionId &&
+        isValidId(incoming().examId) && isValidId(incoming().studentId) &&
+        isValidId(incoming().teacherId) &&
+        incoming().startTime is string && incoming().startTime.size() <= 64 &&
+        incoming().lastActive is string && incoming().lastActive.size() <= 64 &&
+        (incoming().status == 'taking' || incoming().status == 'submitted') &&
+        incoming().examVersion is string && incoming().examVersion.size() <= 128 &&
+        enrolledStudentBelongsToTeacher(incoming().studentId, incoming().teacherId);
+    }
+
+    // Publication writes the exam and access payload together; validate their committed state.
+    function publishedExamAfterWrite(examId, teacherId) {
+      return isValidId(examId) && isValidId(teacherId) &&
+        getAfter(/databases/$(database)/documents/exams/$(examId)).data.status == 'published' &&
+        getAfter(/databases/$(database)/documents/exams/$(examId)).data.teacherId == teacherId;
+    }
+
+    function publishedExamBelongsToTeacher(examId, teacherId) {
+      return isValidId(examId) && isValidId(teacherId) &&
+        exists(/databases/$(database)/documents/exams/$(examId)) &&
+        get(/databases/$(database)/documents/exams/$(examId)).data.status == 'published' &&
+        get(/databases/$(database)/documents/exams/$(examId)).data.teacherId == teacherId;
+    }
+
+
+    // 1. Teachers
+    match /teachers/{teacherId} {
+      allow read, write: if true;
+    }
+
+    match /categories/{categoryId} {
+      allow read: if mayAccess(existing(), 'authorId');
+      allow create: if isAdmin() || (
+        ownsField(incoming(), 'authorId') && categoryOwnerIsConsistent()
+      );
+      allow update: if isAdmin() || (
+        ownsField(existing(), 'authorId') && ownerRemainsUnchanged('authorId') &&
+        categoryOwnerIsConsistent()
+      );
+      allow delete: if mayAccess(existing(), 'authorId');
+    }
+
+    match /wall_posts/{postId} {
+      allow read: if mayAccess(existing(), 'authorId');
+      allow create: if isAdmin() || (
+        ownsField(incoming(), 'authorId') && wallPostOwnerIsConsistent()
+      );
+      allow update: if isAdmin() || (
+        ownsField(existing(), 'authorId') &&
+        ownerRemainsUnchanged('authorId') && wallPostOwnerIsConsistent()
+      );
+      allow delete: if mayAccess(existing(), 'authorId');
+    }
+
+    // Padlet-style boards publish an explicit projection. Private categories and
+    // wall_posts retain their existing owner-only policies above.
+    function sharedWall(shareId) {
+      return get(/databases/$(database)/documents/shared_learning_walls/$(shareId)).data;
+    }
+
+    function sharedWallIsSafe(shareId) {
+      let data = incoming();
+      return shareId.matches('^[a-f0-9]{48}$') &&
+        data.keys().hasAll(['authorId', 'title', 'description', 'icon', 'layout', 'background', 'sections', 'sectionIds', 'enabled', 'permission', 'updatedAt']) &&
+        data.keys().hasOnly(['authorId', 'title', 'description', 'icon', 'layout', 'background', 'sections', 'sectionIds', 'enabled', 'permission', 'updatedAt']) &&
+        isValidId(data.authorId) && data.title is string && data.title.size() > 0 && data.title.size() <= 180 &&
+        data.description is string && data.description.size() <= 2000 && data.icon is string && data.icon.size() <= 32 &&
+        data.layout in ['wall', 'grid', 'columns', 'stream', 'timeline', 'canvas', 'map'] &&
+        data.background in ['sage', 'cream', 'blue', 'rose', 'lavender', 'white'] &&
+        data.sections is list && data.sectionIds is list && data.sectionIds.size() > 0 && data.sectionIds.size() <= 40 &&
+        data.sections.size() == data.sectionIds.size() &&
+        isValidId(data.sectionIds[0]) &&
+        get(/databases/$(database)/documents/categories/$(data.sectionIds[0])).data.authorId == data.authorId &&
+        data.enabled is bool && data.permission in ['read', 'write'] && data.updatedAt == request.time;
+    }
+
+    function sharedWallCategoryIsSafe(shareId, categoryId) {
+      return isValidId(categoryId) && categoryId in sharedWall(shareId).sectionIds &&
+        get(/databases/$(database)/documents/categories/$(categoryId)).data.authorId == sharedWall(shareId).authorId &&
+        (categoryId == sharedWall(shareId).sectionIds[0] || get(/databases/$(database)/documents/categories/$(categoryId)).data.parentId == sharedWall(shareId).sectionIds[0]);
+    }
+
+    function sharedWallPostIsSafe(shareId) {
+      let data = incoming();
+      return data.keys().hasAll(['categoryId', 'title', 'text', 'studentName', 'imageSrc', 'attachments', 'createdAt', 'color', 'pinned']) &&
+        data.keys().hasOnly(['categoryId', 'title', 'text', 'studentName', 'imageSrc', 'attachments', 'createdAt', 'color', 'pinned', 'location', 'position']) &&
+        sharedWallCategoryIsSafe(shareId, data.categoryId) && data.title is string && data.title.size() <= 200 &&
+        data.text is string && data.text.size() <= 12000 &&
+        data.studentName is string && data.studentName.size() <= 120 &&
+        data.imageSrc is string && data.imageSrc.size() < 650000 &&
+        data.attachments is list && data.attachments.size() <= 4 && data.createdAt is number &&
+        data.color in ['#ffffff', '#fff3cc', '#e5f2e4', '#e5eefb', '#fbe5e8', '#efe6fc'] && data.pinned is bool;
+    }
+
+    function sharedWallAcceptsSubmissions(shareId) {
+      let wall = sharedWall(shareId);
+      let board = get(/databases/$(database)/documents/categories/$(wall.sectionIds[0])).data;
+      return shareId.matches('^[a-f0-9]{48}$') && wall.enabled == true && wall.permission == 'write' &&
+        (!('wallArchived' in board) || board.wallArchived == false);
+    }
+
+    // Student documents are inert downloads. Public callers never write approved posts.
+    function wallSubmissionFileIsSafe(file) {
+      return file is map &&
+        file.keys().hasAll(['id', 'kind', 'name', 'url', 'size']) &&
+        file.keys().hasOnly(['id', 'kind', 'name', 'url', 'size']) &&
+        file.id is string && file.id.matches('^[A-Za-z0-9_-]{1,128}$') && file.kind == 'file' &&
+        file.name is string && file.name.size() > 0 && file.name.size() <= 180 &&
+        file.name.matches('(?i)^.+\\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|rtf|odt|ods|odp|zip|rar|7z|sb3)$') &&
+        file.url is string && file.url.size() <= 436945 &&
+        file.url.matches('^data:application/octet-stream;base64,[A-Za-z0-9+/]+={0,2}$') &&
+        file.size is int && file.size > 0 && file.size <= 327680;
+    }
+
+    function wallSubmissionFilesAreSafe(data) {
+      let files = 'attachments' in data ? data.attachments : [];
+      return files is list && files.size() <= 2 &&
+        (files.size() < 1 || wallSubmissionFileIsSafe(files[0])) &&
+        (files.size() < 2 || wallSubmissionFileIsSafe(files[1])) &&
+        data.imageSrc.size() + (files.size() > 0 ? files[0].url.size() : 0) +
+          (files.size() > 1 ? files[1].url.size() : 0) <= 650000;
+    }
+
+    function wallSubmissionIsSafe(shareId, submissionId) {
+      let data = incoming();
+      // Public visitors can only create a submission while this board accepts work.
+      // No Firebase account or anonymous-auth session is required.
+      return isValidId(submissionId) && sharedWallAcceptsSubmissions(shareId) &&
+        data.keys().hasAll(['title', 'text', 'studentName', 'categoryId', 'imageSrc', 'link', 'createdAt']) &&
+        data.keys().hasOnly(['title', 'text', 'studentName', 'categoryId', 'imageSrc', 'link', 'attachments', 'createdAt']) &&
+        wallSubmissionFilesAreSafe(data) &&
+        data.title is string && data.title.size() <= 200 && data.text is string && data.text.size() <= 12000 &&
+        data.studentName is string && data.studentName.size() > 0 && data.studentName.size() <= 120 &&
+        sharedWallCategoryIsSafe(shareId, data.categoryId) &&
+        data.imageSrc is string && data.imageSrc.size() < 500000 &&
+        (data.imageSrc == '' || data.imageSrc.matches('^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$')) &&
+        data.link is string && data.link.size() <= 2048 && (data.link == '' || data.link.matches('^https?://[^\\s]+$')) &&
+        (data.title.size() > 0 || data.text.size() > 0 || data.imageSrc.size() > 0 || data.link.size() > 0 || ('attachments' in data && data.attachments.size() > 0)) &&
+        data.createdAt == request.time;
+    }
+
+    match /shared_learning_walls/{shareId} {
+      allow get: if mayAccess(existing(), 'authorId') ||
+        (shareId.matches('^[a-f0-9]{48}$') && existing().enabled == true);
+      allow list: if mayAccess(existing(), 'authorId');
+      allow create: if mayAccess(incoming(), 'authorId') && sharedWallIsSafe(shareId);
+      allow update: if mayAccess(existing(), 'authorId') && ownerRemainsUnchanged('authorId') && sharedWallIsSafe(shareId);
+      allow delete: if mayAccess(existing(), 'authorId');
+
+      match /posts/{postId} {
+        allow read: if mayAccess(sharedWall(shareId), 'authorId') || sharedWall(shareId).enabled == true;
+        allow create, update: if mayAccess(sharedWall(shareId), 'authorId') && sharedWallPostIsSafe(shareId);
+        allow delete: if mayAccess(sharedWall(shareId), 'authorId');
+      }
+      match /submissions/{submissionId} {
+        allow read, delete: if mayAccess(sharedWall(shareId), 'authorId');
+        allow create: if wallSubmissionIsSafe(shareId, submissionId);
+        allow update: if false;
+      }
+    }
+
+
+    // 4. Exams
+    match /exams/{examId} {
+      // Questions, answers, shuffled versions and roster lookup data are always private.
+      allow read: if mayAccess(existing(), 'teacherId');
+      allow create: if isAdmin() || ownsField(incoming(), 'teacherId');
+      allow update: if isAdmin() || (
+        ownsField(existing(), 'teacherId') && ownerRemainsUnchanged('teacherId')
+      );
+      allow delete: if mayAccess(existing(), 'teacherId');
+    }
+
+    match /public_exam_schedules/{scheduleId} {
+      // Public notices contain metadata only: no exam code, questions, answers or roster.
+      allow read: if existing().status == 'published';
+      allow create: if (isAdmin() || ownsField(incoming(), 'teacherId')) &&
+        publicScheduleIsSafe(scheduleId);
+      allow update: if (isAdmin() || (
+        ownsField(existing(), 'teacherId') && ownerRemainsUnchanged('teacherId')
+      )) && publicScheduleIsSafe(scheduleId);
+      allow delete: if mayAccess(existing(), 'teacherId');
+    }
+
+    match /public_exam_access/{accessId} {
+      // Guests may request one encrypted payload only when they know its exam-code hash.
+      allow get: if mayAccess(existing(), 'teacherId') ||
+        (!isSignedIn() && existing().status == 'published' &&
+          publishedExamBelongsToTeacher(existing().examId, existing().teacherId));
+      allow list: if isAdmin();
+      allow create: if (isAdmin() || ownsField(incoming(), 'teacherId')) &&
+        encryptedExamAccessIsSafe(accessId) &&
+        publishedExamAfterWrite(incoming().examId, incoming().teacherId);
+      allow update: if (isAdmin() || (
+        ownsField(existing(), 'teacherId') && ownerRemainsUnchanged('teacherId')
+      )) && encryptedExamAccessIsSafe(accessId) &&
+        publishedExamAfterWrite(incoming().examId, incoming().teacherId);
+      allow delete: if mayAccess(existing(), 'teacherId');
+    }
+
+    // 5. Classes
+    match /classes/{classId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+
+    // 6. Students
+    match /students/{studentId} {
+      // Student login uses an anonymized exam directory and never reads the class roster.
+      allow read: if mayAccess(existing(), 'teacherId');
+      allow create: if isAdmin() || ownsField(incoming(), 'teacherId') || (
+        !isSignedIn() &&
+        guestStudentIsSafe(studentId) &&
+        publishedExamBelongsToTeacher(incoming().examId, incoming().teacherId)
+      );
+      allow update: if isAdmin() || (
+        ownsField(existing(), 'teacherId') && ownerRemainsUnchanged('teacherId')
+      );
+      allow delete: if mayAccess(existing(), 'teacherId');
+    }
+
+    // 7. Results
+    match /results/{resultId} {
+      // Scores and reports are never readable by unauthenticated students.
+      allow read: if mayAccess(existing(), 'teacherId');
+      allow create: if isAdmin() || ownsField(incoming(), 'teacherId') || (
+        !isSignedIn() &&
+        guestResultIsSafe(resultId) &&
+        resultId == incoming().studentId + '_' + incoming().examId &&
+        publishedExamBelongsToTeacher(incoming().examId, incoming().teacherId)
+      );
+      allow update: if isAdmin() || (
+        ownsField(existing(), 'teacherId') && ownerRemainsUnchanged('teacherId')
+      );
+      allow delete: if mayAccess(existing(), 'teacherId');
+    }
+
+    // 8. Exam Sessions
+    match /exam_sessions/{sessionId} {
+      allow read: if mayAccess(existing(), 'teacherId');
+      allow create: if isAdmin() || ownsField(incoming(), 'teacherId') || (
+        !isSignedIn() &&
+        guestSessionIsSafe(sessionId) &&
+        incoming().status == 'taking' &&
+        sessionId == incoming().studentId + '_' + incoming().examId &&
+        publishedExamBelongsToTeacher(incoming().examId, incoming().teacherId)
+      );
+      allow update: if isAdmin() || (
+        ownsField(existing(), 'teacherId') && ownerRemainsUnchanged('teacherId')
+      ) || (
+        !isSignedIn() &&
+        ownerRemainsUnchanged('teacherId') &&
+        guestSessionIsSafe(sessionId) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['lastActive', 'status']) &&
+        existing().status == 'taking' &&
+        sessionId == incoming().studentId + '_' + incoming().examId &&
+        publishedExamBelongsToTeacher(incoming().examId, incoming().teacherId)
+      );
+      allow delete: if mayAccess(existing(), 'teacherId');
+    }
+  }
+}

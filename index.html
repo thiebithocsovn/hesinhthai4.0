@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Hệ sinh thái 13 ứng dụng giáo dục tương tác: GestureClass, nhận dạng cử chỉ, trò chơi học tập, kiểm tra đánh giá và công cụ dành cho giáo viên." />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="application-name" content="Lớp Học Thông Minh 4.0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Lớp học 4.0" />
+    <link id="smartclass-manifest" rel="manifest" href="%BASE_URL%smartclass.webmanifest" />
+    <script>
+      if (new URLSearchParams(window.location.search).get('app') === 'plicker') {
+        document.getElementById('smartclass-manifest').setAttribute('href', '%BASE_URL%plicker.webmanifest');
+      }
+    </script>
+    <link rel="apple-touch-icon" href="%BASE_URL%icons/plicker-192.png" />
+    <title>Lớp Học Thông Minh 4.0 | Hệ sinh thái giáo dục tương tác</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

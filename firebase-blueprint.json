@@ -1,0 +1,153 @@
+{
+  "entities": {
+    "Teacher": {
+      "title": "Teacher",
+      "description": "A teacher account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "school": { "type": "string" },
+        "level": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "avatar": { "type": "string" }
+      },
+      "required": ["id", "name", "username", "email", "school", "level", "status"]
+    },
+    "Exam": {
+      "title": "Exam",
+      "description": "An exam created by a teacher",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "title": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "questions": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "published", "closed"] },
+        "createdAt": { "type": "string" },
+        "startTime": { "type": "string" }
+      },
+      "required": ["id", "teacherId", "title", "durationMinutes", "questions", "status", "createdAt"]
+    },
+    "StudentClass": {
+      "title": "StudentClass",
+      "description": "A class created by a teacher",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "teacherId", "name"]
+    },
+    "StudentAccount": {
+      "title": "StudentAccount",
+      "description": "A student account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "classId": { "type": "string" }
+      },
+      "required": ["id", "teacherId", "code", "name"]
+    },
+    "ExamResult": {
+      "title": "ExamResult",
+      "description": "A student's exam result",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "examId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "submittedAt": { "type": "string" },
+        "answers": { "type": "string" },
+        "cheatEvents": { "type": "string" }
+      },
+      "required": ["id", "examId", "studentId", "score", "totalQuestions", "submittedAt"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "A class or sub-category for the learning wall",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "parentId": { "type": "string" },
+        "author": { "type": "string" },
+        "authorId": { "type": "string" },
+        "color": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "authorId"]
+    },
+    "WallPost": {
+      "title": "WallPost",
+      "description": "A post on the learning wall",
+      "type": "object",
+      "properties": {
+        "categoryId": { "type": "string" },
+        "imageSrc": { "type": "string" },
+        "studentName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "score": { "type": "number" },
+        "comments": { "type": "array" },
+        "likes": { "type": "number" }
+      },
+      "required": ["categoryId", "imageSrc", "studentName"]
+    },
+    "ExamSession": {
+      "title": "ExamSession",
+      "description": "A student's active exam session",
+      "type": "object",
+      "properties": {
+        "examId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "startTime": { "type": "string" },
+        "lastActive": { "type": "string" },
+        "status": { "type": "string" },
+        "teacherId": { "type": "string" }
+      },
+      "required": ["examId", "studentId", "status"]
+    }
+  },
+  "firestore": {
+    "/teachers/{teacherId}": {
+      "schema": { "$ref": "#/entities/Teacher" },
+      "description": "Teacher accounts"
+    },
+    "/exams/{examId}": {
+      "schema": { "$ref": "#/entities/Exam" },
+      "description": "Exams created by teachers"
+    },
+    "/classes/{classId}": {
+      "schema": { "$ref": "#/entities/StudentClass" },
+      "description": "Classes created by teachers"
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/StudentAccount" },
+      "description": "Student accounts"
+    },
+    "/results/{resultId}": {
+      "schema": { "$ref": "#/entities/ExamResult" },
+      "description": "Exam results"
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Learning wall categories/classes"
+    },
+    "/wall_posts/{postId}": {
+      "schema": { "$ref": "#/entities/WallPost" },
+      "description": "Posts on the learning wall"
+    },
+    "/exam_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/ExamSession" },
+      "description": "Active exam monitoring sessions"
+    }
+  }
+}

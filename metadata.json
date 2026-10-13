@@ -1,0 +1,7 @@
+{
+  "name": "Lớp học thông minh 4.0",
+  "description": "Nền tảng giáo dục thông minh 4.0",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
