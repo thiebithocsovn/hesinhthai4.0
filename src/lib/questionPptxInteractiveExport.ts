@@ -326,7 +326,7 @@ export async function exportQuestionBankToPptx(bank: QuestionBankForPptx): Promi
   pptx.company = 'Lớp Học Thông Minh 4.0';
   pptx.subject = 'Bài giảng trắc nghiệm tương tác 10 dạng';
   pptx.title = bank.title;
-  pptx.theme = { headFontFace: 'Aptos Display', bodyFontFace: 'Aptos' };
+  pptx.theme = { headFontFace: 'Aptos Display', bodyFontFace: 'Aptos', lang: 'vi-VN' } as typeof pptx.theme & { lang: string };
 
   const coverSlide = 1;
   const { plans } = buildPlans(bank.questions);
