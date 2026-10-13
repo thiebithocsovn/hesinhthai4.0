@@ -660,7 +660,8 @@ export async function exportQuestionBankToPptx(bank: QuestionBankForPptx): Promi
   pptx.theme = {
     headFontFace: 'Aptos Display',
     bodyFontFace: 'Aptos',
-  };
+    lang: 'vi-VN',
+  } as typeof pptx.theme & { lang: string };
 
   const coverSlide = 1;
   const firstQuestionSlide = 3;
