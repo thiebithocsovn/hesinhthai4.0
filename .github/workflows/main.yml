@@ -2,7 +2,7 @@ name: Restore, verify and publish Hesinhthai 4.0
 
 on:
   push:
-    branches: [main, fix/types-firebase-deployment-20261013]
+    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013]
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,7 @@ jobs:
       VITE_ADMIN_EMAIL: ${{ vars.VITE_ADMIN_EMAIL }}
       VITE_FIREBASE_APP_CHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APP_CHECK_SITE_KEY }}
       VITE_FIRESTORE_CACHE_MODE: ${{ vars.VITE_FIRESTORE_CACHE_MODE || 'memory' }}
+      VITE_GOOGLE_AI_MODEL: ${{ vars.VITE_GOOGLE_AI_MODEL || 'gemini-3.1-flash-lite' }}
     steps:
       - name: Checkout target repository
         uses: actions/checkout@v4
@@ -71,6 +72,8 @@ jobs:
       - name: Run learning wall and app checks
         run: |
           npm run test:learning-wall
+          npm run test:wall-assessment
+          npm run test:ai-services
           npm run test:platform
           npm run test:auth-flow
           npm run test:smart-timetable
@@ -89,6 +92,21 @@ jobs:
 
       - name: Validate Firebase data access using Firestore emulator
         run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:learning-wall-rules && LEARNING_WALL_RULES_FILE=firestore.learning-wall.rules npm run test:learning-wall-rules && npm run test:exam-access-rules && EXAM_RULES_FILE=firestore.learning-wall.rules npm run test:exam-access-rules"
+
+      - name: Install Chromium for UI verification
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify teacher AI workflow on desktop and mobile
+        run: npm run test:wall-assessment-ui
+
+      - name: Save UI verification screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wall-ai-ui-results
+          path: wall-ai-ui-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build static website
         run: npm run build:static
