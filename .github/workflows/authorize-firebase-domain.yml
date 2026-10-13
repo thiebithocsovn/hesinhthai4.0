@@ -1,0 +1,86 @@
+name: Authorize website domain in Firebase Authentication
+
+on:
+  push:
+    paths:
+      - '.github/workflows/authorize-firebase-domain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Firebase service account is configured
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [[ -z "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]]; then
+            echo "::error::Cannot update Firebase Authorized domains: FIREBASE_SERVICE_ACCOUNT_JSON is not configured in repository Actions secrets."
+            echo "Firebase credentials are required to edit Authentication settings. The domain has NOT been modified." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Google OAuth library
+        run: python -m pip install --disable-pip-version-check 'google-auth>=2.30,<3'
+
+      - name: Preserve existing domains and authorize GitHub Pages
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+          from google.oauth2 import service_account
+          from google.auth.transport.requests import Request
+
+          project = 'gen-lang-client-0870957273'
+          domain = 'thiebithocsovn.github.io'
+          credentials_data = json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT_JSON'])
+          if credentials_data.get('type') != 'service_account' or credentials_data.get('project_id') != project:
+              raise RuntimeError('Firebase service account must belong to the configured Firebase project.')
+
+          credentials = service_account.Credentials.from_service_account_info(
+              credentials_data, scopes=['https://www.googleapis.com/auth/identitytoolkit']
+          )
+          credentials.refresh(Request())
+          url = f'https://identitytoolkit.googleapis.com/admin/v2/projects/{project}/config'
+
+          def api_request(method, endpoint, payload=None):
+              data = None if payload is None else json.dumps(payload).encode('utf-8')
+              request = urllib.request.Request(
+                  endpoint, data=data, method=method,
+                  headers={
+                      'Authorization': f'Bearer {credentials.token}',
+                      'Content-Type': 'application/json',
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  raise RuntimeError(f'Firebase Authentication API {method} failed with HTTP {error.code}. Check service account IAM permissions firebaseauth.configs.get/update.') from None
+
+          current = api_request('GET', url)
+          existing = current.get('authorizedDomains')
+          if not isinstance(existing, list) or not all(isinstance(v, str) for v in existing):
+              raise RuntimeError('Could not safely read the existing Firebase Authorized domains list.')
+          if domain not in existing:
+              updated = existing + [domain]
+              api_request('PATCH', url + '?updateMask=authorizedDomains', {'authorizedDomains': updated})
+          check = api_request('GET', url)
+          if domain not in check.get('authorizedDomains', []):
+              raise RuntimeError('Firebase Authentication did not confirm the authorized domain after update.')
+          summary = f'Authorized domain confirmed: {domain}. Existing entries preserved. Total domains: {len(check["authorizedDomains"])}.'
+          print(summary)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+              f.write(summary + '\n')
+          PY
