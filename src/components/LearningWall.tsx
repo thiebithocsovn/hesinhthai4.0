@@ -7,6 +7,7 @@ import { canAccessTeacherOwnedRecord, filterTeacherOwnedRecords, isValidTeacherU
 import { WALL_POST_COLORS, assertWallSize, boardPosts, canSubmitToSharedWall, createWallLink, newWallShareId, readWallShareId, safeWallAttachment, safeWallImage, safeWallUrl, sharedWallPost, submissionPostAttachments, wallSubmissionData, validWallLocation, wallBackground, wallErrorMessage as errorMessage, wallLayout, type SharedWall, type WallCategory, type WallPost, type WallSubmission } from '../lib/learningWall';
 import { normalizeWallAppearance, readSharedWallAppearance, sharedWallAppearance, WALL_APPEARANCE_ID, type WallAppearance } from '../lib/learningWallBackground';
 import WallBoardSurface, { type WallBoardActions } from './learning-wall/WallBoardSurface';
+import { prepareWallAssessmentSave, wallWorkRevision } from '../lib/learningWallAssessment';
 
 interface Props { onBack: () => void; currentUser?: Teacher | 'admin' | null; onLogin?: () => void }
 function useOnline() {
@@ -202,7 +203,37 @@ function PrivateLearningWall({ onBack, currentUser, onLogin }: Props) {
         const next = [...comments, { id: crypto.randomUUID(), text: text.slice(0, 2000), authorName: displayName, createdAt: Date.now() }]; assertWallSize({ ...snapshot.data(), comments: next }); transaction.update(ref, { comments: next });
       });
     },
-    async grade(post, score) { assertOwner(post); if (!Number.isFinite(score) || score < 0 || score > 10) throw new Error('Điểm phải nằm trong khoảng 0–10.'); await updateDoc(doc(db, 'wall_posts', post.id), { score }); },
+    async grade(post, score) {
+      assertOwner(post);
+      if (!Number.isFinite(score) || score < 0 || score > 10) throw new Error('Điểm phải nằm trong khoảng 0–10.');
+      await runTransaction(db, async transaction => {
+        const ref = doc(db, 'wall_posts', post.id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error('Bài đăng đã bị xóa.');
+        assertOwner({ ...snapshot.data(), id: post.id } as WallPost);
+        const assessment = snapshot.data().aiAssessment;
+        transaction.update(ref, { score, ...(assessment?.review.status === 'approved' ? {
+          aiAssessment: { ...assessment, review: { ...assessment.review, score, teacherUid: ownerUid, teacherName: displayName, reviewedAt: Date.now() } },
+        } : {}) });
+      });
+    },
+    async saveAssessment(post, input, expected, approve = false) {
+      assertOwner(post);
+      if (!board || !currentBoardPosts.some(item => item.id === post.id)) throw new Error('Bài làm không thuộc bảng đang mở.');
+      return runTransaction(db, async transaction => {
+        const ref = doc(db, 'wall_posts', post.id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error('Bài đăng đã bị xóa.');
+        const latest = { ...snapshot.data(), id: post.id } as WallPost;
+        assertOwner(latest);
+        if (latest.categoryId !== post.categoryId || latest.boardId !== post.boardId) throw new Error('Bài đã chuyển bảng hoặc cột. Hãy mở lại bài.');
+        if (await wallWorkRevision(latest) !== input.workRevision) throw new Error('Nội dung bài làm đã thay đổi. Hãy mở lại và phân tích bài mới trước khi lưu.');
+        const { next, patch } = prepareWallAssessmentSave(latest, input, expected, ownerUid, displayName, approve);
+        assertOwner(latest);
+        transaction.update(ref, patch);
+        return next;
+      });
+    },
     async share(target, permission) {
       assertOwner(target); if (target.wallArchived || target.wallDeleted) throw new Error('Hãy khôi phục bảng trước khi chia sẻ.');
       const token = target.wallShareId || newWallShareId(); const ref = doc(db, 'shared_learning_walls', token);
@@ -285,7 +316,7 @@ function SharedLearningWall({ token, onBack }: { token: string; onBack: () => vo
   }, [token, shared?.enabled]);
   const unavailable = async () => { throw new Error('Chỉ giáo viên quản lý bảng mới được thực hiện thao tác này.'); };
   const actions: WallBoardActions = {
-    emptyTrash: unavailable, createBoard: unavailable, updateBoard: unavailable, createSection: unavailable, renameSection: unavailable, removePost: unavailable, react: unavailable, comment: unavailable, grade: unavailable, share: unavailable, revoke: unavailable, review: unavailable,
+    emptyTrash: unavailable, createBoard: unavailable, updateBoard: unavailable, createSection: unavailable, renameSection: unavailable, removePost: unavailable, react: unavailable, comment: unavailable, grade: unavailable, saveAssessment: unavailable, share: unavailable, revoke: unavailable, review: unavailable,
     async savePost(target, input) {
       if (!online) throw new Error('Hãy kết nối lại mạng trước khi gửi bài.');
       if (!canSubmitToSharedWall(shared)) throw new Error('Giáo viên chưa mở nhận bài.');
