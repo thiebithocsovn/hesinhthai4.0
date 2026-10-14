@@ -9,6 +9,8 @@ const values = (input: string | undefined) => new Set((input || '').split(',').m
 const app = createWallApiApp({
   apiKey: process.env.OPENAI_API_KEY?.trim() || '',
   model: process.env.OPENAI_MODEL?.trim() || 'gpt-5.4-mini',
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY?.trim() || '',
+  anthropicModel: process.env.ANTHROPIC_MODEL?.trim() || 'claude-sonnet-5-5',
   teacherUids: values(process.env.OPENAI_TEACHER_UIDS),
   teacherEmails: values(process.env.OPENAI_TEACHER_EMAILS?.toLowerCase()),
   origins: values(process.env.ALLOWED_ORIGINS || 'https://thiebithocsovn.github.io'),

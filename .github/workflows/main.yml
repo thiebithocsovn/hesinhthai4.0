@@ -2,7 +2,7 @@ name: Restore, verify and publish Hesinhthai 4.0
 
 on:
   push:
-    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013, feat/wall-inline-chat-20261014, feat/wall-openai-20261014, feat/wall-cloud-run-20261014]
+    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013, feat/wall-inline-chat-20261014, feat/wall-openai-20261014, feat/wall-cloud-run-20261014, feat/wall-ai-providers-20261014]
   workflow_dispatch:
 
 permissions:
@@ -22,6 +22,7 @@ jobs:
       VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
       VITE_WALL_AI_PROVIDER: ${{ vars.VITE_WALL_AI_PROVIDER || 'openai' }}
       VITE_WALL_OPENAI_API_URL: ${{ vars.VITE_WALL_OPENAI_API_URL }}
+      VITE_WALL_ANTHROPIC_API_URL: ${{ vars.VITE_WALL_ANTHROPIC_API_URL }}
       VITE_ADMIN_EMAIL: ${{ vars.VITE_ADMIN_EMAIL }}
       VITE_FIREBASE_APP_CHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APP_CHECK_SITE_KEY }}
       VITE_FIRESTORE_CACHE_MODE: ${{ vars.VITE_FIRESTORE_CACHE_MODE || 'memory' }}
@@ -77,6 +78,7 @@ jobs:
           npm run test:wall-assessment
           npm run test:wall-chat
           npm run test:wall-openai
+          npm run test:wall-providers
           npm run test:wall-api
           npm run test:ai-services
           npm run test:platform

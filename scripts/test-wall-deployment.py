@@ -64,11 +64,21 @@ with tempfile.TemporaryDirectory() as directory:
     output = io.StringIO()
     with patch.object(deploy.shutil, "which", return_value="/mock/gcloud"), patch.object(deploy, "command", side_effect=simulated_cloud), patch.object(deploy, "verify_http") as health:
         with redirect_stdout(output): deploy.apply(args)
-        health.assert_called_once_with("https://test-service-123.a.run.app")
+        health.assert_called_once_with("https://test-service-123.a.run.app", ["openai"])
     assert fake_key not in output.getvalue()
     assert secret_input_checked == [True]
     assert any("--role=roles/secretmanager.secretAccessor" in call and call[:2] == ("secrets", "add-iam-policy-binding") for call in cloud_calls)
     assert not any("--role=roles/secretmanager.secretAccessor" in call and call[:2] == ("projects", "add-iam-policy-binding") for call in cloud_calls)
+
+    assert deploy.plan(deploy.arguments(["--teacher-email", "teacher@example.edu", "--provider", "anthropic"]))["secrets"] == ["learning-wall-anthropic-key"]
+    other_key = "sk-ant-api-test-fixture-not-a-real-credential"
+    env.write_text("ANTHROPIC_API_KEY=" + other_key + "\n")
+    assert deploy.read_key(env, "ANTHROPIC_API_KEY") == other_key.encode()
+    try:
+        deploy.read_key(env)
+        raise AssertionError("Claude credential used as an OpenAI credential")
+    except RuntimeError:
+        pass
 
     # Real gitignore matching verifies that both upload filters exclude credential fixtures.
     subprocess.run(["git", "init", "-q", str(root)], check=True)

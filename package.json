@@ -50,6 +50,7 @@
     "test:wall-assessment": "node --import tsx scripts/test-wall-assessment.ts",
     "test:wall-chat": "node --import tsx scripts/test-wall-chat.ts",
     "test:wall-openai": "node --import tsx scripts/test-wall-openai.ts",
+    "test:wall-providers": "node --import tsx scripts/test-wall-providers.ts",
     "test:wall-assessment-ui": "node scripts/test-wall-assessment-ui.cjs",
     "test:learning-wall-rules": "node scripts/test-learning-wall-rules.mjs",
     "deploy:learning-wall": "npx --yes firebase-tools@^15.17.0 deploy --config firebase.learning-wall-production.json --only firestore:rules --project gen-lang-client-0870957273 --non-interactive",

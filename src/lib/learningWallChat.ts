@@ -7,6 +7,7 @@ export interface WallChatMessage {
   text: string;
   feedback: string;
   createdAt: number;
+  model?: string;
 }
 export interface WallChat {
   version: 1;
@@ -24,7 +25,7 @@ export interface WallChatReply { text: string; feedback: string; model: string }
 export function wallChatVersion(chat: WallChat | null): string {
   return JSON.stringify(chat ? [chat.version, chat.id, chat.workRevision, chat.contextKey,
     [chat.context.subject, chat.context.grade, chat.context.task, chat.context.criteria, chat.context.transcript], chat.includeMedia, chat.model, chat.updatedAt,
-    chat.messages.map(message => [message.id, message.role, message.text, message.feedback, message.createdAt])] : null);
+    chat.messages.map(message => [message.id, message.role, message.text, message.feedback, message.createdAt, message.model || ''])] : null);
 }
 export async function wallChatContextKey(context: WallAssessmentContext, includeMedia: boolean): Promise<string> {
   const data = new TextEncoder().encode(JSON.stringify([context.subject.trim(), context.grade.trim(), context.task.trim(), context.criteria.trim(), context.transcript.trim(), includeMedia]));
@@ -60,7 +61,7 @@ export function appendWallChatExchange(chat: WallChat | null, request: WallAiReq
   return { version: 1, id: chat?.id || crypto.randomUUID(), workRevision: request.workRevision, contextKey, context: { ...request.context }, includeMedia, model: reply.model,
     updatedAt: now, messages: [...(chat?.messages || []),
       { id: crypto.randomUUID(), role: 'user', text: message.trim(), feedback: '', createdAt: now },
-      { id: crypto.randomUUID(), role: 'model', text: reply.text, feedback: reply.feedback, createdAt: now }] };
+      { id: crypto.randomUUID(), role: 'model', text: reply.text, feedback: reply.feedback, createdAt: now, model: reply.model }] };
 }
 export function prepareWallChatSave(post: WallPost, chat: WallChat, expected: WallChat | null) {
   if (wallChatVersion(post.aiChat || null) !== wallChatVersion(expected)) throw new Error('Cuộc chat đã cập nhật ở cửa sổ khác. Hãy mở lại bài để tránh ghi đè.');
@@ -77,7 +78,7 @@ export function prepareWallChatSave(post: WallPost, chat: WallChat, expected: Wa
     if (!message.id || ids.has(message.id) || message.role !== (index % 2 ? 'model' : 'user') ||
       typeof message.text !== 'string' || !message.text.trim() || message.text.length > (message.role === 'user' ? 3000 : 6000) ||
       typeof message.feedback !== 'string' || message.feedback.length > 2000 || (message.role === 'user' && message.feedback !== '') ||
-      !Number.isFinite(message.createdAt)) throw new Error('Tin nhắn chat không hợp lệ.');
+      !Number.isFinite(message.createdAt) || (message.model !== undefined && (message.role !== 'model' || typeof message.model !== 'string' || message.model.length > 120))) throw new Error('Tin nhắn chat không hợp lệ.');
     ids.add(message.id);
   }
   const history = [...(post.aiChatHistory || [])];

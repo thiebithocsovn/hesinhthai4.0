@@ -7,11 +7,14 @@ import type { WallPost } from '../../src/lib/learningWall';
 const initial: WallPost = { id: 'work-one', authorId: 'teacher-one', teacherId: 'teacher-one', boardId: 'class-8a', categoryId: 'class-8a', studentName: 'Học sinh thử nghiệm', title: 'Sơ đồ an toàn số', text: 'Lừa đảo -> chia sẻ mật khẩu để nhận thưởng.', color: '#fff', createdAt: Date.now() };
 function Harness() {
   const [post, setPost] = useState<WallPost>(initial);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const extra = { ...initial, id: 'work-two', title: 'Bài làm khác', text: 'Đây là bài chưa trao đổi với AI.', studentName: 'Học sinh khác' };
   const persist = (next: WallPost) => { setPost(next); (window as any).saved = next; };
   const guest = new URLSearchParams(location.search).has('guest');
   const no = async () => {};
   return <WallBoardSurface categories={[{ id: 'class-8a', title: 'Lớp 8A', authorId: 'teacher-one', wallLayout: 'grid', wallDescription: 'Phân biệt các nguy cơ truy cập website không phù hợp.' }]} posts={[post, extra]} boardId="class-8a" onOpen={no} onBack={no} displayName="Giáo viên thử nghiệm" ownerUid="teacher-one" guest={guest}
+    googleLogin={{ busy: googleBusy, pending: googleBusy, message: googleBusy ? 'Kiểm thử: đang chờ chọn tài khoản Google.' : '',
+      onLogin: () => { (window as any).googleAttempts = ((window as any).googleAttempts || 0) + 1; setGoogleBusy(true); }, onCancel: () => setGoogleBusy(false) }}
     actions={{ emptyTrash:no,createBoard:no,updateBoard:no,createSection:no,renameSection:no,savePost:no,removePost:no,react:no,grade:no,share:no,revoke:no,review:no,
       comment: async (_target, text) => persist({ ...post, comments: [...(post.comments || []), { id: crypto.randomUUID(), text, authorName: 'Giáo viên thử nghiệm' }] }),
       saveAiChat: async (_target, next, expected) => {

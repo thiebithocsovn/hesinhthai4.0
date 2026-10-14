@@ -126,6 +126,7 @@ interface AdminDashboardProps {
   setTeachers: React.Dispatch<React.SetStateAction<Teacher[]>>;
   currentUser: Teacher | 'admin' | null;
   initialApplication?: 'plicker' | null;
+  googleLogin?: import('./learning-wall/WallAiProviderPicker').WallGoogleLogin;
 }
 
 interface DashboardStudent {
@@ -149,7 +150,7 @@ interface DashboardCategory {
   authorId?: string;
 }
 
-export default function AdminDashboard({ onLogout, teachers, setTeachers, currentUser, initialApplication }: AdminDashboardProps) {
+export default function AdminDashboard({ onLogout, teachers, setTeachers, currentUser, initialApplication, googleLogin }: AdminDashboardProps) {
   const accessScope = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
   const currentUserId = accessScope.ownerUid;
   const currentUserName = currentUser === 'admin' ? 'Admin' : currentUser?.name;
@@ -999,7 +1000,7 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
             </div>
           </>
         ) : activeLibraryView === 'learning-wall' ? (
-          <div className="flex-1 min-h-0 overflow-auto"><LearningWall key={accessScope.ownerUid} currentUser={currentUser} onBack={() => setActiveLibraryView('main')} /></div>
+          <div className="flex-1 min-h-0 overflow-auto"><LearningWall key={accessScope.ownerUid} currentUser={currentUser} googleLogin={googleLogin} onBack={() => setActiveLibraryView('main')} /></div>
         ) : activeLibraryView === 'gesture-class' ? (
           <GestureClass onBack={() => setActiveLibraryView('main')} />
         ) : activeLibraryView === 'create-exam' ? (

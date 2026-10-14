@@ -3,8 +3,8 @@ import { app, auth } from '../firebase';
 import { WALL_ANALYSIS_INSTRUCTION, wallAnalysisPrompt, parseWallAnalysis, wallPracticePrompt, parseWallPractice,
   type WallAiRequest, type WallAssessment } from './learningWallAssessment';
 import { wallChatPrompt, parseWallChatReply, type WallChatMessage } from './learningWallChat';
-import { requestWallOpenAi, type WallOpenAiKind } from './wallOpenAiClient';
-import { wallAiProvider } from './wallAiProvider';
+import { requestWallOpenAi, requestWallClaude, type WallOpenAiKind } from './wallOpenAiClient';
+import { isWallAiProvider, wallAiProvider, type WallAiProvider } from './wallAiProvider';
 
 const modelName = import.meta.env.VITE_GOOGLE_AI_MODEL?.trim() || 'gemini-3.1-flash-lite';
 
@@ -35,31 +35,33 @@ async function generateGemini(prompt: string, media: WallAiRequest['media'] = []
   } finally { if (timer) clearTimeout(timer); }
 }
 
-async function generate(kind: WallOpenAiKind | 'connection', requestId: string, prompt: string, media: WallAiRequest['media'] = []) {
-  if (wallAiProvider === 'firebase-gemini') return { text: await generateGemini(prompt, media), model: modelName, source: 'firebase-gemini' as const };
-  return requestWallOpenAi({
-    server: import.meta.env?.VITE_WALL_OPENAI_API_URL || '',
+async function generate(provider: WallAiProvider, kind: WallOpenAiKind | 'connection', requestId: string, prompt: string, media: WallAiRequest['media'] = []) {
+  if (!isWallAiProvider(provider)) throw new Error('Hãy chọn ChatGPT, Gemini hoặc Claude trước khi gửi.');
+  if (provider === 'firebase-gemini') return { text: await generateGemini(prompt, media), model: modelName, source: 'firebase-gemini' as const };
+  const request = provider === 'anthropic' ? requestWallClaude : requestWallOpenAi;
+  return request({
+    server: provider === 'anthropic' ? (import.meta.env?.VITE_WALL_ANTHROPIC_API_URL || import.meta.env?.VITE_WALL_OPENAI_API_URL || '') : (import.meta.env?.VITE_WALL_OPENAI_API_URL || ''),
     pageUrl: window.location.href,
     getUser: () => auth.currentUser,
   }, { kind, requestId, prompt, media });
 }
 
-export async function analyzeWallWork(request: WallAiRequest) {
-  const result = await generate('analysis', request.id, wallAnalysisPrompt(request), request.media);
+export async function analyzeWallWork(request: WallAiRequest, provider = wallAiProvider) {
+  const result = await generate(provider, 'analysis', request.id, wallAnalysisPrompt(request), request.media);
   return { analysis: parseWallAnalysis(result.text, request.id), model: result.model, source: result.source };
 }
-export async function generateWallPractice(assessment: WallAssessment, requestId: string) {
-  const result = await generate('practice', requestId, wallPracticePrompt(assessment, requestId));
+export async function generateWallPractice(assessment: WallAssessment, requestId: string, provider = wallAiProvider) {
+  const result = await generate(provider, 'practice', requestId, wallPracticePrompt(assessment, requestId));
   return parseWallPractice(result.text, requestId, assessment, result.source, result.model);
 }
 
-export async function chatAboutWallWork(request: WallAiRequest, message: string, history: WallChatMessage[]) {
-  const result = await generate('chat', request.id, wallChatPrompt(request, message, history), request.media);
+export async function chatAboutWallWork(request: WallAiRequest, message: string, history: WallChatMessage[], provider = wallAiProvider) {
+  const result = await generate(provider, 'chat', request.id, wallChatPrompt(request, message, history), request.media);
   return parseWallChatReply(result.text, request.id, result.model);
 }
 
-export async function checkWallAiConnection(): Promise<string> {
-  const result = await generate('connection', '', 'Đây là kiểm tra kết nối API, không có bài làm hoặc dữ liệu học sinh. Chỉ trả JSON {"status":"ok"}.');
+export async function checkWallAiConnection(provider = wallAiProvider): Promise<string> {
+  const result = await generate(provider, 'connection', '', 'Đây là kiểm tra kết nối API, không có bài làm hoặc dữ liệu học sinh. Chỉ trả JSON {"status":"ok"}.');
   let status: unknown;
   try { status = JSON.parse(result.text.trim()); } catch { throw new Error('AI đã phản hồi nhưng kết quả kiểm tra kết nối chưa hợp lệ. Hãy thử lại.'); }
   if ((status as { status?: string })?.status !== 'ok') throw new Error('AI đã phản hồi nhưng chưa xác nhận kết nối thành công.');

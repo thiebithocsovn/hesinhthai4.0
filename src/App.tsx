@@ -257,7 +257,7 @@ export default function App() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = async (destination: 'admin' | 'learning-wall' = 'admin') => {
     if (authBusy) return;
     const controller = new AbortController();
     googleAbort.current = controller;
@@ -275,7 +275,7 @@ export default function App() {
       const verifiedUser = await resolveSignedInUser(credential.user);
       setCurrentUser(verifiedUser);
       setAuthMessage('');
-      setCurrentView('admin');
+      setCurrentView(destination);
     } catch (error) {
       if (signedInUid && auth.currentUser?.uid === signedInUid) await signOut(auth).catch(() => undefined);
       setAuthMessage(describeAuthError(error));
@@ -284,6 +284,12 @@ export default function App() {
       setGooglePopupPending(false);
       setAuthBusy(false);
     }
+  };
+
+  const wallGoogleLogin = {
+    onLogin: () => { void handleGoogleSignIn(currentView === 'admin' ? 'admin' : 'learning-wall'); },
+    busy: authBusy, pending: googlePopupPending, message: authMessage,
+    onCancel: () => googleAbort.current?.abort(),
   };
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -357,7 +363,7 @@ export default function App() {
       setTeachers([]);
       synchronizeTeacherBrowserSession(sessionStorage, null);
       setCurrentView('landing');
-    }} teachers={teachers} setTeachers={setTeachers} currentUser={currentUser} initialApplication={requestedApplication} />;
+    }} teachers={teachers} setTeachers={setTeachers} currentUser={currentUser} initialApplication={requestedApplication} googleLogin={wallGoogleLogin} />;
   }
 
   if (currentView === 'admin') {
@@ -417,7 +423,7 @@ export default function App() {
   }
 
   if (currentView === 'learning-wall') {
-    return <LearningWall currentUser={currentUser} onBack={() => setCurrentView('landing')} onLogin={() => navigateToAuth('login')} />;
+    return <LearningWall currentUser={currentUser} onBack={() => setCurrentView('landing')} onLogin={() => navigateToAuth('login')} googleLogin={wallGoogleLogin} />;
   }
 
   if (currentView === 'gesture-class') {
@@ -519,7 +525,7 @@ export default function App() {
                 <button type="submit" disabled={authBusy} className="w-full bg-[#3b82f6] text-white font-medium py-2.5 rounded-lg hover:bg-blue-600 transition-colors mt-2 disabled:cursor-not-allowed disabled:opacity-60">
                   {authBusy ? 'Đang xác thực...' : 'Đăng nhập'}
                 </button>
-                <button type="button" disabled={authBusy} onClick={handleGoogleSignIn} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                <button type="button" disabled={authBusy} onClick={() => { void handleGoogleSignIn(); }} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
                   Đăng nhập bằng Google
                 </button>
                 {googlePopupPending && <button type="button" onClick={() => googleAbort.current?.abort()} className="w-full rounded-lg px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-100">Hủy đăng nhập Google</button>}
