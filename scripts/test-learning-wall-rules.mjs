@@ -45,6 +45,10 @@ try {
   await denied(getDoc(doc(guest, 'wall_posts/private')));
   await denied(updateDoc(doc(second, 'wall_posts/private'), { aiAssessment: privateAssessment }));
   await denied(updateDoc(doc(guest, 'wall_posts/private'), { aiAssessment: privateAssessment }));
+  const privateChat = { version: 1, messages: [{ role: 'model', text: 'Private discussion about this work' }] };
+  await allowed(updateDoc(doc(first, 'wall_posts/private'), { aiChat: privateChat, aiChatHistory: [privateChat] }));
+  await denied(updateDoc(doc(second, 'wall_posts/private'), { aiChat: privateChat }));
+  await denied(updateDoc(doc(guest, 'wall_posts/private'), { aiChat: privateChat }));
   await allowed(getDoc(doc(admin, 'wall_posts/private')));
   await denied(getDocs(collection(guest, 'shared_learning_walls')));
   await denied(getDocs(collection(second, 'shared_learning_walls')));
@@ -77,6 +81,8 @@ try {
   await denied(setDoc(doc(first, `${wallPath}/posts/leak`), { ...post, score: 7 }));
   await denied(setDoc(doc(first, `${wallPath}/posts/ai-leak`), { ...post, aiAssessment: privateAssessment }));
   await denied(setDoc(doc(first, `${wallPath}/posts/ai-history-leak`), { ...post, aiAssessmentHistory: [privateAssessment] }));
+  await denied(setDoc(doc(first, `${wallPath}/posts/chat-leak`), { ...post, aiChat: privateChat }));
+  await denied(setDoc(doc(first, `${wallPath}/posts/chat-history-leak`), { ...post, aiChatHistory: [privateChat] }));
   await denied(setDoc(doc(first, `${wallPath}/posts/leak`), { ...post, comments: [] }));
   await allowed(setDoc(doc(guest, `${wallPath}/submissions/student1`), submission));
   await allowed(setDoc(doc(anotherGuest, `${wallPath}/submissions/another-student`), { ...submission, studentName: 'Bình', categoryId: 'section-one' }));

@@ -94,7 +94,7 @@ Máy chủ phát triển chạy tại `http://localhost:3000`. Tư vấn học �
 
 ## Google Gemini, Firebase AI Logic và GitHub Pages
 
-GitHub Pages chỉ triển khai giao diện tĩnh. Để dùng AI đám mây an toàn, ứng dụng gọi **Google Gemini 3.1 Flash-Lite** thông qua Firebase AI Logic; dịch vụ trung gian của Firebase giữ khóa Gemini phía máy chủ thay vì nhúng khóa vào trình duyệt.
+GitHub Pages chỉ triển khai giao diện tĩnh. Để dùng AI đám mây an toàn, ứng dụng gọi **Google Gemini 3.1 Flash-Lite** thông qua Firebase AI Logic; Firebase quản lý việc ủy quyền tới Gemini, không cần nhúng khóa Gemini bí mật vào trình duyệt.
 
 - **Tương tác thẻ Plicker:** thuật toán nhận diện thẻ xử lý khung hình ngay trên thiết bị; chỉ sử dụng Firebase để lưu lớp, câu hỏi và đồng bộ buổi học. Không cần máy chủ AI để quét thẻ.
 - **Tư vấn học đường AI:** ưu tiên máy chủ riêng nếu quản trị viên chủ động cấu hình; mặc định sử dụng Google Gemini qua Firebase AI Logic; khi chưa kích hoạt Firebase AI, mất mạng hoặc hết hạn mức, tự động dùng AI trong trình duyệt nếu khả dụng rồi chuyển sang bộ tư vấn học đường tích hợp.
@@ -104,7 +104,7 @@ GitHub Pages chỉ triển khai giao diện tĩnh. Để dùng AI đám mây an 
 
 1. Mở Firebase Console → **AI Services → AI Logic → Get started**.
 2. Chọn **Gemini Developer API** để có thể sử dụng hạn mức miễn phí phù hợp.
-3. Đăng ký website `https://trungtuyen.github.io` trong **App Check** bằng **reCAPTCHA Enterprise**.
+3. Đăng ký ứng dụng web của dự án `gen-lang-client-0870957273` trong **App Check** bằng **reCAPTCHA Enterprise**, cho phép domain `thiebithocsovn.github.io`. Giữ App Check được thực thi cho AI Logic; không tắt bảo vệ để bỏ qua lỗi kết nối.
 4. Đặt repository variable `VITE_FIREBASE_APP_CHECK_SITE_KEY` bằng site key công khai của reCAPTCHA Enterprise. Không đặt secret key tại đây.
 5. Nếu cần đổi model, đặt repository variable `VITE_GOOGLE_AI_MODEL`; mặc định là `gemini-3.1-flash-lite`.
 6. Chạy lại workflow GitHub Pages. Khi Firebase AI Logic chưa được kích hoạt, tư vấn tích hợp trên thiết bị vẫn tiếp tục hoạt động.
@@ -146,23 +146,26 @@ Máy chủ Node.js riêng vẫn là lựa chọn bổ sung cho OMR hoặc hệ t
 
 ## AI nhận xét bài làm trên Tường học tập
 
-Mở một bảng, nhấn **Phân tích AI** dưới bài đăng (hoặc mở phần nhận xét của bài). Quy trình có bốn bước:
+Mở phần nhận xét của bài đăng hoặc nhấn **Phân tích AI**. Khung **Chat AI về bài làm này** nằm ngay trong phần nhận xét. Chat, đánh giá, duyệt, luyện tập và tiến bộ đều thực hiện trong cửa sổ hiện tại.
 
-1. **Phân tích:** nhập môn, lớp, đề bài và tiêu chí. AI đối chiếu chữ, TXT/CSV, ảnh và PDF tải trực tiếp; tài liệu Office và liên kết ngoài cần dán nội dung hoặc tải vào AI cá nhân. AI chỉ nêu lỗi có bằng chứng, giả thuyết nguyên nhân, câu hỏi kiểm chứng và hướng khắc phục. Phần chưa đọc được được nêu rõ.
-2. **Giáo viên duyệt:** xác nhận hoặc loại bỏ từng nhận định. Lỗi được xác nhận cần nguyên nhân do giáo viên kết luận và căn cứ kiểm chứng/câu trả lời học sinh. Giáo viên sửa nhận xét và tự quyết định điểm 0–10. Duyệt lưu nhận xét và điểm trong cùng một giao dịch; AI không tự chấm hoặc tự duyệt.
-3. **Luyện tập:** AI tạo bài mới cho từng lỗi đã xác nhận. Giáo viên kiểm tra, sửa đề/gợi ý/đáp án/tiêu chí rồi **Duyệt và giao luyện tập**. Tải hoặc sao chép phiếu để gửi riêng cho học sinh; phiếu không có đáp án mẫu hoặc nhận định riêng. Học sinh nộp lại qua tường hoặc giáo viên; giáo viên xem và nhập bài làm/căn cứ ở bước Tiến bộ.
-4. **Tiến bộ:** lưu từng lượt luyện tập với kết quả **Còn mắc lỗi / Đang cải thiện / Đã khắc phục** do giáo viên chọn. “Đã khắc phục” yêu cầu lần đánh giá mới nhất của mọi bài luyện tập cho lỗi đó đều đạt. Nút **Tiến bộ học sinh** ở thanh công cụ bảng tổng hợp theo kỹ năng, có CSV. Mã học sinh do giáo viên xác minh nối nhiều bài trong cùng bảng và chủ sở hữu; không tự gộp học sinh chỉ vì trùng tên tự khai.
+1. **Chat và đánh giá:** hỏi AI về lỗi, bằng chứng, câu hỏi kiểm chứng hoặc cách nhận xét. Chat gửi nội dung của đúng bài, đề và tiêu chí cùng 12 tin nhắn gần nhất. **Đưa vào ô nhận xét** chỉ điền bản soạn; giáo viên sửa rồi **Gửi nhận xét**. **AI đánh giá bài làm tại đây** tạo phân tích có cấu trúc để duyệt. Có thể bổ sung môn, lớp, đề, tiêu chí trong mục **Đề bài và tiêu chí dùng cho AI**. Chữ, TXT/CSV, ảnh/PDF tải trực tiếp được đọc; tài liệu Office và liên kết ngoài cần dán nội dung bổ sung.
+2. **Giáo viên duyệt:** xác nhận hoặc loại bỏ từng lỗi. Lỗi được xác nhận cần nguyên nhân do giáo viên kết luận và căn cứ/câu trả lời học sinh. Giáo viên sửa nhận xét và tự quyết định điểm 0–10. Duyệt lưu nhận xét và điểm trong cùng một giao dịch; AI không tự chấm hoặc tự duyệt.
+3. **Luyện tập:** AI tạo bài cho từng lỗi đã xác nhận ngay tại đây. Giáo viên sửa đề/gợi ý/đáp án/tiêu chí rồi **Duyệt và giao luyện tập**. Tải hoặc sao chép phiếu để gửi riêng; phiếu không có đáp án mẫu hoặc nhận định riêng. Học sinh nộp lại qua tường hoặc giáo viên; giáo viên nhập bài làm và căn cứ ở bước Tiến bộ.
+4. **Tiến bộ:** lưu từng lượt với kết quả **Còn mắc lỗi / Đang cải thiện / Đã khắc phục** do giáo viên chọn. “Đã khắc phục” yêu cầu lần đánh giá mới nhất của mọi bài luyện tập cho lỗi đó đều đạt. **Tiến bộ học sinh** tổng hợp theo kỹ năng, có CSV. Mã học sinh do giáo viên xác minh nối nhiều bài trong cùng bảng và chủ sở hữu; tên tự khai trùng nhau không tự gộp hồ sơ.
 
-Hai cách dùng AI:
+AI dùng **Gemini Developer API qua Firebase AI Logic**, model `VITE_GOOGLE_AI_MODEL` (mặc định `gemini-3.1-flash-lite`). Không mở trang ChatGPT/Claude/Gemini, sao chép prompt hoặc nhập JSON trong phần nhận xét. Gói thuê bao AI cá nhân không tự trở thành quyền gọi API cho website này.
 
-- **Gemini tự động · Firebase:** dùng Firebase AI Logic hiện có và `VITE_GOOGLE_AI_MODEL` (mặc định `gemini-3.1-flash-lite`). Dự án phải bật Firebase AI Logic cho Gemini Developer API và có cấu hình App Check phù hợp. Nếu chưa sẵn sàng, giao diện báo lỗi và cho chọn AI cá nhân; không tạo phân tích giả hoặc tự gán nguyên nhân khi không có phản hồi.
-- **ChatGPT / Claude / Gemini đang dùng · Sao chép / nhập:** sao chép yêu cầu, mở dịch vụ và dùng phiên đăng nhập hiện có, tải kèm ảnh/PDF nếu cần rồi nhập JSON trả về. Không cần nhập mật khẩu, cookie hay khóa API vào website. Mỗi yêu cầu có mã riêng; phản hồi sai bài hoặc sai cấu trúc bị từ chối. Đây là trao đổi thủ công với tài khoản AI cá nhân, chưa phải kết nối OAuth/gọi tự động bằng gói thuê bao. [OpenAI website sign-in](https://developers.openai.com/siwc/website) cần client đã đăng ký và backend; [ChatGPT plan usage](https://developers.openai.com/cookbook/articles/sign-in-with-chatgpt) có quy trình runtime và quyền cấp riêng. Website GitHub Pages này chưa được cấu hình các điều kiện đó.
+Thiết lập dịch vụ cho dự án hiện có theo [hướng dẫn Firebase](https://firebase.google.com/docs/ai-logic/get-started):
 
-`wall_posts.aiAssessment` và `aiAssessmentHistory` dùng quyền riêng hiện có của bài đăng; không có collection công khai mới, không cần thay rules để lưu AI. Bản chiếu `sharedWallPost` bỏ toàn bộ phân tích, điểm, nhận xét, đáp án, tiến bộ và lịch sử. Kiểm tra nội dung bài làm/ảnh trước khi gửi AI vì chính bài có thể chứa thông tin cá nhân. Nội dung và tệp bài làm được coi là dữ liệu, không phải chỉ dẫn hệ thống. React hiển thị phản hồi dưới dạng chữ, không thực thi HTML từ AI.
+- Mở **AI Services → AI Logic → Get started**, chọn **Gemini Developer API**. Quy trình bật Firebase AI Logic API (`firebasevertexai.googleapis.com`), Gemini Developer API và tạo tài khoản dịch vụ do Google quản lý cho việc ủy quyền.
+- Đăng ký App Check bằng reCAPTCHA Enterprise cho domain `thiebithocsovn.github.io`; đặt site key công khai trong repository variable `VITE_FIREBASE_APP_CHECK_SITE_KEY`, rồi chạy lại workflow GitHub Pages. Giữ App Check được thực thi. Không đặt secret Gemini hoặc secret reCAPTCHA trong biến frontend.
+- Trong phần nhận xét, bấm **Kiểm tra kết nối AI**. Chỉ báo API sẵn sàng sau khi nhận phản hồi thật; yêu cầu kiểm tra không gửi dữ liệu học sinh. Khi dịch vụ chưa bật, hết hạn mức, mất mạng hoặc có lỗi cấu hình, hiển thị lỗi và giữ nội dung đang soạn, không tạo nhận xét giả.
 
-Giao dịch kiểm tra lại chủ sở hữu, phiên đăng nhập, phiên bản nội dung SHA-256 và bản phân tích hiện có trước khi lưu, tránh áp dụng nhận xét lên bài đã sửa hoặc ghi đè cửa sổ khác. Phân tích lại hoặc chỉnh nhận xét thành phiên bản mới giữ bản đã duyệt và bài luyện tập trong lịch sử (tối đa 10 phiên bản, 100 lượt/phiếu và giới hạn kích thước tài liệu Firestore).
+`wall_posts.aiAssessment`, `aiAssessmentHistory`, `aiChat` và `aiChatHistory` dùng quyền riêng hiện có của bài đăng; không thêm collection công khai hoặc nới rules. `sharedWallPost` loại toàn bộ chat, phân tích, điểm, nhận xét, đáp án, tiến bộ và lịch sử. Nội dung/ảnh có thể tự chứa thông tin cá nhân, cần kiểm tra trước khi gửi AI. Bài làm và lịch sử được coi là dữ liệu, không phải chỉ dẫn hệ thống. React hiển thị phản hồi dưới dạng chữ, không thực thi HTML từ AI.
 
-Kiểm tra mô-đun: `npm run test:wall-assessment`; quyền riêng được kiểm tra cùng `npm run test:learning-wall-rules`. Kiểm tra trình duyệt: `npx playwright install --with-deps chromium` rồi `npm run test:wall-assessment-ui` (Vite cổng 3199). Fixture chỉ chứa dữ liệu thử, không dùng tài khoản hoặc dữ liệu Firestore thật; ảnh kiểm tra máy tính/điện thoại nằm trong artifact `wall-ai-ui-results` của GitHub Actions. Các kiểm tra này không thay thế kiểm thử một phản hồi Gemini thật sau khi cấu hình Firebase AI Logic.
+Lưu chat kiểm tra lại chủ sở hữu, bảng, phiên đăng nhập, SHA-256 của bài và bản chat hiện có. Đổi bài hoặc tiêu chí cần bắt đầu cuộc trao đổi mới. Mỗi cuộc có tối đa 20 lượt hỏi/đáp, lưu tối đa 5 cuộc trước; không tự xóa lịch sử. Nếu lưu thất bại sau khi AI trả lời, có thể **Lưu cuộc trao đổi** mà không gọi AI lại. Phân tích mới giữ bản đã duyệt và luyện tập cũ trong lịch sử (tối đa 10 phiên bản, 100 lượt/phiếu và giới hạn kích thước tài liệu Firestore).
+
+Kiểm tra mô-đun: `npm run test:wall-assessment` và `npm run test:wall-chat`; quyền riêng: `npm run test:learning-wall-rules`. Kiểm tra trình duyệt: `npx playwright install --with-deps chromium` rồi `npm run test:wall-assessment-ui` (Vite cổng 3199). Fixture và mô-đun AI giả lập chỉ dùng trong kiểm thử, không dùng dữ liệu/tài khoản thật và không đi vào bản build sản phẩm. Ảnh máy tính/điện thoại nằm trong artifact `wall-ai-ui-results` của GitHub Actions. Các kiểm thử giả lập không thay thế kiểm tra kết nối Gemini thật sau khi cấu hình Firebase AI Logic và App Check.
 
 ## Lộ trình tiếp theo
 

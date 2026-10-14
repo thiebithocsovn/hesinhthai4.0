@@ -2,7 +2,7 @@ name: Restore, verify and publish Hesinhthai 4.0
 
 on:
   push:
-    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013]
+    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013, feat/wall-inline-chat-20261014]
   workflow_dispatch:
 
 permissions:
@@ -73,6 +73,7 @@ jobs:
         run: |
           npm run test:learning-wall
           npm run test:wall-assessment
+          npm run test:wall-chat
           npm run test:ai-services
           npm run test:platform
           npm run test:auth-flow

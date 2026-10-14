@@ -1,5 +1,6 @@
 import type { TeacherOwnedRecord } from './teacherIsolation';
 import type { WallAssessment } from './learningWallAssessment';
+import type { WallChat } from './learningWallChat';
 
 export type WallLayout = 'wall' | 'grid' | 'columns' | 'stream' | 'timeline' | 'canvas' | 'map';
 export type WallSort = 'newest' | 'oldest' | 'name' | 'likes';
@@ -49,6 +50,8 @@ export interface WallPost extends TeacherOwnedRecord {
   score?: number;
   aiAssessment?: WallAssessment;
   aiAssessmentHistory?: WallAssessment[];
+  aiChat?: WallChat;
+  aiChatHistory?: WallChat[];
   color?: string;
   pinned?: boolean;
   createdAt?: unknown;
