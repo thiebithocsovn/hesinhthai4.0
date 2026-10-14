@@ -93,7 +93,7 @@ export function wallErrorMessage(error: unknown, publicSubmission = false): stri
   if (code.includes('permission-denied') || /missing or insufficient permissions/i.test(message)) {
     return publicSubmission
       ? 'Chưa gửi được bài. Giáo viên có thể đã tắt nhận bài hoặc quyền nhận bài công khai chưa được bật trên máy chủ. Em không cần đăng nhập; hãy báo cho giáo viên kiểm tra.'
-      : 'Máy chủ chưa cấp quyền cho thao tác này. Quản trị viên cần kiểm tra tài khoản và xuất bản quy tắc Firebase cho Tường học tập trên đúng cơ sở dữ liệu của ứng dụng.';
+      : 'Máy chủ chưa cấp quyền cho thao tác này. Quản trị viên cần kiểm tra tài khoản và xuất bản quy tắc Firebase cho Tường học tập Ai trên đúng cơ sở dữ liệu của ứng dụng.';
   }
   if (code.includes('unavailable')) return 'Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại.';
   return message || 'Không thể hoàn tất thao tác. Vui lòng thử lại.';

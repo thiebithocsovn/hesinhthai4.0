@@ -17,7 +17,7 @@ Website: <https://trungtuyen.github.io/4.0/>
 | Vòng quay may mắn | Chọn học sinh hoặc phần thưởng ngẫu nhiên | Trình duyệt |
 | Bốc thẻ tương tác | Bốc và lật thẻ trong hoạt động trên lớp | Trình duyệt |
 | Tương tác thẻ Plicker | Quản lý câu hỏi, lớp học và nhận diện thẻ đáp án | Firebase; nhận diện camera trực tiếp trên thiết bị |
-| Tường học tập | Chia sẻ bài làm, nhận xét và học liệu | Firebase Authentication và Firestore |
+| Tường học tập Ai | Chia sẻ bài làm, nhận xét và học liệu | Firebase Authentication và Firestore |
 | Lắc đầu chọn đáp án | Trả lời câu hỏi bằng chuyển động đầu | Trình duyệt, camera; tự tạo câu hỏi ngay trên GitHub Pages |
 | Tư vấn học đường AI | Hỗ trợ phân tích và trao đổi về tình huống học đường | Google Gemini qua Firebase AI Logic; có dự phòng trên thiết bị |
 | Quản lý kỳ thi | Tạo đề, tổ chức thi và tổng hợp kết quả | Firebase; chấm phiếu OMR cần máy chủ AI |
@@ -134,17 +134,17 @@ Máy chủ Node.js riêng vẫn là lựa chọn bổ sung cho OMR hoặc hệ t
 - `firebase.json` ghép chính xác bộ quy tắc với cơ sở dữ liệu `ai-studio-51fdfd5e-caf8-4640-bdd8-404753ba685e`. Nếu repository secret `FIREBASE_SERVICE_ACCOUNT_JSON` đã được cấu hình bằng tài khoản dịch vụ có quyền Firebase Rules, GitHub Actions tự xuất bản `firestore.rules` trước khi triển khai website.
 - Nếu chưa có secret, quản trị viên Firebase vẫn phải mở dự án `gen-lang-client-0870957273`, chọn đúng cơ sở dữ liệu, dán `firestore.rules` vào **Firestore Database → Rules** rồi chọn **Publish**; hoặc đăng nhập Firebase CLI và chạy `npm run deploy:firestore`. Cho đến khi hoàn tất, máy chủ tiếp tục dùng bộ quy tắc đã triển khai trước đó.
 
-## Chia sẻ Tường học tập và nhận bài không cần đăng nhập
+## Chia sẻ Tường học tập Ai và nhận bài không cần đăng nhập
 
 - Giáo viên mở bảng → **Chia sẻ** → **Cho phép học sinh nộp bài**, sau đó gửi liên kết hoặc mã QR. Bất kỳ học sinh nào có liên kết đều có thể nhập tên và gửi nội dung, ảnh hoặc liên kết tài liệu, không cần tạo tài khoản hay đăng nhập Firebase.
 - Giáo viên có thể **Xóa bảng** ngay trong danh sách hoặc **Cài đặt bảng → Xóa lớp / bảng**. Bảng được chuyển vào **Thùng rác** của chủ sở hữu, các cột và bài làm được giữ lại, và liên kết học sinh bị tắt trong cùng một lần ghi. **Khôi phục** đưa bảng trở lại danh sách; giáo viên phải bật chia sẻ lại nếu muốn nhận bài tiếp.
 - Vai trò công khai chỉ được xem nội dung đã công khai và tạo bài nộp vào hộp chờ của đúng bảng khi chế độ nhận bài đang bật. Khách không được sửa, xóa, chấm điểm, quản lý bảng hoặc đọc các bài đang chờ duyệt. Giáo viên duyệt bài trước khi đăng lên bảng.
 - Chuyển sang **Chỉ xem** vẫn giữ liên kết hoạt động, nhưng máy chủ từ chối bài nộp mới ngay cả khi học sinh đã mở sẵn biểu mẫu. **Tắt liên kết** chặn truy cập công khai; bảng đã lưu trữ không nhận bài mới.
-- Nếu xuất hiện lỗi **Missing or insufficient permissions**, cần xuất bản quyền Tường học tập cho cơ sở dữ liệu **ai-studio-51fdfd5e-caf8-4640-bdd8-404753ba685e** của dự án **gen-lang-client-0870957273**. Việc cập nhật GitHub Pages riêng lẻ không cập nhật quyền Firebase. GitHub Actions ghi rõ bước này chưa hoàn tất nếu thiếu thông tin triển khai; không cần mở quyền ghi toàn bộ cơ sở dữ liệu.
-- [firestore.learning-wall.rules](./firestore.learning-wall.rules) là bản cập nhật riêng cho Tường học tập, ghép vào bộ quyền thực tế được đọc trên Firebase Console ngày 30/09/2026. Bản này bổ sung đường chia sẻ, khóa dữ liệu tường theo chủ sở hữu và giữ nguyên chính sách các ứng dụng khác trong bản đang triển khai. Sau khi đăng nhập Firebase CLI, chạy `npm run deploy:learning-wall` để xuất bản bằng [firebase.learning-wall-production.json](./firebase.learning-wall-production.json). `firestore.rules` vẫn là bộ quyền chuẩn đầy đủ của toàn hệ sinh thái; triển khai bộ này là phạm vi khác với bản cập nhật riêng cho tường.
+- Nếu xuất hiện lỗi **Missing or insufficient permissions**, cần xuất bản quyền Tường học tập Ai cho cơ sở dữ liệu **ai-studio-51fdfd5e-caf8-4640-bdd8-404753ba685e** của dự án **gen-lang-client-0870957273**. Việc cập nhật GitHub Pages riêng lẻ không cập nhật quyền Firebase. GitHub Actions ghi rõ bước này chưa hoàn tất nếu thiếu thông tin triển khai; không cần mở quyền ghi toàn bộ cơ sở dữ liệu.
+- [firestore.learning-wall.rules](./firestore.learning-wall.rules) là bản cập nhật riêng cho Tường học tập Ai, ghép vào bộ quyền thực tế được đọc trên Firebase Console ngày 30/09/2026. Bản này bổ sung đường chia sẻ, khóa dữ liệu tường theo chủ sở hữu và giữ nguyên chính sách các ứng dụng khác trong bản đang triển khai. Sau khi đăng nhập Firebase CLI, chạy `npm run deploy:learning-wall` để xuất bản bằng [firebase.learning-wall-production.json](./firebase.learning-wall-production.json). `firestore.rules` vẫn là bộ quyền chuẩn đầy đủ của toàn hệ sinh thái; triển khai bộ này là phạm vi khác với bản cập nhật riêng cho tường.
 - Kiểm thử quyền trên Firestore Emulator: `npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:learning-wall-rules"` (Node.js 20+ và Java 21+). Kiểm thử dùng dữ liệu mô phỏng, không gửi bài vào bảng thật.
 
-## AI nhận xét bài làm trên Tường học tập
+## AI nhận xét bài làm trên Tường học tập Ai
 
 Mở phần nhận xét của bài đăng hoặc nhấn **Phân tích AI**. Khung **Chat AI về bài làm này** nằm ngay trong phần nhận xét. Chat, đánh giá, duyệt, luyện tập và tiến bộ đều thực hiện trong cửa sổ hiện tại.
 

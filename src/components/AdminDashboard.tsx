@@ -916,7 +916,7 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
                   <div className="w-9 h-9 md:w-12 md:h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
                     <LayoutDashboard className="w-5 h-5 md:w-6 md:h-6" />
                   </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Tường học tập</h3>
+                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Tường học tập Ai</h3>
                   <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Quản lý lớp học, học sinh, chấm điểm và tổ chức thư mục học tập.</p>
                 </div>
 
@@ -1155,7 +1155,7 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
                 </div>
                 <h1 className="text-3xl font-bold text-slate-900 font-serif">
                   {activeClassId ? `Danh sách học sinh: ${myCategories.find(c => c.id === activeClassId)?.title}` : 
-                   openedClassId ? myCategories.find(c => c.id === openedClassId)?.title : 'Tường học tập'}
+                   openedClassId ? myCategories.find(c => c.id === openedClassId)?.title : 'Tường học tập Ai'}
                 </h1>
               </div>
               <div className="flex items-center gap-3">

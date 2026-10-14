@@ -76,7 +76,7 @@ function PrivateLearningWall({ onBack, currentUser, onLogin, googleLogin }: Prop
 
   const assertOwner = (record?: WallCategory | WallPost) => {
     if (!online) throw new Error('Hãy kết nối lại mạng trước khi lưu. Nội dung đang soạn vẫn được giữ trong cửa sổ này.');
-    if (auth.currentUser?.uid !== ownerUid || accessScope.role === 'guest') throw new Error('Phiên đăng nhập đã thay đổi. Hãy mở lại Tường Học tập Ai.');
+    if (auth.currentUser?.uid !== ownerUid || accessScope.role === 'guest') throw new Error('Phiên đăng nhập đã thay đổi. Hãy mở lại Tường học tập Ai.');
     if (record && (!canAccessTeacherOwnedRecord(accessScope, record) || !isValidTeacherUid(record.authorId))) throw new Error('Không có quyền thay đổi dữ liệu này.');
   };
   const shareRef = () => board?.wallShareId ? doc(db, 'shared_learning_walls', board.wallShareId) : null;
@@ -305,7 +305,7 @@ function PrivateLearningWall({ onBack, currentUser, onLogin, googleLogin }: Prop
   // Keep guest gating explicit: a link opens a separate, redacted collection below.
   return <>{accessScope.role !== 'guest' && (
     <WallBoardSurface categories={categories} posts={posts} boardId={openedClassId} onOpen={setOpenedClassId} onBack={onBack} displayName={displayName} ownerUid={ownerUid} googleLogin={googleLogin} administrator={accessScope.role === 'administrator'} loading={!categoriesReady || !postsReady} error={error} offline={!online} actions={actions} submissions={submissions} sharePermission={share?.permission} shareUrl={board?.wallShareId && share?.enabled ? createWallLink(import.meta.env.BASE_URL, window.location.origin, board.wallShareId) : ''} />
-  )}{accessScope.role === 'guest' && <div className="lw-app"><div className="lw-main"><div className="lw-empty"><h1>Tường Học tập Ai</h1><p>Đăng nhập tài khoản giáo viên để tạo và quản lý bảng. Học sinh mở liên kết chia sẻ do giáo viên cung cấp.</p>{googleLogin && <WallGoogleConnect login={googleLogin} />}{onLogin && <button className="lw-button" disabled={googleLogin?.busy} onClick={onLogin}>Đăng nhập bằng email</button>}<button className="lw-button" onClick={onBack}>Về trang chủ</button></div></div></div>}</>;
+  )}{accessScope.role === 'guest' && <div className="lw-app"><div className="lw-main"><div className="lw-empty"><h1>Tường học tập Ai</h1><p>Đăng nhập tài khoản giáo viên để tạo và quản lý bảng. Học sinh mở liên kết chia sẻ do giáo viên cung cấp.</p>{googleLogin && <WallGoogleConnect login={googleLogin} />}{onLogin && <button className="lw-button" disabled={googleLogin?.busy} onClick={onLogin}>Đăng nhập bằng email</button>}<button className="lw-button" onClick={onBack}>Về trang chủ</button></div></div></div>}</>;
 }
 
 function SharedLearningWall({ token, onBack }: { token: string; onBack: () => void }) {
@@ -346,7 +346,7 @@ function SharedLearningWall({ token, onBack }: { token: string; onBack: () => vo
       }
     },
   };
-  if (!shared) return <div className="lw-app"><div className="lw-main"><div className="lw-empty"><h1>Tường Học tập Ai</h1><p role={error ? 'alert' : 'status'}>{loading ? 'Đang mở bảng được chia sẻ…' : error}</p><button className="lw-button" onClick={onBack}>Về trang chủ</button></div></div></div>;
+  if (!shared) return <div className="lw-app"><div className="lw-main"><div className="lw-empty"><h1>Tường học tập Ai</h1><p role={error ? 'alert' : 'status'}>{loading ? 'Đang mở bảng được chia sẻ…' : error}</p><button className="lw-button" onClick={onBack}>Về trang chủ</button></div></div></div>;
   const rootId = shared.sectionIds[0];
   const categories: WallCategory[] = [{ id: rootId, title: shared.title, wallDescription: shared.description, wallIcon: shared.icon, wallLayout: wallLayout(shared.layout), wallBackground: shared.background, ...appearance }, ...shared.sections.filter(item => item.id !== rootId).map(item => ({ ...item, parentId: rootId }))];
   return <WallBoardSurface categories={categories} posts={posts} boardId={rootId} onOpen={() => undefined} onBack={onBack} displayName="Công khai" ownerUid="" guest guestCanPost={canSubmitToSharedWall(shared)} loading={!ready} error={error} offline={!online} actions={actions} />;
