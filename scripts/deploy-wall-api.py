@@ -31,7 +31,7 @@ def arguments(argv=None):
     args.teacher_uid = sorted(set(value.strip() for value in args.teacher_uid))
     if not args.teacher_email and not args.teacher_uid:
         parser.error("Specify at least one authorized teacher email or Firebase UID.")
-    if any(not re.fullmatch(r"[^\s,=<>]+@[^\s,=<>]+\.[^\s,=<>]+", value) for value in args.teacher_email):
+    if any(not re.fullmatch(r"[^\s,=<>|\x00-\x1f]+@[^\s,=<>|\x00-\x1f]+\.[^\s,=<>|\x00-\x1f]+", value) for value in args.teacher_email):
         parser.error("Teacher email is invalid.")
     if any(not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) for value in args.teacher_uid):
         parser.error("Teacher UID is invalid.")

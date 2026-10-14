@@ -1,4 +1,4 @@
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import io
 import json
@@ -22,6 +22,12 @@ assert preview["applyRequested"] is False
 assert preview["deploymentPlan"]["maxInstances"] == 1
 assert preview["deploymentPlan"]["minInstances"] == 0
 assert preview["deploymentPlan"]["secretHandling"].startswith("Secret Manager")
+with redirect_stderr(io.StringIO()):
+    try:
+        deploy.arguments(["--teacher-email", "teacher|other@example.edu"])
+        raise AssertionError("Environment-list delimiter accepted in a teacher email")
+    except SystemExit as error:
+        assert error.code == 2
 
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
