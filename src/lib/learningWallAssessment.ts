@@ -1,9 +1,10 @@
 import { assertWallSize, safeWallAttachment, wallCsvCell, type WallPost } from './learningWall';
 
-export type WallAiSource = 'firebase-gemini' | 'chatgpt' | 'claude' | 'gemini';
+export type WallAiSource = 'openai' | 'firebase-gemini' | 'chatgpt' | 'claude' | 'gemini';
 export type CauseDecision = 'pending' | 'confirmed' | 'rejected';
 export type PracticeVerdict = 'remains' | 'improving' | 'resolved';
 export const WALL_AI_SOURCES = [
+  { id: 'openai', label: 'GPT tự động · OpenAI', url: '' },
   { id: 'firebase-gemini', label: 'Gemini tự động · Firebase', url: '' },
   { id: 'chatgpt', label: 'ChatGPT đang dùng · Sao chép / nhập', url: 'https://chatgpt.com/' },
   { id: 'claude', label: 'Claude đang dùng · Sao chép / nhập', url: 'https://claude.ai/new' },

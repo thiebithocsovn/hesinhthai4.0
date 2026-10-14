@@ -96,7 +96,7 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
     const { analyzeWallWork } = await import('../../lib/learningWallAi');
     const result = await analyzeWallWork(request);
     if (!mounted.current) return;
-    const next = newWallAssessment(request, result.analysis, 'firebase-gemini', result.model);
+    const next = newWallAssessment(request, result.analysis, result.source, result.model);
     next.studentCode = assessment?.studentCode || '';
     setAssessment(next); setStep(1); await persist(next);
   }

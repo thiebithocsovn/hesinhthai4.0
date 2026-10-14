@@ -3,6 +3,7 @@ import { MessageSquare, Send, LoaderCircle, ClipboardCheck, RotateCcw, Save } fr
 import type { WallPost } from '../../lib/learningWall';
 import { createWallAiRequest, wallWorkRevision, type WallAssessmentContext } from '../../lib/learningWallAssessment';
 import { appendWallChatExchange, wallChatContextKey, wallChatVersion, type WallChat } from '../../lib/learningWallChat';
+import { wallAiLabel } from '../../lib/wallAiProvider';
 
 interface Props {
   post: WallPost;
@@ -102,7 +103,7 @@ export default function WallAiChat({ post, context, includeMedia, offline, disab
   }
 
   return <section className="lw-ai-chat" aria-label="Chat AI trong phần nhận xét">
-    <div className="lw-ai-heading"><MessageSquare size={21} /><div><h4>Chat AI về bài làm này</h4><p>Trao đổi và nhận gợi ý ngay trong phần nhận xét</p></div><span className="lw-ai-status">Gemini · Firebase</span></div>
+    <div className="lw-ai-heading"><MessageSquare size={21} /><div><h4>Chat AI về bài làm này</h4><p>Trao đổi và nhận gợi ý ngay trong phần nhận xét</p></div><span className="lw-ai-status">{wallAiLabel}</span></div>
     <div className="lw-ai-chat-connection"><button type="button" className="lw-button" disabled={locked} onClick={() => void checkConnection()}>Kiểm tra kết nối AI</button>{connection && <p role="status" className="lw-ai-success">{connection}</p>}</div>
     <div ref={log} className="lw-ai-chat-log" role="log" aria-label="Cuộc trao đổi AI" aria-live="polite" aria-relevant="additions text" tabIndex={0}>
       {!chat?.messages.length && !pendingMessage && <p className="lw-ai-chat-empty">Hỏi AI về lỗi, bằng chứng, cách xác minh nguyên nhân hoặc cách nhận xét bài làm. Giáo viên kiểm tra và quyết định nhận xét, điểm cuối cùng.</p>}
