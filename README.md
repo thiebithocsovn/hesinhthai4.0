@@ -157,15 +157,37 @@ AI của **tường học tập** dùng **OpenAI Responses API** qua máy chủ 
 
 Thiết lập OpenAI:
 
-1. Triển khai `server.ts` lên máy chủ Node.js 22 trở lên có HTTPS (`npm run build`, `npm start`). GitHub Pages chỉ phục vụ giao diện và không chạy được máy chủ này.
+1. Triển khai máy chủ riêng `server/wallApiServer.ts` bằng Node.js 22 trở lên có HTTPS (`npm run build:wall-api`, `npm run start:wall-api`), hoặc dùng bộ triển khai Cloud Run bên dưới. Máy chủ này chỉ phục vụ API tường học tập. GitHub Pages chỉ phục vụ giao diện và không chạy được máy chủ này.
 2. Đặt `OPENAI_API_KEY` và tùy chọn `OPENAI_MODEL` trong hệ thống quản lý secret của máy chủ. Chỉ cấp quyền cần thiết cho dự án API, cấu hình hạn mức chi tiêu. API có cơ chế thanh toán riêng với gói ChatGPT. Không đưa khóa vào GitHub, giao diện, localStorage hoặc biến `VITE_`.
-3. Thiết lập Firebase Admin Application Default Credentials cho đúng dự án `gen-lang-client-0870957273`; trên máy chủ riêng dùng tài khoản dịch vụ lưu ngoài kho mã. Máy chủ dùng `verifyIdToken(token, true)` để kiểm tra chữ ký, hết hạn, thu hồi và tài khoản bị vô hiệu hóa. Liệt kê UID giáo viên được sử dụng trong `OPENAI_TEACHER_UIDS`; không có UID hoặc khóa thì từ chối toàn bộ yêu cầu. Tài khoản ẩn danh không được gọi OpenAI.
+3. Thiết lập Firebase Admin Application Default Credentials cho đúng dự án `gen-lang-client-0870957273`; trên máy chủ riêng dùng tài khoản dịch vụ lưu ngoài kho mã. Máy chủ dùng `verifyIdToken(token, true)` để kiểm tra chữ ký, hết hạn, thu hồi và tài khoản bị vô hiệu hóa. Liệt kê UID giáo viên trong `OPENAI_TEACHER_UIDS`, hoặc email đã xác minh trong `OPENAI_TEACHER_EMAILS` (phân cách bằng dấu phẩy). Email chưa xác minh và tài khoản ẩn danh bị từ chối. Không có khóa hoặc danh sách tài khoản được phép thì từ chối toàn bộ yêu cầu.
 4. Giới hạn `ALLOWED_ORIGINS` tới `https://thiebithocsovn.github.io` (và localhost khi phát triển). Đặt repository variable công khai `VITE_WALL_OPENAI_API_URL` bằng URL HTTPS của máy chủ, không thêm `/api/wall-ai`. `VITE_WALL_AI_PROVIDER=openai` là mặc định. Chạy lại workflow để giao diện nhận URL. Tường không dùng URL máy chủ lưu trong trình duyệt vì không được gửi token Firebase tới một địa chỉ tùy ý.
 5. Trong phần nhận xét, bấm **Kiểm tra kết nối AI**. Chỉ báo sẵn sàng khi OpenAI trả lời thật; yêu cầu kiểm tra không gửi bài làm hoặc thông tin học sinh. Thiếu URL, khóa, quyền giáo viên, hết hạn mức hay mất mạng đều báo lỗi và giữ bản đang soạn.
 
 Proxy `/api/wall-ai` xác thực trước khi đọc body, chặn origin lạ, giới hạn dữ liệu, có timeout và không cho trình duyệt chọn khóa/model/URL/system instruction. Chỉ chuyển ảnh/PDF dạng data, không tải URL do bài làm cung cấp. JSON Schema khóa mã yêu cầu; kết quả chưa đầy đủ/sai mã bị từ chối. API dùng `store:false`; đây không phải cam kết OpenAI không lưu dữ liệu cho các mục đích vận hành. Proxy không ghi bài làm/token/khóa vào log, không thay đổi nhận xét hoặc điểm. Mỗi tiến trình giới hạn 6 yêu cầu/phút và 80/ngày cho một giáo viên, 400/ngày tổng cộng, một yêu cầu đồng thời/giáo viên và ba yêu cầu đồng thời toàn máy chủ. Các bộ đếm đặt lại khi tiến trình khởi động; triển khai nhiều instance cần hạn mức dùng chung và hạn mức chi tiêu ở dự án OpenAI.
 
-Đây là kết nối OpenAI API, **chưa phải lấy quyền từ gói ChatGPT hiện tại**. [Sign in with ChatGPT cho website](https://developers.openai.com/siwc/website) cần client được OpenAI cấp, callback đã đăng ký và máy chủ; quyền dùng gói ChatGPT cần được cấp riêng. [Luồng mã nguồn mở](https://developers.openai.com/siwc/token-sharing-open-source) áp dụng cho ứng dụng chạy cục bộ; ứng dụng lưu trữ từ xa phải đăng ký chương trình phù hợp. Không lấy cookie/token phiên ChatGPT hoặc yêu cầu mật khẩu của giáo viên. Kho này chưa có client đã được cấp quyền và chưa có credential OpenAI/máy chủ đang triển khai, nên mã nguồn sẵn sàng cấu hình không đồng nghĩa API đã hoạt động.
+Đây là kết nối OpenAI API, **chưa phải lấy quyền từ gói ChatGPT hiện tại**. [Sign in with ChatGPT cho website](https://developers.openai.com/siwc/website) cần client được OpenAI cấp, callback đã đăng ký và máy chủ; quyền dùng gói ChatGPT cần được cấp riêng. [Luồng mã nguồn mở](https://developers.openai.com/siwc/token-sharing-open-source) áp dụng cho ứng dụng chạy cục bộ; ứng dụng lưu trữ từ xa phải đăng ký chương trình phù hợp. Không lấy cookie/token phiên ChatGPT hoặc yêu cầu mật khẩu của giáo viên. Kho không chứa credential OpenAI hoặc client ChatGPT đã được cấp quyền. Chỉ có mã triển khai không đồng nghĩa máy chủ hoặc AI đã hoạt động.
+
+### Triển khai API tường học tập trên Cloud Run
+
+Bộ triển khai dùng dự án Firebase hiện có `gen-lang-client-0870957273`, dịch vụ `learning-wall-ai` tại `asia-southeast1`. Yêu cầu Google Cloud CLI đã đăng nhập, quyền triển khai và **billing của dự án đã được bật**. Script không bật billing, mua credit OpenAI hoặc đăng nhập thay người dùng. Thiếu các điều kiện này sẽ dừng trước khi tạo tài nguyên. OpenAI cần credit API riêng; lỗi `credit_balance_exhausted` yêu cầu bổ sung credit trong [Billing](https://platform.openai.com/settings/organization/billing), không thể xử lý bằng đổi khóa hoặc chờ rồi thử lại.
+
+Xem kế hoạch trước (thay email mẫu bằng tài khoản giáo viên đã xác minh trong Firebase):
+
+```bash
+npm run deploy:wall-api -- --teacher-email teacher@example.edu
+```
+
+Chạy triển khai khi các điều kiện trên đã đầy đủ. Tham số `--env-file` trỏ tới tệp `.env` đã được lưu riêng, có `OPENAI_API_KEY`; không chép khóa vào lệnh:
+
+```bash
+npm run deploy:wall-api -- --teacher-email teacher@example.edu --env-file /path/to/private/.env --apply
+```
+
+Có thể lặp `--teacher-email` hoặc `--teacher-uid` để cấp quyền cho các tài khoản đã được duyệt. Script tạo hai tài khoản dịch vụ riêng: `wall-ai-runtime` chỉ đọc trạng thái Firebase Authentication và đọc **một secret** `learning-wall-openai-key`; `wall-ai-builder` dùng quyền `roles/run.builder` để xây dựng container. Khóa được chuyển tới Secret Manager qua stdin và ghim phiên bản cụ thể, không đi vào tham số lệnh hoặc ảnh container. `.gcloudignore` và `.dockerignore` chỉ cho phép các tệp cần để xây dựng API; `.env`, credential và mã giao diện bị loại khỏi gói tải lên.
+
+Dịch vụ có tối thiểu 0, tối đa 1 instance, 1 CPU, 512Mi, concurrency 3, timeout 60 giây. HTTPS có thể truy cập công khai để trình duyệt gửi token; từng lệnh gọi AI vẫn phải qua Firebase và danh sách giáo viên. Các hạn mức theo tiến trình không thay thế hạn mức chi tiêu của OpenAI; khởi động lại hoặc đổi revision đặt lại bộ đếm. Cloud Run, Cloud Build, Artifact Registry và Secret Manager có thể tính phí theo sử dụng.
+
+Sau triển khai, script kiểm tra `/healthz` và xác nhận yêu cầu không đăng nhập bị chặn HTTP 401, rồi trả URL cần đặt vào repository variable `VITE_WALL_OPENAI_API_URL`. Chạy lại GitHub Pages và **Kiểm tra kết nối AI** trong phần nhận xét bằng tài khoản giáo viên được phép. `/healthz` chỉ xác nhận cấu hình, không gọi OpenAI và không chứng minh còn credit. Phải có phản hồi OpenAI thật trước khi coi kết nối đã hoạt động. Mã máy chủ xây vào `api-dist/`, tách khỏi `dist/` được xuất bản lên GitHub Pages.
 
 Nếu quản trị viên chọn lại Gemini, đặt `VITE_WALL_AI_PROVIDER=firebase-gemini`, bật Firebase AI Logic và đăng ký App Check theo [hướng dẫn Firebase](https://firebase.google.com/docs/ai-logic/get-started). Giữ App Check hiện có; không đổi rules hoặc đưa secret Gemini vào frontend.
 
@@ -173,7 +195,7 @@ Nếu quản trị viên chọn lại Gemini, đặt `VITE_WALL_AI_PROVIDER=fire
 
 Lưu chat kiểm tra lại chủ sở hữu, bảng, phiên đăng nhập, SHA-256 của bài và bản chat hiện có. Đổi bài hoặc tiêu chí cần bắt đầu cuộc trao đổi mới. Mỗi cuộc có tối đa 20 lượt hỏi/đáp, lưu tối đa 5 cuộc trước; không tự xóa lịch sử. Nếu lưu thất bại sau khi AI trả lời, có thể **Lưu cuộc trao đổi** mà không gọi AI lại. Phân tích mới giữ bản đã duyệt và luyện tập cũ trong lịch sử (tối đa 10 phiên bản, 100 lượt/phiếu và giới hạn kích thước tài liệu Firestore).
 
-Kiểm tra mô-đun: `npm run test:wall-assessment` và `npm run test:wall-chat`; quyền riêng: `npm run test:learning-wall-rules`. Kiểm tra trình duyệt: `npx playwright install --with-deps chromium` rồi `npm run test:wall-assessment-ui` (Vite cổng 3199). Fixture và mô-đun AI giả lập chỉ dùng trong kiểm thử, không dùng dữ liệu/tài khoản thật và không đi vào bản build sản phẩm. Ảnh máy tính/điện thoại nằm trong artifact `wall-ai-ui-results` của GitHub Actions. Thêm `npm run test:wall-openai` kiểm tra proxy có xác thực, hạn mức, dữ liệu ảnh/PDF, phản hồi sai/lỗi và client giữ phiên đúng. Các kiểm thử giả lập không thay thế kiểm tra OpenAI thật sau khi cấu hình máy chủ và quyền API.
+Kiểm tra mô-đun: `npm run test:wall-assessment` và `npm run test:wall-chat`; quyền riêng: `npm run test:learning-wall-rules`. Kiểm tra trình duyệt: `npx playwright install --with-deps chromium` rồi `npm run test:wall-assessment-ui` (Vite cổng 3199). Fixture và mô-đun AI giả lập chỉ dùng trong kiểm thử, không dùng dữ liệu/tài khoản thật và không đi vào bản build sản phẩm. Ảnh máy tính/điện thoại nằm trong artifact `wall-ai-ui-results` của GitHub Actions. `npm run test:wall-openai` kiểm tra proxy có xác thực, hạn mức, dữ liệu ảnh/PDF, phản hồi sai/lỗi, phân biệt lỗi billing với tốc độ và client giữ phiên đúng. `npm run test:wall-api` kiểm tra máy chủ chỉ có API riêng, email đã xác minh, bước kiểm tra billing trước khi sửa Google Cloud và loại credential khỏi gói tải lên; phần triển khai dùng mô phỏng, không tạo tài nguyên thật. Các kiểm thử giả lập không thay thế kiểm tra OpenAI thật sau khi cấu hình máy chủ và quyền API.
 
 ## Lộ trình tiếp theo
 

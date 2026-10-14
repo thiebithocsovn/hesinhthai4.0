@@ -2,7 +2,7 @@ name: Restore, verify and publish Hesinhthai 4.0
 
 on:
   push:
-    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013, feat/wall-inline-chat-20261014, feat/wall-openai-20261014]
+    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013, feat/wall-inline-chat-20261014, feat/wall-openai-20261014, feat/wall-cloud-run-20261014]
   workflow_dispatch:
 
 permissions:
@@ -77,6 +77,7 @@ jobs:
           npm run test:wall-assessment
           npm run test:wall-chat
           npm run test:wall-openai
+          npm run test:wall-api
           npm run test:ai-services
           npm run test:platform
           npm run test:auth-flow
@@ -114,6 +115,9 @@ jobs:
 
       - name: Build static website
         run: npm run build:static
+
+      - name: Verify private API server bundle
+        run: npm run build:wall-api
 
       - name: Ensure GitHub Pages files exist
         run: |

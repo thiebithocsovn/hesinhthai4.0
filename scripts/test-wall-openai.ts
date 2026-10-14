@@ -98,6 +98,21 @@ try {
     assert.equal(failed.status, status === 429 ? 429 : status === 500 ? 502 : 503);
     assert.doesNotMatch(await failed.text(), /private work|test-only-not-a-real-key/);
   }
+  for (const [error, expected, retry] of [
+    [{ code: 'credit_balance_exhausted', type: 'insufficient_quota' }, /hết credit API/, null],
+    [{ type: 'insufficient_quota' }, /Billing và Limits/, null],
+    [{ code: 'insufficient_quota' }, /Billing và Limits/, null],
+    [{ code: 'rate_limit_exceeded' }, /giới hạn tốc độ/, '7'],
+  ] as const) {
+    upstream = async () => new Response(JSON.stringify({ error: { ...error, message: 'private upstream diagnostic' } }),
+      { status: 429, headers: { 'Retry-After': '7' } });
+    const failed = await proxy.post();
+    assert.equal(failed.status, 429);
+    assert.equal(failed.headers.get('Retry-After'), retry, 'Billing failures must not suggest an automatic retry');
+    const text = await failed.text();
+    assert.match(text, expected);
+    assert.doesNotMatch(text, /private upstream/);
+  }
   upstream = async () => apiResult({ requestId: 'wrong-request', reply: 'Old work', feedback: '' });
   assert.equal((await proxy.post()).status, 502, 'Cross-request output is rejected');
   upstream = async () => apiResult({ requestId: input.requestId }, 'incomplete');

@@ -1,11 +1,12 @@
 import express from 'express';
 
-type Config = {
+export type WallOpenAiConfig = {
   apiKey: string; model: string; teacherUids: Set<string>; origins: Set<string>;
+  teacherEmails?: Set<string>;
   perMinute?: number; perDay?: number; totalPerDay?: number; timeoutMs?: number;
 };
-interface Dependencies {
-  verifyTeacher: (token: string) => Promise<{ uid: string; anonymous?: boolean }>;
+export interface WallOpenAiDependencies {
+  verifyTeacher: (token: string) => Promise<{ uid: string; anonymous?: boolean; email?: string; emailVerified?: boolean }>;
   fetchImpl?: typeof fetch;
   now?: () => number;
 }
@@ -67,7 +68,7 @@ function inputFrom(body: unknown, connection: boolean) {
 }
 
 /** Private proxy: no model, key, URL or system-instruction overrides from the browser. */
-export function createWallOpenAiRouter(config: Config, dependencies: Dependencies) {
+export function createWallOpenAiRouter(config: WallOpenAiConfig, dependencies: WallOpenAiDependencies) {
   const router = express.Router();
   const now = dependencies.now || Date.now;
   const teachers = new Map<string, { minute: number; day: number; minuteCount: number; dayCount: number; active: boolean }>();
@@ -85,7 +86,7 @@ export function createWallOpenAiRouter(config: Config, dependencies: Dependencie
     next();
   });
   router.use(async (req, res, next) => {
-    if (!config.apiKey.trim() || !config.teacherUids.size) {
+    if (!config.apiKey.trim() || (!config.teacherUids.size && !config.teacherEmails?.size)) {
       res.status(503).json({ error: 'Máy chủ OpenAI chưa được cấu hình khóa và quyền giáo viên. Nội dung đang soạn vẫn được giữ.' }); return;
     }
     const authorization = req.headers.authorization || '';
@@ -93,7 +94,9 @@ export function createWallOpenAiRouter(config: Config, dependencies: Dependencie
     if (!match) { res.status(401).json({ error: 'Hãy đăng nhập tài khoản giáo viên trước khi gọi AI.' }); return; }
     try {
       const teacher = await dependencies.verifyTeacher(match[1]);
-      if (teacher.anonymous || !config.teacherUids.has(teacher.uid)) {
+      const approvedEmail = teacher.emailVerified === true && typeof teacher.email === 'string' &&
+        config.teacherEmails?.has(teacher.email.trim().toLowerCase()) === true;
+      if (!teacher.uid || teacher.anonymous || (!config.teacherUids.has(teacher.uid) && !approvedEmail)) {
         res.status(403).json({ error: 'Tài khoản này chưa được cấp quyền sử dụng OpenAI cho tường học tập.' }); return;
       }
       res.locals.teacherUid = teacher.uid; next();
@@ -150,7 +153,13 @@ export function createWallOpenAiRouter(config: Config, dependencies: Dependencie
         throw new SafeError(504, 'Chưa nhận được phản hồi từ OpenAI. Hãy thử lại trong phần nhận xét.');
       } finally { clearTimeout(timeout); }
       if (!upstream.ok) {
-        if (upstream.status === 429) throw new SafeError(429, 'OpenAI đã hết hạn mức hoặc đang giới hạn yêu cầu. Quản trị viên cần kiểm tra tài khoản API.');
+        if (upstream.status === 429) {
+          if (payload?.error?.code === 'credit_balance_exhausted') throw new SafeError(429, 'Tài khoản OpenAI đã hết credit API. Quản trị viên cần bổ sung credit trong Billing.');
+          if (payload?.error?.type === 'insufficient_quota' || payload?.error?.code === 'insufficient_quota') throw new SafeError(429, 'Tài khoản OpenAI đã đạt hạn mức API. Quản trị viên cần kiểm tra Billing và Limits.');
+          const retry = upstream.headers.get('Retry-After');
+          if (retry && /^[0-9]{1,5}$/.test(retry)) res.setHeader('Retry-After', retry);
+          throw new SafeError(429, 'OpenAI đang giới hạn tốc độ gửi yêu cầu. Hãy chờ rồi thử lại; nội dung đang soạn vẫn được giữ.');
+        }
         if ([400, 401, 403, 404].includes(upstream.status)) throw new SafeError(503, 'Kết nối OpenAI chưa hợp lệ. Quản trị viên cần kiểm tra khóa, model và quyền của tài khoản API.');
         throw new SafeError(502, 'OpenAI chưa xử lý được yêu cầu. Nội dung đang soạn vẫn được giữ.');
       }

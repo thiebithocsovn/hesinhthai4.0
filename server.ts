@@ -45,6 +45,7 @@ app.use('/api/wall-ai', createWallOpenAiRouter({
   apiKey: process.env.OPENAI_API_KEY?.trim() || '',
   model: process.env.OPENAI_MODEL?.trim() || 'gpt-5.4-mini',
   teacherUids: new Set((process.env.OPENAI_TEACHER_UIDS || '').split(',').map(uid => uid.trim()).filter(Boolean)),
+  teacherEmails: new Set((process.env.OPENAI_TEACHER_EMAILS || '').split(',').map(email => email.trim().toLowerCase()).filter(Boolean)),
   origins: allowedOrigins,
 }, {
   async verifyTeacher(token) {
@@ -53,7 +54,8 @@ app.use('/api/wall-ai', createWallOpenAiRouter({
     }, 'wall-openai-auth');
     // Revocation and disabled-account checks use the server's Firebase service-account credentials.
     const decoded = await getAuth(adminApp).verifyIdToken(token, true);
-    return { uid: decoded.uid, anonymous: decoded.firebase?.sign_in_provider === 'anonymous' };
+    return { uid: decoded.uid, anonymous: decoded.firebase?.sign_in_provider === 'anonymous',
+      email: decoded.email, emailVerified: decoded.email_verified === true };
   },
 }));
 
