@@ -1,0 +1,15 @@
+*
+!Dockerfile
+!.dockerignore
+!package.json
+!package-lock.json
+!firebase-applet-config.json
+!server/
+!server/wallOpenAi.ts
+!server/wallApiApp.ts
+!server/wallApiServer.ts
+**/.env*
+**/*service-account*
+**/*private-key*
+**/credentials*
+**/*.log

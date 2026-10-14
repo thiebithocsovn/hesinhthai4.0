@@ -1,6 +1,9 @@
-node_modules/
+node_modules
 build/
 dist/
+api-dist/
+__pycache__/
+*.pyc
 coverage/
 wall-ai-ui-results/
 .DS_Store
