@@ -15,24 +15,24 @@ const assert = require('node:assert/strict');
     await page.route(/\/src\/lib\/learningWallAi\.ts(?:\?.*)?$/, route => route.fulfill({contentType:'application/javascript',body:`
       import { parseWallAnalysis, parseWallPractice } from '/hesinhthai4.0/src/lib/learningWallAssessment.ts';
       import { parseWallChatReply } from '/hesinhthai4.0/src/lib/learningWallChat.ts';
-      const model='gemini-ui-fixture';
+      const model='openai-ui-fixture';
       window.aiRequests=[];
       export async function checkWallAiConnection(){ return model; }
       export async function chatAboutWallWork(request,message,history){
         window.aiRequests.push({request,message,history});
-        if(message==='SIMULATE-API-ERROR') throw new Error('Kiểm thử: Firebase AI API chưa bật.');
+        if(message==='SIMULATE-API-ERROR') throw new Error('Kiểm thử: OpenAI chưa được kết nối.');
         return parseWallChatReply(JSON.stringify({requestId:message==='WRONG-REQUEST'?'wrong':request.id,
           reply:'Có bằng chứng chia sẻ mật khẩu. Hãy hỏi em để xác minh nguyên nhân. <b>RENDER-TEXT</b>',
           feedback:'Em đã nhận biết lừa đảo; hãy sửa nhánh chia sẻ mật khẩu và giải thích cách bảo vệ.'}),request.id,model);
       }
       export async function analyzeWallWork(request){
-        return {model,analysis:parseWallAnalysis(JSON.stringify({requestId:request.id,summary:'Cần phân biệt hành vi an toàn.',strengths:['Nhận biết được lừa đảo.'],limitations:[],errors:[{id:'e1',skill:'Bảo vệ mật khẩu',title:'Chia sẻ mật khẩu',evidence:'Có ghi chia sẻ mật khẩu để nhận thưởng.',hypothesis:'Có thể nhầm xác thực và cung cấp bí mật.',confidence:'medium',verificationQuestion:'Em có chia sẻ OTP để nhận quà không?',remediation:'Phân biệt việc đăng nhập và lừa lấy OTP.'}],feedback:'Em đã nêu lừa đảo, hãy sửa nhánh thông tin đăng nhập.'}),request.id)};
+        return {model,source:'openai',analysis:parseWallAnalysis(JSON.stringify({requestId:request.id,summary:'Cần phân biệt hành vi an toàn.',strengths:['Nhận biết được lừa đảo.'],limitations:[],errors:[{id:'e1',skill:'Bảo vệ mật khẩu',title:'Chia sẻ mật khẩu',evidence:'Có ghi chia sẻ mật khẩu để nhận thưởng.',hypothesis:'Có thể nhầm xác thực và cung cấp bí mật.',confidence:'medium',verificationQuestion:'Em có chia sẻ OTP để nhận quà không?',remediation:'Phân biệt việc đăng nhập và lừa lấy OTP.'}],feedback:'Em đã nêu lừa đảo, hãy sửa nhánh thông tin đăng nhập.'}),request.id)};
       }
       export async function generateWallPractice(assessment,id){
         return parseWallPractice(JSON.stringify({requestId:id,instructions:'Giải thích từng lựa chọn.',exercises:[
           {errorId:'e1',difficulty:'foundation',question:'Bạn A xin OTP để gửi quà. Em xử lý thế nào?',hint:'Nghĩ về chức năng của OTP.',expectedAnswer:'SECRET-ANSWER Không cung cấp OTP.',successCriteria:'Nêu từ chối OTP và giải thích.'},
           {errorId:'e1',difficulty:'application',question:'Website xin mật khẩu email để nhận quà. Em làm gì?',hint:'Kiểm tra nguồn.',expectedAnswer:'SECRET-ANSWER Dừng thao tác, báo người lớn.',successCriteria:'Không gửi mật khẩu, biết báo cáo.'}
-        ]}),id,assessment,'firebase-gemini',model);
+        ]}),id,assessment,'openai',model);
       }
     `}));
     const button = name => page.getByRole('button', {name,exact:true});
@@ -65,7 +65,7 @@ const assert = require('node:assert/strict');
     await page.screenshot({path:'wall-ai-ui-results/chat-mobile.png'});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile chat must not overflow');
     await page.setViewportSize({width:1366,height:900});
-    await send('SIMULATE-API-ERROR'); await page.getByText('Kiểm thử: Firebase AI API chưa bật.').waitFor();
+    await send('SIMULATE-API-ERROR'); await page.getByText('Kiểm thử: OpenAI chưa được kết nối.').waitFor();
     assert.equal(await composer.inputValue(),'SIMULATE-API-ERROR'); assert.equal((await saved()).aiChat.messages.length,4);
     await send('WRONG-REQUEST'); await page.getByText('Phản hồi không khớp với bài đang trao đổi.').waitFor();
     assert.equal((await saved()).aiChat.messages.length,4,'Wrong request is never appended');

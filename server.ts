@@ -2,6 +2,10 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import { getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import firebaseConfig from './firebase-applet-config.json';
+import { createWallOpenAiRouter } from './server/wallOpenAi';
 
 dotenv.config();
 
@@ -9,7 +13,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite';
 const allowedOrigins = new Set(
-  (process.env.ALLOWED_ORIGINS || 'https://trungtuyen.github.io,http://localhost:3000,http://127.0.0.1:3000')
+  (process.env.ALLOWED_ORIGINS || 'https://thiebithocsovn.github.io,http://localhost:3000,http://127.0.0.1:3000')
     .split(',')
     .map(origin => origin.trim())
     .filter(Boolean),
@@ -25,7 +29,7 @@ app.use((req, res, next) => {
   if (origin && allowedOrigins.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Vary', 'Origin');
   }
 
@@ -36,6 +40,22 @@ app.use((req, res, next) => {
 
   next();
 });
+
+app.use('/api/wall-ai', createWallOpenAiRouter({
+  apiKey: process.env.OPENAI_API_KEY?.trim() || '',
+  model: process.env.OPENAI_MODEL?.trim() || 'gpt-5.4-mini',
+  teacherUids: new Set((process.env.OPENAI_TEACHER_UIDS || '').split(',').map(uid => uid.trim()).filter(Boolean)),
+  origins: allowedOrigins,
+}, {
+  async verifyTeacher(token) {
+    const adminApp = getApps().find(item => item.name === 'wall-openai-auth') || initializeApp({
+      projectId: firebaseConfig.projectId,
+    }, 'wall-openai-auth');
+    // Revocation and disabled-account checks use the server's Firebase service-account credentials.
+    const decoded = await getAuth(adminApp).verifyIdToken(token, true);
+    return { uid: decoded.uid, anonymous: decoded.firebase?.sign_in_provider === 'anonymous' };
+  },
+}));
 
 app.use(express.json({ limit: '50mb' }));
 

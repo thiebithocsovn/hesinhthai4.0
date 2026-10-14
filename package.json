@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": { "node": ">=22" },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "npm run test:smart-timetable && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
@@ -44,6 +45,7 @@
     "test:learning-wall": "node --import tsx scripts/test-learning-wall.ts",
     "test:wall-assessment": "node --import tsx scripts/test-wall-assessment.ts",
     "test:wall-chat": "node --import tsx scripts/test-wall-chat.ts",
+    "test:wall-openai": "node --import tsx scripts/test-wall-openai.ts",
     "test:wall-assessment-ui": "node scripts/test-wall-assessment-ui.cjs",
     "test:learning-wall-rules": "node scripts/test-learning-wall-rules.mjs",
     "deploy:learning-wall": "npx --yes firebase-tools@^15.17.0 deploy --config firebase.learning-wall-production.json --only firestore:rules --project gen-lang-client-0870957273 --non-interactive",
@@ -71,6 +73,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.11.0",
+    "firebase-admin": "^14.5.0",
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.546.0",
