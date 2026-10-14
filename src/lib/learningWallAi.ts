@@ -2,6 +2,7 @@ import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 import { app, auth } from '../firebase';
 import { WALL_ANALYSIS_INSTRUCTION, wallAnalysisPrompt, parseWallAnalysis, wallPracticePrompt, parseWallPractice,
   type WallAiRequest, type WallAssessment } from './learningWallAssessment';
+import { wallChatPrompt, parseWallChatReply, type WallChatMessage } from './learningWallChat';
 
 const modelName = import.meta.env.VITE_GOOGLE_AI_MODEL?.trim() || 'gemini-3.1-flash-lite';
 
@@ -18,7 +19,7 @@ async function generate(prompt: string, media: WallAiRequest['media'] = []): Pro
     const result = await Promise.race([
       model.generateContent([{ text: prompt }, ...media.map(file => ({ inlineData: file }))]),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('AI chưa phản hồi sau 60 giây. Thử lại hoặc chọn tài khoản AI đang dùng.')), 60_000);
+        timer = setTimeout(() => reject(new Error('AI chưa phản hồi sau 60 giây. Hãy thử gửi lại ngay trong phần nhận xét.')), 60_000);
       }),
     ]);
     if (auth.currentUser?.uid !== teacherUid) throw new Error('Phiên giáo viên đã thay đổi; phản hồi AI không được lưu.');
@@ -26,7 +27,7 @@ async function generate(prompt: string, media: WallAiRequest['media'] = []): Pro
   } catch (error) {
     const code = String((error as { code?: string })?.code || '');
     if (/permission|api-not-enabled|api-key|unauthenticated|fetch-error/i.test(code)) {
-      throw new Error('Gemini tự động chưa sẵn sàng. Kiểm tra Firebase AI Logic và App Check của dự án, hoặc chọn ChatGPT/Claude/Gemini đang dùng để sao chép yêu cầu và nhập kết quả.');
+      throw new Error('AI chưa kết nối được. Quản trị viên cần bật Firebase AI Logic cho dự án và kiểm tra App Check. Bài làm và nhận xét đang soạn vẫn được giữ tại đây.');
     }
     throw error;
   } finally { if (timer) clearTimeout(timer); }
@@ -39,4 +40,17 @@ export async function analyzeWallWork(request: WallAiRequest) {
 export async function generateWallPractice(assessment: WallAssessment, requestId: string) {
   const result = await generate(wallPracticePrompt(assessment, requestId));
   return parseWallPractice(result, requestId, assessment, 'firebase-gemini', modelName);
+}
+
+export async function chatAboutWallWork(request: WallAiRequest, message: string, history: WallChatMessage[]) {
+  const result = await generate(wallChatPrompt(request, message, history), request.media);
+  return parseWallChatReply(result, request.id, modelName);
+}
+
+export async function checkWallAiConnection(): Promise<string> {
+  const result = await generate('Đây là kiểm tra kết nối API, không có bài làm hoặc dữ liệu học sinh. Chỉ trả JSON {"status":"ok"}.');
+  let status: unknown;
+  try { status = JSON.parse(result.trim()); } catch { throw new Error('AI đã phản hồi nhưng kết quả kiểm tra kết nối chưa hợp lệ. Hãy thử lại.'); }
+  if ((status as { status?: string })?.status !== 'ok') throw new Error('AI đã phản hồi nhưng chưa xác nhận kết nối thành công.');
+  return modelName;
 }

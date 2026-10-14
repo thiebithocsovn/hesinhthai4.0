@@ -8,6 +8,7 @@ import { WALL_POST_COLORS, assertWallSize, boardPosts, canSubmitToSharedWall, cr
 import { normalizeWallAppearance, readSharedWallAppearance, sharedWallAppearance, WALL_APPEARANCE_ID, type WallAppearance } from '../lib/learningWallBackground';
 import WallBoardSurface, { type WallBoardActions } from './learning-wall/WallBoardSurface';
 import { prepareWallAssessmentSave, wallWorkRevision } from '../lib/learningWallAssessment';
+import { prepareWallChatSave } from '../lib/learningWallChat';
 
 interface Props { onBack: () => void; currentUser?: Teacher | 'admin' | null; onLogin?: () => void }
 function useOnline() {
@@ -217,6 +218,21 @@ function PrivateLearningWall({ onBack, currentUser, onLogin }: Props) {
         } : {}) });
       });
     },
+    async saveAiChat(post, input, expected) {
+      assertOwner(post);
+      if (!board || !currentBoardPosts.some(item => item.id === post.id)) throw new Error('Bài làm không thuộc bảng đang mở.');
+      return runTransaction(db, async transaction => {
+        const ref = doc(db, 'wall_posts', post.id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error('Bài đăng đã bị xóa.');
+        const latest = { ...snapshot.data(), id: post.id } as WallPost;
+        assertOwner(latest);
+        if (latest.categoryId !== post.categoryId || latest.boardId !== post.boardId) throw new Error('Bài đã chuyển bảng hoặc cột. Hãy mở lại bài.');
+        if (await wallWorkRevision(latest) !== input.workRevision) throw new Error('Bài làm đã thay đổi. Bắt đầu cuộc trao đổi mới trước khi lưu.');
+        const patch = prepareWallChatSave(latest, input, expected);
+        assertOwner(latest); transaction.update(ref, patch); return patch.aiChat;
+      });
+    },
     async saveAssessment(post, input, expected, approve = false) {
       assertOwner(post);
       if (!board || !currentBoardPosts.some(item => item.id === post.id)) throw new Error('Bài làm không thuộc bảng đang mở.');
@@ -316,7 +332,7 @@ function SharedLearningWall({ token, onBack }: { token: string; onBack: () => vo
   }, [token, shared?.enabled]);
   const unavailable = async () => { throw new Error('Chỉ giáo viên quản lý bảng mới được thực hiện thao tác này.'); };
   const actions: WallBoardActions = {
-    emptyTrash: unavailable, createBoard: unavailable, updateBoard: unavailable, createSection: unavailable, renameSection: unavailable, removePost: unavailable, react: unavailable, comment: unavailable, grade: unavailable, saveAssessment: unavailable, share: unavailable, revoke: unavailable, review: unavailable,
+    emptyTrash: unavailable, createBoard: unavailable, updateBoard: unavailable, createSection: unavailable, renameSection: unavailable, removePost: unavailable, react: unavailable, comment: unavailable, grade: unavailable, saveAssessment: unavailable, saveAiChat: unavailable, share: unavailable, revoke: unavailable, review: unavailable,
     async savePost(target, input) {
       if (!online) throw new Error('Hãy kết nối lại mạng trước khi gửi bài.');
       if (!canSubmitToSharedWall(shared)) throw new Error('Giáo viên chưa mở nhận bài.');

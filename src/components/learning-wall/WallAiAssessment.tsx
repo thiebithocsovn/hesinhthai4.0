@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Sparkles, Check, Copy, ExternalLink, Download, Save, LoaderCircle, ClipboardCheck, BookOpen, TrendingUp } from 'lucide-react';
+import { Sparkles, Check, Copy, Download, Save, LoaderCircle, ClipboardCheck, BookOpen, TrendingUp } from 'lucide-react';
 import type { WallCategory, WallPost } from '../../lib/learningWall';
 import { WALL_AI_SOURCES, VERDICT_LABELS, approvedWallAssessment, assignWallPractice, createWallAiRequest,
-  newWallAssessment, parseWallAnalysis, parseWallPractice, recordWallPracticeAttempt, studentWallFeedback,
-  studentWallWorksheet, wallAnalysisPrompt, wallAssessmentVersion, wallPracticePrompt, wallWorkRevision,
-  type WallAiRequest, type WallAiSource, type WallAssessment, type WallAssessmentContext, type WallLearningError,
+  newWallAssessment, recordWallPracticeAttempt, studentWallFeedback,
+  studentWallWorksheet, wallAssessmentVersion, wallPracticePrompt, wallWorkRevision,
+  type WallAssessment, type WallAssessmentContext, type WallLearningError,
   type WallPracticeExercise, type PracticeVerdict } from '../../lib/learningWallAssessment';
 import WallAiProgress, { downloadWallText } from './WallAiProgress';
+import WallAiChat from './WallAiChat';
+import type { WallChat } from '../../lib/learningWallChat';
 
 interface Props {
   post: WallPost;
@@ -16,25 +18,23 @@ interface Props {
   displayName: string;
   offline: boolean;
   onSave: (post: WallPost, assessment: WallAssessment, expected: WallAssessment | null, approve?: boolean) => Promise<WallAssessment>;
+  onSaveChat: (post: WallPost, chat: WallChat, expected: WallChat | null) => Promise<WallChat>;
+  onUseFeedback: (text: string) => void;
 }
-type Transfer = { kind: 'analysis'; prompt: string; request: WallAiRequest; source: WallAiSource }
-  | { kind: 'practice'; prompt: string; id: string; assessmentVersion: string; source: WallAiSource };
 const STEPS = [
-  { title: 'Phân tích', icon: Sparkles }, { title: 'Giáo viên duyệt', icon: ClipboardCheck },
+  { title: 'Chat và đánh giá', icon: Sparkles }, { title: 'Giáo viên duyệt', icon: ClipboardCheck },
   { title: 'Luyện tập', icon: BookOpen }, { title: 'Tiến bộ', icon: TrendingUp },
 ];
 
-export default function WallAiAssessment({ post, posts, board, ownerUid, displayName, offline, onSave }: Props) {
-  const [step, setStep] = useState(post.aiAssessment ? 1 : 0);
-  const [source, setSource] = useState<WallAiSource>('firebase-gemini');
-  const [context, setContext] = useState<WallAssessmentContext>(post.aiAssessment?.context || {
+export default function WallAiAssessment({ post, posts, board, ownerUid, displayName, offline, onSave, onSaveChat, onUseFeedback }: Props) {
+  const [step, setStep] = useState(0);
+  const [context, setContext] = useState<WallAssessmentContext>(post.aiChat?.context || post.aiAssessment?.context || {
     subject: '', grade: '', task: board.wallDescription || '', criteria: '', transcript: '',
   });
-  const [includeMedia, setIncludeMedia] = useState(true);
+  const [includeMedia, setIncludeMedia] = useState(post.aiChat?.includeMedia ?? true);
   const [assessment, setAssessment] = useState<WallAssessment | null>(post.aiAssessment || null);
   const [score, setScore] = useState(String(post.aiAssessment?.review.score ?? post.score ?? ''));
-  const [transfer, setTransfer] = useState<Transfer | null>(null);
-  const [importText, setImportText] = useState('');
+  const [chatBusy, setChatBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -49,9 +49,8 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
   const [verdict, setVerdict] = useState<PracticeVerdict | ''>('');
   const approved = assessment?.review.status === 'approved';
   const dirty = wallAssessmentVersion(assessment) !== wallAssessmentVersion(baseline.current);
-  const selectedSource = WALL_AI_SOURCES.find(item => item.id === source)!;
   const confirmed = assessment?.analysis.errors.filter(item => item.decision === 'confirmed') || [];
-  const disabled = busy || offline || stale || externalChange;
+  const disabled = busy || chatBusy || offline || stale || externalChange;
   const exercise = assessment?.practice?.exercises.find(item => item.id === exerciseId);
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -91,45 +90,15 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
     setAssessment({ ...assessment, practice: { ...assessment.practice,
       exercises: assessment.practice.exercises.map(item => item.id === id ? { ...item, ...patch } : item) } });
   }
-  function resetTransfer() { setTransfer(null); setImportText(''); }
   async function analyze() {
     const request = await createWallAiRequest(post, context, includeMedia);
     if (!mounted.current) return;
-    resetTransfer();
     const { analyzeWallWork } = await import('../../lib/learningWallAi');
     const result = await analyzeWallWork(request);
     if (!mounted.current) return;
     const next = newWallAssessment(request, result.analysis, 'firebase-gemini', result.model);
     next.studentCode = assessment?.studentCode || '';
     setAssessment(next); setStep(1); await persist(next);
-  }
-  async function prepareTransfer(kind: 'analysis' | 'practice') {
-    if (source === 'firebase-gemini') return;
-    if (kind === 'analysis') {
-      const request = await createWallAiRequest(post, context, includeMedia);
-      if (!mounted.current) return;
-      const prompt = wallAnalysisPrompt(request);
-      setTransfer({ kind, request, prompt, source }); setImportText('');
-      await navigator.clipboard.writeText(prompt);
-    } else if (assessment) {
-      const id = crypto.randomUUID(), prompt = wallPracticePrompt(assessment, id);
-      setTransfer({ kind, id, prompt, source, assessmentVersion: wallAssessmentVersion(assessment) }); setImportText('');
-      await navigator.clipboard.writeText(prompt);
-    }
-    if (mounted.current) setMessage(`Đã sao chép yêu cầu. Mở ${selectedSource.label.split(' ')[0]}, dán yêu cầu${kind === 'analysis' ? ' và tải kèm ảnh/PDF bài làm' : ''}, rồi nhập phản hồi JSON bên dưới.`);
-  }
-  async function acceptTransfer() {
-    if (!transfer) throw new Error('Hãy sao chép yêu cầu của bài này trước.');
-    if (transfer.kind === 'analysis') {
-      if (await wallWorkRevision(post) !== transfer.request.workRevision) throw new Error('Bài làm đã thay đổi. Hãy tạo yêu cầu mới.');
-      const next = newWallAssessment(transfer.request, parseWallAnalysis(importText, transfer.request.id), transfer.source, 'Tài khoản AI cá nhân · Nhập kết quả');
-      next.studentCode = assessment?.studentCode || '';
-      setAssessment(next); setStep(1); resetTransfer(); await persist(next);
-    } else if (assessment) {
-      if (wallAssessmentVersion(assessment) !== transfer.assessmentVersion) throw new Error('Phân tích đã thay đổi. Hãy tạo lại yêu cầu luyện tập.');
-      const plan = parseWallPractice(importText, transfer.id, assessment, transfer.source, 'Tài khoản AI cá nhân · Nhập kết quả');
-      const next = { ...assessment, practice: plan }; setAssessment(next); resetTransfer(); await persist(next);
-    }
   }
   async function generatePractice() {
     if (!assessment || dirty) throw new Error('Lưu các thay đổi trước khi tạo luyện tập.');
@@ -143,24 +112,11 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
   function reloadSaved() {
     baseline.current = post.aiAssessment || null; setAssessment(baseline.current);
     setContext(post.aiAssessment?.context || context); setScore(String(post.aiAssessment?.review.score ?? post.score ?? ''));
-    setExternalChange(false); resetTransfer(); setError('');
+    setExternalChange(false); setError('');
   }
-  const transferPanel = transfer && ((step === 0 && transfer.kind === 'analysis') || (step === 2 && transfer.kind === 'practice')) && <div className="lw-ai-transfer">
-    <p className="lw-help">1. Mở AI và dán yêu cầu. 2. Tải kèm ảnh/PDF nếu phân tích ảnh. 3. Sao chép toàn bộ JSON trả về và dán ở đây.</p>
-    <details><summary>Xem / chọn yêu cầu để sao chép thủ công</summary><textarea aria-label="Yêu cầu gửi AI" readOnly rows={8} value={transfer.prompt} onFocus={event => event.target.select()} /></details>
-    {transfer.kind === 'analysis' && transfer.request.media.length > 0 && <div className="lw-row lw-ai-wrap">{transfer.request.media.map((file, index) => <button type="button" className="lw-button" key={index} onClick={() => {
-      const bytes = Uint8Array.from(atob(file.data), character => character.charCodeAt(0));
-      const url = URL.createObjectURL(new Blob([bytes], { type: file.mimeType }));
-      const anchor = document.createElement('a'); anchor.href = url; anchor.download = `Bai_lam_${index + 1}.${file.mimeType === 'application/pdf' ? 'pdf' : file.mimeType.split('/')[1]}`; anchor.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }}><Download size={15} />Tải tệp {index + 1} để gửi AI</button>)}</div>}
-    <label>Kết quả JSON từ AI<textarea aria-label="Kết quả JSON từ AI" rows={6} maxLength={150000} value={importText} onChange={event => setImportText(event.target.value)} placeholder={'{"requestId": "…", …}'} /></label>
-    <button type="button" className="lw-button lw-primary" disabled={busy || offline || externalChange || !importText.trim()} onClick={() => void run(acceptTransfer)}><Check size={16} />{transfer.kind === 'analysis' ? 'Nhập phân tích dưới dạng bản nháp' : 'Nhập bài luyện tập để duyệt'}</button>
-  </div>;
-
   return <section className="lw-ai-assessment" aria-label="Trợ lý AI cho bài làm">
     <div className="lw-ai-heading"><span className="lw-ai-icon"><Sparkles size={24} /></span><div><h3>Trợ lý AI cho bài làm</h3><p>Phát hiện lỗi · Kiểm chứng nguyên nhân · Luyện tập · Tiến bộ</p></div><span className={`lw-ai-status ${approved ? 'is-resolved' : ''}`}>{approved ? 'Giáo viên đã duyệt' : 'Giáo viên quyết định'}</span></div>
-    <nav className="lw-ai-steps" aria-label="Các bước nhận xét AI">{STEPS.map((item, index) => <button key={item.title} type="button" aria-current={step === index ? 'step' : undefined} onClick={() => { if (!busy) { setStep(index); setError(''); } }} disabled={busy}><item.icon size={17} /><span>{index + 1}. {item.title}</span></button>)}</nav>
+    <nav className="lw-ai-steps" aria-label="Các bước nhận xét AI">{STEPS.map((item, index) => <button key={item.title} type="button" aria-current={step === index ? 'step' : undefined} onClick={() => { if (!busy && !chatBusy) { setStep(index); setError(''); } }} disabled={busy || chatBusy}><item.icon size={17} /><span>{index + 1}. {item.title}</span></button>)}</nav>
     {offline && <p role="alert" className="lw-ai-warning">Đang mất mạng. Nội dung đang soạn được giữ trong cửa sổ này; kết nối lại để lưu.</p>}
     {stale && <p role="alert" className="lw-ai-warning">Bài làm đã thay đổi sau lần phân tích. Mở bước Phân tích để phân tích lại; dữ liệu cũ chưa được áp dụng cho bài mới.</p>}
     {externalChange && <div className="lw-ai-warning" role="alert">Dữ liệu đã thay đổi ở cửa sổ khác. <button type="button" className="lw-button" onClick={reloadSaved}>Tải bản đã lưu</button></div>}
@@ -168,23 +124,21 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
     {message && <p role="status" className="lw-ai-success">{message}</p>}
     {busy && <p role="status" className="lw-ai-busy"><LoaderCircle size={17} className="lw-ai-spin" />Đang xử lý…</p>}
 
-    {(step === 0 || step === 2) && <div className="lw-ai-provider"><label>Chọn cách dùng AI<select aria-label="Chọn cách dùng AI" disabled={busy} value={source} onChange={event => { setSource(event.target.value as WallAiSource); resetTransfer(); }}>
-      {WALL_AI_SOURCES.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-    </select></label><p className="lw-help">{source === 'firebase-gemini' ? 'Phân tích trực tiếp qua Gemini của dự án Firebase. Cần Firebase AI Logic hoạt động; không nhập khóa AI vào giao diện.' : 'Dùng phiên đăng nhập hiện có trên website AI. Sao chép yêu cầu, mở AI, rồi nhập kết quả. Bản này chưa tự đăng nhập hoặc gọi tài khoản AI cá nhân.'}</p></div>}
-
     {step === 0 && <div className="lw-ai-section">
-      <div className="lw-form-grid"><label>Môn học<input maxLength={120} value={context.subject} disabled={busy} onChange={event => { setContext({ ...context, subject: event.target.value }); resetTransfer(); }} placeholder="Ví dụ: Tin học" /></label><label>Khối / lớp<input maxLength={80} value={context.grade} disabled={busy} onChange={event => { setContext({ ...context, grade: event.target.value }); resetTransfer(); }} placeholder="Ví dụ: Lớp 8" /></label></div>
-      <label>Đề bài / nhiệm vụ cần đánh giá<textarea rows={3} maxLength={4000} value={context.task} disabled={busy} onChange={event => { setContext({ ...context, task: event.target.value }); resetTransfer(); }} placeholder="Nhập yêu cầu để AI đối chiếu đúng nhiệm vụ…" /></label>
-      <label>Đáp án / tiêu chí đánh giá<textarea rows={3} maxLength={4000} value={context.criteria} disabled={busy} onChange={event => { setContext({ ...context, criteria: event.target.value }); resetTransfer(); }} placeholder="Nội dung đúng, mức độ yêu cầu, tiêu chí của giáo viên…" /></label>
-      <details><summary>Bổ sung nội dung đọc từ tài liệu</summary><label>Nội dung bài làm bổ sung<textarea rows={4} maxLength={12000} value={context.transcript} disabled={busy} onChange={event => { setContext({ ...context, transcript: event.target.value }); resetTransfer(); }} placeholder="Dán nội dung Word/PowerPoint/Excel hoặc phần chữ khó đọc trên ảnh…" /></label></details>
-      <label className="lw-checkbox"><input type="checkbox" checked={includeMedia} disabled={busy} onChange={event => { setIncludeMedia(event.target.checked); resetTransfer(); }} />Gửi kèm ảnh / PDF tải trực tiếp của bài làm</label>
-      <p className="lw-help">AI nhận nội dung chữ, TXT/CSV và ảnh/PDF tải trực tiếp. Word, Excel, PowerPoint và liên kết ngoài cần dán nội dung hoặc tải vào AI cá nhân. Tên học sinh, điểm và nhận xét riêng không nằm trong yêu cầu; kiểm tra thông tin có trong bài làm trước khi gửi.</p>
-      <div className="lw-row lw-ai-wrap">{source === 'firebase-gemini' ? <button type="button" className="lw-button lw-primary" disabled={busy || offline || externalChange || !context.task.trim()} onClick={() => void run(analyze)}><Sparkles size={17} />{assessment ? 'Phân tích lại bài làm' : 'AI phân tích bài làm'}</button> : <><button type="button" className="lw-button lw-primary" disabled={busy || offline || externalChange || !context.task.trim()} onClick={() => void run(() => prepareTransfer('analysis'))}><Copy size={17} />Sao chép yêu cầu phân tích</button><a className="lw-button" href={selectedSource.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={17} />Mở AI đang dùng</a></>}</div>
+      <WallAiChat post={post} context={context} includeMedia={includeMedia} offline={offline} disabled={busy || externalChange} onBusy={setChatBusy} onSave={onSaveChat} onUseFeedback={onUseFeedback} />
+      <details className="lw-ai-context" open={!post.aiChat && !post.aiAssessment}><summary>Đề bài và tiêu chí dùng cho AI</summary><div className="lw-ai-section">
+      <div className="lw-form-grid"><label>Môn học<input maxLength={120} value={context.subject} disabled={busy || chatBusy} onChange={event => { setContext({ ...context, subject: event.target.value }); }} placeholder="Ví dụ: Tin học" /></label><label>Khối / lớp<input maxLength={80} value={context.grade} disabled={busy || chatBusy} onChange={event => { setContext({ ...context, grade: event.target.value }); }} placeholder="Ví dụ: Lớp 8" /></label></div>
+      <label>Đề bài / nhiệm vụ cần đánh giá<textarea rows={3} maxLength={4000} value={context.task} disabled={busy || chatBusy} onChange={event => { setContext({ ...context, task: event.target.value }); }} placeholder="Nhập yêu cầu để AI đối chiếu đúng nhiệm vụ…" /></label>
+      <label>Đáp án / tiêu chí đánh giá<textarea rows={3} maxLength={4000} value={context.criteria} disabled={busy || chatBusy} onChange={event => { setContext({ ...context, criteria: event.target.value }); }} placeholder="Nội dung đúng, mức độ yêu cầu, tiêu chí của giáo viên…" /></label>
+      <details><summary>Bổ sung nội dung đọc từ tài liệu</summary><label>Nội dung bài làm bổ sung<textarea rows={4} maxLength={12000} value={context.transcript} disabled={busy || chatBusy} onChange={event => { setContext({ ...context, transcript: event.target.value }); }} placeholder="Dán nội dung Word/PowerPoint/Excel hoặc phần chữ khó đọc trên ảnh…" /></label></details>
+      <label className="lw-checkbox"><input type="checkbox" checked={includeMedia} disabled={busy || chatBusy} onChange={event => { setIncludeMedia(event.target.checked); }} />Gửi kèm ảnh / PDF tải trực tiếp của bài làm</label>
+      <p className="lw-help">AI nhận nội dung chữ, TXT/CSV và ảnh/PDF tải trực tiếp. Word, Excel, PowerPoint và liên kết ngoài cần dán nội dung ở phần bổ sung để AI đọc đúng. Tên học sinh, điểm và nhận xét riêng không nằm trong yêu cầu; kiểm tra thông tin có trong bài làm trước khi gửi.</p>
+      </div></details>
+      <button type="button" className="lw-button lw-primary" disabled={busy || chatBusy || offline || externalChange || !context.task.trim()} onClick={() => void run(analyze)}><Sparkles size={17} />{assessment ? 'Đánh giá lại bài làm tại đây' : 'AI đánh giá bài làm tại đây'}</button>
       {assessment && <p className="lw-help">Phân tích lại tạo bản nháp mới. Bản đã duyệt và các lượt luyện tập trước được lưu trong lịch sử khi bản mới được lưu.</p>}
-      {transferPanel}
     </div>}
 
-    {step === 1 && (!assessment ? <p className="lw-ai-empty">Mở bước Phân tích và chạy AI hoặc nhập kết quả từ tài khoản AI đang dùng.</p> : <div className="lw-ai-section">
+    {step === 1 && (!assessment ? <p className="lw-ai-empty">Mở bước Phân tích để chat hoặc bấm AI đánh giá bài làm tại đây.</p> : <div className="lw-ai-section">
       <div className="lw-ai-summary"><p className="lw-eyebrow">{WALL_AI_SOURCES.find(item => item.id === assessment.source)?.label} · {new Date(assessment.analyzedAt).toLocaleString('vi-VN')}</p><h4>Nhận định từ bài làm</h4><p>{assessment.analysis.summary}</p>{assessment.analysis.strengths.length > 0 && <><strong>Điểm làm tốt</strong><ul>{assessment.analysis.strengths.map((value, index) => <li key={index}>{value}</li>)}</ul></>}{assessment.analysis.limitations.length > 0 && <div className="lw-ai-warning"><strong>Phần AI chưa đủ căn cứ</strong><ul>{assessment.analysis.limitations.map((value, index) => <li key={index}>{value}</li>)}</ul></div>}</div>
       <p className="lw-help">Giáo viên hỏi học sinh hoặc đối chiếu bài làm để xác minh giả thuyết. Xác nhận lỗi cần nguyên nhân do giáo viên kết luận và căn cứ cụ thể.</p>
       {!assessment.analysis.errors.length && <p>AI chưa chỉ ra lỗi có căn cứ. Giáo viên vẫn cần kiểm tra bài và nhận xét trước khi duyệt.</p>}
@@ -199,15 +153,14 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
       <label>Điểm do giáo viên quyết định / 10<input aria-label="Điểm giáo viên quyết định" type="number" min="0" max="10" step="0.25" disabled={disabled || approved} value={score} onChange={event => { setScore(event.target.value); setAssessment({ ...assessment, review: { ...assessment.review, score: event.target.value === '' ? null : Number(event.target.value) } }); }} /></label><p className="lw-help">Để trống sẽ giữ điểm hiện có. AI không tự đặt điểm. Nhận xét, điểm và kết luận nguyên nhân ở trong không gian riêng của giáo viên.</p>
       <div className="lw-row lw-ai-wrap">{!approved ? <><button type="button" className="lw-button" disabled={disabled || !dirty} onClick={() => void run(() => persist(assessment))}><Save size={16} />Lưu bản nháp</button><button type="button" className="lw-button lw-primary" disabled={disabled || !assessment.review.feedback.trim()} onClick={() => void run(async () => {
         const next = approvedWallAssessment(assessment, ownerUid, displayName, score); await persist(next, true);
-      })}><ClipboardCheck size={17} />Duyệt nhận xét và lưu điểm</button></> : <><button type="button" className="lw-button" disabled={disabled} onClick={() => void run(async () => { await navigator.clipboard.writeText(studentWallFeedback(post, assessment)); if (mounted.current) setMessage('Đã sao chép nhận xét đã duyệt để gửi riêng cho học sinh.'); })}><Copy size={16} />Sao chép nhận xét đã duyệt</button><button type="button" className="lw-button" disabled={disabled} onClick={() => { setAssessment({ ...assessment, id: crypto.randomUUID(), practice: null, review: { ...assessment.review, status: 'draft', teacherUid: '', reviewedAt: 0 } }); resetTransfer(); }}>Chỉnh nhận xét thành bản mới</button></>}</div>
+      })}><ClipboardCheck size={17} />Duyệt nhận xét và lưu điểm</button></> : <><button type="button" className="lw-button" disabled={disabled} onClick={() => void run(async () => { await navigator.clipboard.writeText(studentWallFeedback(post, assessment)); if (mounted.current) setMessage('Đã sao chép nhận xét đã duyệt để gửi riêng cho học sinh.'); })}><Copy size={16} />Sao chép nhận xét đã duyệt</button><button type="button" className="lw-button" disabled={disabled} onClick={() => { setAssessment({ ...assessment, id: crypto.randomUUID(), practice: null, review: { ...assessment.review, status: 'draft', teacherUid: '', reviewedAt: 0 } }); }}>Chỉnh nhận xét thành bản mới</button></>}</div>
       {approved && <p className="lw-ai-success">{assessment.review.teacherName} đã duyệt lúc {new Date(assessment.review.reviewedAt).toLocaleString('vi-VN')}. Điểm: {assessment.review.score ?? 'Chưa đặt'}{assessment.review.score !== null ? '/10' : ''}.</p>}
     </div>)}
 
     {step === 2 && (!assessment || !approved ? <p className="lw-ai-empty">Giáo viên cần kiểm chứng và duyệt nhận xét trước khi tạo bài luyện tập.</p> : <div className="lw-ai-section">
       <p>{confirmed.length} lỗi đã xác nhận. AI tạo nhiệm vụ theo nguyên nhân do giáo viên kết luận, kèm gợi ý và tiêu chí kiểm tra.</p>
       {!confirmed.length && <p className="lw-ai-warning">Chưa có lỗi được xác nhận. Không tạo bài luyện tập dựa vào lỗi bị loại hoặc chưa kiểm chứng.</p>}
-      {assessment.practice?.status !== 'assigned' && <div className="lw-row lw-ai-wrap">{source === 'firebase-gemini' ? <button type="button" className="lw-button lw-primary" disabled={disabled || dirty || !confirmed.length} onClick={() => void run(generatePractice)}><Sparkles size={17} />{assessment.practice ? 'Tạo lại luyện tập AI' : 'Tạo luyện tập cá nhân hóa'}</button> : <><button type="button" className="lw-button lw-primary" disabled={disabled || dirty || !confirmed.length} onClick={() => void run(() => prepareTransfer('practice'))}><Copy size={17} />Sao chép yêu cầu luyện tập</button><a className="lw-button" href={selectedSource.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={17} />Mở AI đang dùng</a></>}</div>}
-      {transferPanel}
+      {assessment.practice?.status !== 'assigned' && <button type="button" className="lw-button lw-primary" disabled={disabled || dirty || !confirmed.length} onClick={() => void run(generatePractice)}><Sparkles size={17} />{assessment.practice ? 'Tạo lại luyện tập AI' : 'Tạo luyện tập cá nhân hóa'}</button>}
       {assessment.practice && <><label>Hướng dẫn học sinh<textarea maxLength={2000} rows={2} disabled={disabled || assessment.practice.status === 'assigned'} value={assessment.practice.instructions} onChange={event => setAssessment({ ...assessment, practice: { ...assessment.practice!, instructions: event.target.value } })} /></label>
         {assessment.practice.exercises.map((item, index) => <article key={item.id} className="lw-ai-error-card">
           <h4>Bài {index + 1} · {assessment.analysis.errors.find(error => error.id === item.errorId)?.skill} · {item.difficulty === 'foundation' ? 'Củng cố' : item.difficulty === 'application' ? 'Vận dụng' : 'Mở rộng'}</h4>
