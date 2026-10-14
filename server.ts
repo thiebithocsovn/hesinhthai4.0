@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import firebaseConfig from './firebase-applet-config.json';
-import { createWallOpenAiRouter } from './server/wallOpenAi';
+import { createWallOpenAiRouter, createWallAiQuota } from './server/wallOpenAi';
 
 dotenv.config();
 
@@ -41,23 +41,28 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/api/wall-ai', createWallOpenAiRouter({
-  apiKey: process.env.OPENAI_API_KEY?.trim() || '',
-  model: process.env.OPENAI_MODEL?.trim() || 'gpt-5.4-mini',
+const wallConfig = {
   teacherUids: new Set((process.env.OPENAI_TEACHER_UIDS || '').split(',').map(uid => uid.trim()).filter(Boolean)),
   teacherEmails: new Set((process.env.OPENAI_TEACHER_EMAILS || '').split(',').map(email => email.trim().toLowerCase()).filter(Boolean)),
   origins: allowedOrigins,
-}, {
-  async verifyTeacher(token) {
+};
+const wallDependencies = {
+  quota: createWallAiQuota(),
+  async verifyTeacher(token: string) {
     const adminApp = getApps().find(item => item.name === 'wall-openai-auth') || initializeApp({
       projectId: firebaseConfig.projectId,
     }, 'wall-openai-auth');
-    // Revocation and disabled-account checks use the server's Firebase service-account credentials.
     const decoded = await getAuth(adminApp).verifyIdToken(token, true);
     return { uid: decoded.uid, anonymous: decoded.firebase?.sign_in_provider === 'anonymous',
       email: decoded.email, emailVerified: decoded.email_verified === true };
   },
-}));
+};
+app.use('/api/wall-ai', createWallOpenAiRouter({ ...wallConfig,
+  apiKey: process.env.OPENAI_API_KEY?.trim() || '', model: process.env.OPENAI_MODEL?.trim() || 'gpt-5.4-mini',
+}, wallDependencies));
+app.use('/api/wall-claude', createWallOpenAiRouter({ ...wallConfig, provider: 'anthropic',
+  apiKey: process.env.ANTHROPIC_API_KEY?.trim() || '', model: process.env.ANTHROPIC_MODEL?.trim() || 'claude-sonnet-5-5',
+}, wallDependencies));
 
 app.use(express.json({ limit: '50mb' }));
 

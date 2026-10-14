@@ -3,10 +3,11 @@ import { MessageSquare, Send, LoaderCircle, ClipboardCheck, RotateCcw, Save } fr
 import type { WallPost } from '../../lib/learningWall';
 import { createWallAiRequest, wallWorkRevision, type WallAssessmentContext } from '../../lib/learningWallAssessment';
 import { appendWallChatExchange, wallChatContextKey, wallChatVersion, type WallChat } from '../../lib/learningWallChat';
-import { wallAiLabel } from '../../lib/wallAiProvider';
+import { wallAiProviderLabel, type WallAiProvider } from '../../lib/wallAiProvider';
 
 interface Props {
   post: WallPost;
+  provider: WallAiProvider;
   context: WallAssessmentContext;
   includeMedia: boolean;
   offline: boolean;
@@ -17,7 +18,7 @@ interface Props {
 }
 const QUESTIONS = ['Chỉ ra lỗi trong bài', 'Gợi ý nhận xét cho học sinh', 'Hỏi để xác minh nguyên nhân'];
 
-export default function WallAiChat({ post, context, includeMedia, offline, disabled, onBusy, onUseFeedback, onSave }: Props) {
+export default function WallAiChat({ post, provider, context, includeMedia, offline, disabled, onBusy, onUseFeedback, onSave }: Props) {
   const [chat, setChat] = useState<WallChat | null>(post.aiChat || null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -35,6 +36,7 @@ export default function WallAiChat({ post, context, includeMedia, offline, disab
   const signature = JSON.stringify([post.title, post.text, post.studentName, post.imageSrc,
     (post.attachments || []).map(file => [file.kind, file.url]), context, includeMedia]);
   const currentScope = useRef(signature); currentScope.current = signature;
+  const currentProvider = useRef(provider); currentProvider.current = provider;
   const locked = disabled || busy || offline;
   const chatContext = { ...context, task: context.task.trim() || 'Giáo viên chưa cung cấp đề bài. Chỉ nhận xét phần nhìn thấy; nêu rõ thiếu đề hoặc tiêu chí và hỏi giáo viên bổ sung.' };
 
@@ -53,6 +55,7 @@ export default function WallAiChat({ post, context, includeMedia, offline, disab
     }
   }, [post.aiChat, unsaved]);
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [chat?.messages.length, pendingMessage]);
+  useEffect(() => { setConnection(''); setError(''); }, [provider]);
 
   async function save(next: WallChat) {
     const result = await onSave(post, next, baseline.current);
@@ -71,8 +74,8 @@ export default function WallAiChat({ post, context, includeMedia, offline, disab
       const key = await wallChatContextKey(chatContext, includeMedia);
       if (chat && chat.messages.length >= 40) throw new Error('Đã đủ 20 lượt trao đổi. Hãy bắt đầu cuộc trao đổi mới.');
       const { chatAboutWallWork } = await import('../../lib/learningWallAi');
-      const reply = await chatAboutWallWork(request, message, chat?.messages || []);
-      if (!mounted.current || currentScope.current !== scope) return;
+      const reply = await chatAboutWallWork(request, message, chat?.messages || [], provider);
+      if (!mounted.current || currentScope.current !== scope || currentProvider.current !== provider) return;
       const next = appendWallChatExchange(chat, request, key, message, reply, includeMedia);
       setChat(next); setUnsaved(true); setDraft('');
       await save(next);
@@ -92,8 +95,8 @@ export default function WallAiChat({ post, context, includeMedia, offline, disab
     running.current = true; setBusy(true); onBusy(true); setError(''); setConnection('');
     try {
       const { checkWallAiConnection } = await import('../../lib/learningWallAi');
-      const model = await checkWallAiConnection();
-      if (mounted.current) setConnection(`Đã nhận phản hồi từ ${model}. API sẵn sàng cho chat và đánh giá tại đây.`);
+      const model = await checkWallAiConnection(provider);
+      if (mounted.current && currentProvider.current === provider) setConnection(`Đã nhận phản hồi từ ${model}. API sẵn sàng cho chat và đánh giá tại đây.`);
     } catch (failure) {
       if (mounted.current) setError(failure instanceof Error ? failure.message : 'Chưa kiểm tra được kết nối AI.');
     } finally {
@@ -103,12 +106,12 @@ export default function WallAiChat({ post, context, includeMedia, offline, disab
   }
 
   return <section className="lw-ai-chat" aria-label="Chat AI trong phần nhận xét">
-    <div className="lw-ai-heading"><MessageSquare size={21} /><div><h4>Chat AI về bài làm này</h4><p>Trao đổi và nhận gợi ý ngay trong phần nhận xét</p></div><span className="lw-ai-status">{wallAiLabel}</span></div>
+    <div className="lw-ai-heading"><MessageSquare size={21} /><div><h4>Chat AI về bài làm này</h4><p>Trao đổi và nhận gợi ý ngay trong phần nhận xét</p></div><span className="lw-ai-status">{wallAiProviderLabel(provider)}</span></div>
     <div className="lw-ai-chat-connection"><button type="button" className="lw-button" disabled={locked} onClick={() => void checkConnection()}>Kiểm tra kết nối AI</button>{connection && <p role="status" className="lw-ai-success">{connection}</p>}</div>
     <div ref={log} className="lw-ai-chat-log" role="log" aria-label="Cuộc trao đổi AI" aria-live="polite" aria-relevant="additions text" tabIndex={0}>
       {!chat?.messages.length && !pendingMessage && <p className="lw-ai-chat-empty">Hỏi AI về lỗi, bằng chứng, cách xác minh nguyên nhân hoặc cách nhận xét bài làm. Giáo viên kiểm tra và quyết định nhận xét, điểm cuối cùng.</p>}
       {chat?.messages.map(message => <article key={message.id} className={`lw-ai-chat-message is-${message.role}`}>
-        <strong>{message.role === 'user' ? 'Giáo viên' : 'AI hỗ trợ'}</strong><p>{message.text}</p>
+        <strong>{message.role === 'user' ? 'Giáo viên' : 'AI hỗ trợ'}{message.role === 'model' && message.model && <small> · {message.model}</small>}</strong><p>{message.text}</p>
         {message.role === 'model' && message.feedback && <div className="lw-ai-chat-feedback"><small>Nhận xét đề xuất</small><p>{message.feedback}</p><button type="button" className="lw-button" disabled={locked || stale} onClick={() => {
           onUseFeedback(message.feedback); setNotice('Đã đưa gợi ý vào ô nhận xét của giáo viên bên dưới. Kiểm tra, chỉnh sửa rồi bấm Gửi nhận xét.');
         }}><ClipboardCheck size={15} />Đưa vào ô nhận xét</button></div>}

@@ -9,6 +9,8 @@ import { WALL_AI_SOURCES, VERDICT_LABELS, approvedWallAssessment, assignWallPrac
 import WallAiProgress, { downloadWallText } from './WallAiProgress';
 import WallAiChat from './WallAiChat';
 import type { WallChat } from '../../lib/learningWallChat';
+import WallAiProviderPicker, { type WallGoogleLogin } from './WallAiProviderPicker';
+import { isWallAiProvider, readWallAiProvider, rememberWallAiProvider, type WallAiProvider } from '../../lib/wallAiProvider';
 
 interface Props {
   post: WallPost;
@@ -17,6 +19,7 @@ interface Props {
   ownerUid: string;
   displayName: string;
   offline: boolean;
+  googleLogin?: WallGoogleLogin;
   onSave: (post: WallPost, assessment: WallAssessment, expected: WallAssessment | null, approve?: boolean) => Promise<WallAssessment>;
   onSaveChat: (post: WallPost, chat: WallChat, expected: WallChat | null) => Promise<WallChat>;
   onUseFeedback: (text: string) => void;
@@ -26,7 +29,9 @@ const STEPS = [
   { title: 'Luyện tập', icon: BookOpen }, { title: 'Tiến bộ', icon: TrendingUp },
 ];
 
-export default function WallAiAssessment({ post, posts, board, ownerUid, displayName, offline, onSave, onSaveChat, onUseFeedback }: Props) {
+export default function WallAiAssessment({ post, posts, board, ownerUid, displayName, offline, googleLogin, onSave, onSaveChat, onUseFeedback }: Props) {
+  const [provider, setProvider] = useState<WallAiProvider>(() => readWallAiProvider(ownerUid));
+  useEffect(() => { setProvider(readWallAiProvider(ownerUid)); }, [ownerUid]);
   const [step, setStep] = useState(0);
   const [context, setContext] = useState<WallAssessmentContext>(post.aiChat?.context || post.aiAssessment?.context || {
     subject: '', grade: '', task: board.wallDescription || '', criteria: '', transcript: '',
@@ -50,7 +55,7 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
   const approved = assessment?.review.status === 'approved';
   const dirty = wallAssessmentVersion(assessment) !== wallAssessmentVersion(baseline.current);
   const confirmed = assessment?.analysis.errors.filter(item => item.decision === 'confirmed') || [];
-  const disabled = busy || chatBusy || offline || stale || externalChange;
+  const disabled = busy || chatBusy || Boolean(googleLogin?.busy) || offline || stale || externalChange;
   const exercise = assessment?.practice?.exercises.find(item => item.id === exerciseId);
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -94,7 +99,7 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
     const request = await createWallAiRequest(post, context, includeMedia);
     if (!mounted.current) return;
     const { analyzeWallWork } = await import('../../lib/learningWallAi');
-    const result = await analyzeWallWork(request);
+    const result = await analyzeWallWork(request, provider);
     if (!mounted.current) return;
     const next = newWallAssessment(request, result.analysis, result.source, result.model);
     next.studentCode = assessment?.studentCode || '';
@@ -105,7 +110,7 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
     const id = crypto.randomUUID();
     wallPracticePrompt(assessment, id); // Enforce approved causes before any provider request.
     const { generateWallPractice } = await import('../../lib/learningWallAi');
-    const plan = await generateWallPractice(assessment, id);
+    const plan = await generateWallPractice(assessment, id, provider);
     if (!mounted.current) return;
     const next = { ...assessment, practice: plan }; setAssessment(next); await persist(next);
   }
@@ -116,6 +121,10 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
   }
   return <section className="lw-ai-assessment" aria-label="Trợ lý AI cho bài làm">
     <div className="lw-ai-heading"><span className="lw-ai-icon"><Sparkles size={24} /></span><div><h3>Trợ lý AI cho bài làm</h3><p>Phát hiện lỗi · Kiểm chứng nguyên nhân · Luyện tập · Tiến bộ</p></div><span className={`lw-ai-status ${approved ? 'is-resolved' : ''}`}>{approved ? 'Giáo viên đã duyệt' : 'Giáo viên quyết định'}</span></div>
+    <WallAiProviderPicker provider={provider} googleLogin={googleLogin} disabled={busy || chatBusy || externalChange} onChange={next => {
+      if (running.current || chatBusy || !isWallAiProvider(next)) return;
+      setProvider(next); rememberWallAiProvider(ownerUid, next); setError(''); setMessage('');
+    }} />
     <nav className="lw-ai-steps" aria-label="Các bước nhận xét AI">{STEPS.map((item, index) => <button key={item.title} type="button" aria-current={step === index ? 'step' : undefined} onClick={() => { if (!busy && !chatBusy) { setStep(index); setError(''); } }} disabled={busy || chatBusy}><item.icon size={17} /><span>{index + 1}. {item.title}</span></button>)}</nav>
     {offline && <p role="alert" className="lw-ai-warning">Đang mất mạng. Nội dung đang soạn được giữ trong cửa sổ này; kết nối lại để lưu.</p>}
     {stale && <p role="alert" className="lw-ai-warning">Bài làm đã thay đổi sau lần phân tích. Mở bước Phân tích để phân tích lại; dữ liệu cũ chưa được áp dụng cho bài mới.</p>}
@@ -125,7 +134,7 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
     {busy && <p role="status" className="lw-ai-busy"><LoaderCircle size={17} className="lw-ai-spin" />Đang xử lý…</p>}
 
     {step === 0 && <div className="lw-ai-section">
-      <WallAiChat post={post} context={context} includeMedia={includeMedia} offline={offline} disabled={busy || externalChange} onBusy={setChatBusy} onSave={onSaveChat} onUseFeedback={onUseFeedback} />
+      <WallAiChat post={post} provider={provider} context={context} includeMedia={includeMedia} offline={offline} disabled={busy || externalChange || Boolean(googleLogin?.busy)} onBusy={setChatBusy} onSave={onSaveChat} onUseFeedback={onUseFeedback} />
       <details className="lw-ai-context" open={!post.aiChat && !post.aiAssessment}><summary>Đề bài và tiêu chí dùng cho AI</summary><div className="lw-ai-section">
       <div className="lw-form-grid"><label>Môn học<input maxLength={120} value={context.subject} disabled={busy || chatBusy} onChange={event => { setContext({ ...context, subject: event.target.value }); }} placeholder="Ví dụ: Tin học" /></label><label>Khối / lớp<input maxLength={80} value={context.grade} disabled={busy || chatBusy} onChange={event => { setContext({ ...context, grade: event.target.value }); }} placeholder="Ví dụ: Lớp 8" /></label></div>
       <label>Đề bài / nhiệm vụ cần đánh giá<textarea rows={3} maxLength={4000} value={context.task} disabled={busy || chatBusy} onChange={event => { setContext({ ...context, task: event.target.value }); }} placeholder="Nhập yêu cầu để AI đối chiếu đúng nhiệm vụ…" /></label>
@@ -134,7 +143,7 @@ export default function WallAiAssessment({ post, posts, board, ownerUid, display
       <label className="lw-checkbox"><input type="checkbox" checked={includeMedia} disabled={busy || chatBusy} onChange={event => { setIncludeMedia(event.target.checked); }} />Gửi kèm ảnh / PDF tải trực tiếp của bài làm</label>
       <p className="lw-help">AI nhận nội dung chữ, TXT/CSV và ảnh/PDF tải trực tiếp. Word, Excel, PowerPoint và liên kết ngoài cần dán nội dung ở phần bổ sung để AI đọc đúng. Tên học sinh, điểm và nhận xét riêng không nằm trong yêu cầu; kiểm tra thông tin có trong bài làm trước khi gửi.</p>
       </div></details>
-      <button type="button" className="lw-button lw-primary" disabled={busy || chatBusy || offline || externalChange || !context.task.trim()} onClick={() => void run(analyze)}><Sparkles size={17} />{assessment ? 'Đánh giá lại bài làm tại đây' : 'AI đánh giá bài làm tại đây'}</button>
+      <button type="button" className="lw-button lw-primary" disabled={busy || chatBusy || googleLogin?.busy || offline || externalChange || !context.task.trim()} onClick={() => void run(analyze)}><Sparkles size={17} />{assessment ? 'Đánh giá lại bài làm tại đây' : 'AI đánh giá bài làm tại đây'}</button>
       {assessment && <p className="lw-help">Phân tích lại tạo bản nháp mới. Bản đã duyệt và các lượt luyện tập trước được lưu trong lịch sử khi bản mới được lưu.</p>}
     </div>}
 

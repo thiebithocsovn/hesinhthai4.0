@@ -7,10 +7,11 @@ import { canAccessTeacherOwnedRecord, filterTeacherOwnedRecords, isValidTeacherU
 import { WALL_POST_COLORS, assertWallSize, boardPosts, canSubmitToSharedWall, createWallLink, newWallShareId, readWallShareId, safeWallAttachment, safeWallImage, safeWallUrl, sharedWallPost, submissionPostAttachments, wallSubmissionData, validWallLocation, wallBackground, wallErrorMessage as errorMessage, wallLayout, type SharedWall, type WallCategory, type WallPost, type WallSubmission } from '../lib/learningWall';
 import { normalizeWallAppearance, readSharedWallAppearance, sharedWallAppearance, WALL_APPEARANCE_ID, type WallAppearance } from '../lib/learningWallBackground';
 import WallBoardSurface, { type WallBoardActions } from './learning-wall/WallBoardSurface';
+import { WallGoogleConnect } from './learning-wall/WallAiProviderPicker';
 import { prepareWallAssessmentSave, wallWorkRevision } from '../lib/learningWallAssessment';
 import { prepareWallChatSave } from '../lib/learningWallChat';
 
-interface Props { onBack: () => void; currentUser?: Teacher | 'admin' | null; onLogin?: () => void }
+interface Props { onBack: () => void; currentUser?: Teacher | 'admin' | null; onLogin?: () => void; googleLogin?: import('./learning-wall/WallAiProviderPicker').WallGoogleLogin }
 function useOnline() {
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => { const update = () => setOnline(navigator.onLine); window.addEventListener('online', update); window.addEventListener('offline', update); return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); }; }, []);
@@ -28,7 +29,7 @@ function publishAppearance(batch: ReturnType<typeof writeBatch>, token: string, 
   if (appearance) batch.set(ref, appearance); else batch.delete(ref);
 }
 
-function PrivateLearningWall({ onBack, currentUser, onLogin }: Props) {
+function PrivateLearningWall({ onBack, currentUser, onLogin, googleLogin }: Props) {
   const accessScope = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
   const [categories, setCategories] = useState<WallCategory[]>([]);
   const [posts, setPosts] = useState<WallPost[]>([]);
@@ -303,8 +304,8 @@ function PrivateLearningWall({ onBack, currentUser, onLogin }: Props) {
   };
   // Keep guest gating explicit: a link opens a separate, redacted collection below.
   return <>{accessScope.role !== 'guest' && (
-    <WallBoardSurface categories={categories} posts={posts} boardId={openedClassId} onOpen={setOpenedClassId} onBack={onBack} displayName={displayName} ownerUid={ownerUid} administrator={accessScope.role === 'administrator'} loading={!categoriesReady || !postsReady} error={error} offline={!online} actions={actions} submissions={submissions} sharePermission={share?.permission} shareUrl={board?.wallShareId && share?.enabled ? createWallLink(import.meta.env.BASE_URL, window.location.origin, board.wallShareId) : ''} />
-  )}{accessScope.role === 'guest' && <div className="lw-app"><div className="lw-main"><div className="lw-empty"><h1>Tường Học tập Ai</h1><p>Đăng nhập tài khoản giáo viên để tạo và quản lý bảng. Học sinh mở liên kết chia sẻ do giáo viên cung cấp.</p>{onLogin && <button className="lw-button lw-primary" onClick={onLogin}>Đăng nhập giáo viên</button>}<button className="lw-button" onClick={onBack}>Về trang chủ</button></div></div></div>}</>;
+    <WallBoardSurface categories={categories} posts={posts} boardId={openedClassId} onOpen={setOpenedClassId} onBack={onBack} displayName={displayName} ownerUid={ownerUid} googleLogin={googleLogin} administrator={accessScope.role === 'administrator'} loading={!categoriesReady || !postsReady} error={error} offline={!online} actions={actions} submissions={submissions} sharePermission={share?.permission} shareUrl={board?.wallShareId && share?.enabled ? createWallLink(import.meta.env.BASE_URL, window.location.origin, board.wallShareId) : ''} />
+  )}{accessScope.role === 'guest' && <div className="lw-app"><div className="lw-main"><div className="lw-empty"><h1>Tường Học tập Ai</h1><p>Đăng nhập tài khoản giáo viên để tạo và quản lý bảng. Học sinh mở liên kết chia sẻ do giáo viên cung cấp.</p>{googleLogin && <WallGoogleConnect login={googleLogin} />}{onLogin && <button className="lw-button" disabled={googleLogin?.busy} onClick={onLogin}>Đăng nhập bằng email</button>}<button className="lw-button" onClick={onBack}>Về trang chủ</button></div></div></div>}</>;
 }
 
 function SharedLearningWall({ token, onBack }: { token: string; onBack: () => void }) {

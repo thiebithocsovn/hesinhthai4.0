@@ -15,6 +15,10 @@ PROJECT = json.loads((ROOT / "firebase-applet-config.json").read_text())["projec
 SERVICE = "learning-wall-ai"
 REGION = "asia-southeast1"
 SECRET = "learning-wall-openai-key"
+PROVIDERS = {
+    "openai": {"env": "OPENAI_API_KEY", "secret": SECRET, "model": "gpt-5.4-mini", "path": "/api/wall-ai"},
+    "anthropic": {"env": "ANTHROPIC_API_KEY", "secret": "learning-wall-anthropic-key", "model": "claude-sonnet-5-5", "path": "/api/wall-claude"},
+}
 RUNTIME_ACCOUNT = "wall-ai-runtime@" + PROJECT + ".iam.gserviceaccount.com"
 BUILD_ACCOUNT = "wall-ai-builder@" + PROJECT + ".iam.gserviceaccount.com"
 ORIGIN = "https://thiebithocsovn.github.io"
@@ -26,7 +30,9 @@ def arguments(argv=None):
     parser.add_argument("--teacher-uid", action="append", default=[])
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
     parser.add_argument("--apply", action="store_true", help="Apply the displayed deployment plan.")
+    parser.add_argument("--provider", choices=sorted(PROVIDERS), action="append", default=[])
     args = parser.parse_args(argv)
+    args.provider = list(dict.fromkeys(args.provider or ["openai"]))
     args.teacher_email = sorted(set(value.strip().lower() for value in args.teacher_email))
     args.teacher_uid = sorted(set(value.strip() for value in args.teacher_uid))
     if not args.teacher_email and not args.teacher_uid:
@@ -43,11 +49,12 @@ def plan(args):
         "project": PROJECT, "service": SERVICE, "region": REGION,
         "runtime": "Node.js 22", "minInstances": 0, "maxInstances": 1,
         "cpu": 1, "memory": "512Mi", "concurrency": 3, "timeoutSeconds": 60,
-        "secret": SECRET, "runtimeAccount": RUNTIME_ACCOUNT,
-        "runtimeRoles": ["roles/firebaseauth.viewer", "roles/secretmanager.secretAccessor (this secret only)"],
+        "secret": PROVIDERS[args.provider[0]]["secret"], "providers": args.provider,
+        "secrets": [PROVIDERS[name]["secret"] for name in args.provider], "runtimeAccount": RUNTIME_ACCOUNT,
+        "runtimeRoles": ["roles/firebaseauth.viewer", "roles/secretmanager.secretAccessor (selected secrets only)"],
         "buildAccount": BUILD_ACCOUNT, "buildRole": "roles/run.builder",
         "allowedOrigin": ORIGIN, "teacherEmails": args.teacher_email, "teacherUids": args.teacher_uid,
-        "model": "gpt-5.4-mini", "publicHttps": True,
+        "models": {name: PROVIDERS[name]["model"] for name in args.provider}, "publicHttps": True,
         "authentication": "Firebase ID token with revocation checks; explicit teacher allowlist",
         "billing": "Existing enabled Google Cloud billing required; this script does not activate billing or buy API credit.",
         "secretHandling": "Secret Manager version, stdin only; never code, container image, command-line argument or logs.",
@@ -63,16 +70,16 @@ def command(*args, input_bytes=None, optional=False):
     return result
 
 
-def read_key(path):
+def read_key(path, env_name="OPENAI_API_KEY"):
     if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
         raise RuntimeError("The confirmed env file must be a regular, non-linked file.")
     key = ""
     for line in path.read_text().splitlines():
-        match = re.match(r"^\s*(?:export\s+)?OPENAI_API_KEY\s*=\s*(.*?)\s*$", line)
+        match = re.match(r"^\s*(?:export\s+)?" + re.escape(env_name) + r"\s*=\s*(.*?)\s*$", line)
         if match:
             key = match.group(1).strip().strip("\"'")
     if not re.fullmatch(r"sk-[A-Za-z0-9_-]+", key):
-        raise RuntimeError("No valid OpenAI credential is configured in the confirmed env file.")
+        raise RuntimeError("No valid " + env_name + " credential is configured in the confirmed env file.")
     return key.encode()
 
 
@@ -82,14 +89,21 @@ def ensure_account(name, email):
         command("iam", "service-accounts", "create", name, "--project=" + PROJECT, "--format=none")
 
 
-def verify_http(url):
+def verify_http(url, providers=("openai",)):
     if not url.startswith("https://") or not re.fullmatch(r"https://[A-Za-z0-9.-]+\.run\.app/?", url):
         raise RuntimeError("Google Cloud returned an unexpected service URL.")
     with urllib.request.urlopen(url.rstrip("/") + "/healthz", timeout=30) as response:
         status = json.loads(response.read())
         if status.get("status") != "ok" or not status.get("configured"):
             raise RuntimeError("The server is up but its private AI configuration is incomplete.")
-    request = urllib.request.Request(url.rstrip("/") + "/api/wall-ai/connection", data=b"{}",
+        if any(status.get("providers", {}).get(name) is not True for name in providers):
+            raise RuntimeError("The selected AI provider configuration is incomplete.")
+    for name in providers:
+        verify_unauthenticated(url, PROVIDERS[name]["path"])
+
+
+def verify_unauthenticated(url, path):
+    request = urllib.request.Request(url.rstrip("/") + path + "/connection", data=b"{}",
                                      headers={"Content-Type": "application/json", "Origin": ORIGIN})
     try:
         urllib.request.urlopen(request, timeout=30).read()
@@ -108,7 +122,7 @@ def apply(args):
     billing = json.loads(command("billing", "projects", "describe", PROJECT, "--format=json").stdout)
     if not billing.get("billingEnabled"):
         raise RuntimeError("This project has no enabled Google Cloud billing. No resources were created.")
-    key = read_key(args.env_file)
+    keys = {name: read_key(args.env_file, PROVIDERS[name]["env"]) for name in args.provider}
     command("services", "enable", "run.googleapis.com", "cloudbuild.googleapis.com",
             "artifactregistry.googleapis.com", "secretmanager.googleapis.com", "iam.googleapis.com",
             "identitytoolkit.googleapis.com", "--project=" + PROJECT, "--format=none")
@@ -117,31 +131,37 @@ def apply(args):
     for account, role in [(RUNTIME_ACCOUNT, "roles/firebaseauth.viewer"), (BUILD_ACCOUNT, "roles/run.builder")]:
         command("projects", "add-iam-policy-binding", PROJECT, "--member=serviceAccount:" + account,
                 "--role=" + role, "--condition=None", "--format=none")
-    if command("secrets", "describe", SECRET, "--project=" + PROJECT, "--format=none", optional=True).returncode:
-        command("secrets", "create", SECRET, "--project=" + PROJECT,
-                "--replication-policy=automatic", "--format=none")
-    version_result = command("secrets", "versions", "add", SECRET, "--project=" + PROJECT,
-                             "--data-file=-", "--format=value(name)", input_bytes=key)
-    del key
-    version = version_result.stdout.decode().strip().split("/")[-1]
-    if not version.isdigit():
-        raise RuntimeError("Secret Manager did not return a valid secret version.")
-    command("secrets", "add-iam-policy-binding", SECRET, "--project=" + PROJECT,
-            "--member=serviceAccount:" + RUNTIME_ACCOUNT, "--role=roles/secretmanager.secretAccessor",
-            "--format=none")
+    secret_bindings = []
+    for name in args.provider:
+        provider = PROVIDERS[name]
+        secret = provider["secret"]
+        if command("secrets", "describe", secret, "--project=" + PROJECT, "--format=none", optional=True).returncode:
+            command("secrets", "create", secret, "--project=" + PROJECT,
+                    "--replication-policy=automatic", "--format=none")
+        version_result = command("secrets", "versions", "add", secret, "--project=" + PROJECT,
+                                 "--data-file=-", "--format=value(name)", input_bytes=keys.pop(name))
+        version = version_result.stdout.decode().strip().split("/")[-1]
+        if not version.isdigit():
+            raise RuntimeError("Secret Manager did not return a valid secret version.")
+        secret_bindings.append(provider["env"] + "=" + secret + ":" + version)
+        command("secrets", "add-iam-policy-binding", secret, "--project=" + PROJECT,
+                "--member=serviceAccount:" + RUNTIME_ACCOUNT, "--role=roles/secretmanager.secretAccessor",
+                "--format=none")
     env = "^|^OPENAI_MODEL=gpt-5.4-mini|ALLOWED_ORIGINS=" + ORIGIN
+    env += "|ANTHROPIC_MODEL=claude-sonnet-5-5"
     env += "|OPENAI_TEACHER_UIDS=" + ",".join(args.teacher_uid)
     env += "|OPENAI_TEACHER_EMAILS=" + ",".join(args.teacher_email)
     command("run", "deploy", SERVICE, "--project=" + PROJECT, "--region=" + REGION, "--source=.",
             "--build-service-account=projects/" + PROJECT + "/serviceAccounts/" + BUILD_ACCOUNT,
-            "--service-account=" + RUNTIME_ACCOUNT, "--update-secrets=OPENAI_API_KEY=" + SECRET + ":" + version,
+            "--service-account=" + RUNTIME_ACCOUNT, "--update-secrets=" + ",".join(secret_bindings),
             "--update-env-vars=" + env, "--min=0", "--max=1", "--concurrency=3", "--timeout=60",
             "--cpu=1", "--memory=512Mi", "--port=8080", "--allow-unauthenticated", "--format=none")
     url = command("run", "services", "describe", SERVICE, "--project=" + PROJECT,
                   "--region=" + REGION, "--format=value(status.url)").stdout.decode().strip()
-    verify_http(url)
+    verify_http(url, args.provider)
     print(json.dumps({"deployed": True, "url": url, "anonymousRequestDenied": True,
                       "frontendVariable": "VITE_WALL_OPENAI_API_URL", "frontendValue": url,
+                      "providers": args.provider,
                       "realAiConnectionStillNeedsVerification": True}, ensure_ascii=False))
 
 

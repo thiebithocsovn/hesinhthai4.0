@@ -32,7 +32,8 @@ async function connect(token = '', requestOrigin = origin) {
 }
 try {
   const health = await fetch(base + '/healthz');
-  assert.deepEqual(await health.json(), { status: 'ok', provider: 'openai', configured: true });
+  assert.deepEqual(await health.json(), { status: 'ok', provider: 'learning-wall-ai', configured: true,
+    providers: { openai: true, anthropic: false } });
   assert.equal(calls, 0, 'Health checks are not billable AI requests');
   assert.equal(health.headers.get('x-powered-by'), null);
   assert.equal((await connect()).status, 401);
@@ -41,6 +42,10 @@ try {
   assert.equal(calls, 0, 'Only an approved verified teacher can spend API credit');
   assert.equal((await connect('verified')).status, 200);
   assert.equal(calls, 1);
+  const missingClaude = await fetch(base + '/api/wall-claude/connection', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', Authorization: 'Bearer verified' }, body: '{}' });
+  assert.equal(missingClaude.status, 503);
+  assert.match(await missingClaude.text(), /Claude/);
+  assert.equal(calls, 1, 'An unconfigured Claude connection never calls OpenAI');
   for (const path of ['/', '/api/chat', '/api/scan', '/.env', '/firebase-service-account.json']) {
     assert.equal((await fetch(base + path)).status, 404, 'API-only server does not expose ' + path);
   }

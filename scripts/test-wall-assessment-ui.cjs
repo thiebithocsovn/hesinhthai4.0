@@ -15,24 +15,28 @@ const assert = require('node:assert/strict');
     await page.route(/\/src\/lib\/learningWallAi\.ts(?:\?.*)?$/, route => route.fulfill({contentType:'application/javascript',body:`
       import { parseWallAnalysis, parseWallPractice } from '/hesinhthai4.0/src/lib/learningWallAssessment.ts';
       import { parseWallChatReply } from '/hesinhthai4.0/src/lib/learningWallChat.ts';
-      const model='openai-ui-fixture';
+      const models={openai:'openai-ui-fixture','firebase-gemini':'gemini-ui-fixture',anthropic:'claude-ui-fixture'};
+      window.providerRequests=[];
       window.aiRequests=[];
-      export async function checkWallAiConnection(){ return model; }
-      export async function chatAboutWallWork(request,message,history){
+      export async function checkWallAiConnection(provider='openai'){ window.providerRequests.push({kind:'connection',provider}); return models[provider]; }
+      export async function chatAboutWallWork(request,message,history,provider='openai'){
+        const model=models[provider]; window.providerRequests.push({kind:'chat',provider});
         window.aiRequests.push({request,message,history});
         if(message==='SIMULATE-API-ERROR') throw new Error('Kiểm thử: OpenAI chưa được kết nối.');
         return parseWallChatReply(JSON.stringify({requestId:message==='WRONG-REQUEST'?'wrong':request.id,
           reply:'Có bằng chứng chia sẻ mật khẩu. Hãy hỏi em để xác minh nguyên nhân. <b>RENDER-TEXT</b>',
           feedback:'Em đã nhận biết lừa đảo; hãy sửa nhánh chia sẻ mật khẩu và giải thích cách bảo vệ.'}),request.id,model);
       }
-      export async function analyzeWallWork(request){
-        return {model,source:'openai',analysis:parseWallAnalysis(JSON.stringify({requestId:request.id,summary:'Cần phân biệt hành vi an toàn.',strengths:['Nhận biết được lừa đảo.'],limitations:[],errors:[{id:'e1',skill:'Bảo vệ mật khẩu',title:'Chia sẻ mật khẩu',evidence:'Có ghi chia sẻ mật khẩu để nhận thưởng.',hypothesis:'Có thể nhầm xác thực và cung cấp bí mật.',confidence:'medium',verificationQuestion:'Em có chia sẻ OTP để nhận quà không?',remediation:'Phân biệt việc đăng nhập và lừa lấy OTP.'}],feedback:'Em đã nêu lừa đảo, hãy sửa nhánh thông tin đăng nhập.'}),request.id)};
+      export async function analyzeWallWork(request,provider='openai'){
+        const model=models[provider]; window.providerRequests.push({kind:'analysis',provider});
+        return {model,source:provider,analysis:parseWallAnalysis(JSON.stringify({requestId:request.id,summary:'Cần phân biệt hành vi an toàn.',strengths:['Nhận biết được lừa đảo.'],limitations:[],errors:[{id:'e1',skill:'Bảo vệ mật khẩu',title:'Chia sẻ mật khẩu',evidence:'Có ghi chia sẻ mật khẩu để nhận thưởng.',hypothesis:'Có thể nhầm xác thực và cung cấp bí mật.',confidence:'medium',verificationQuestion:'Em có chia sẻ OTP để nhận quà không?',remediation:'Phân biệt việc đăng nhập và lừa lấy OTP.'}],feedback:'Em đã nêu lừa đảo, hãy sửa nhánh thông tin đăng nhập.'}),request.id)};
       }
-      export async function generateWallPractice(assessment,id){
+      export async function generateWallPractice(assessment,id,provider='openai'){
+        const model=models[provider]; window.providerRequests.push({kind:'practice',provider});
         return parseWallPractice(JSON.stringify({requestId:id,instructions:'Giải thích từng lựa chọn.',exercises:[
           {errorId:'e1',difficulty:'foundation',question:'Bạn A xin OTP để gửi quà. Em xử lý thế nào?',hint:'Nghĩ về chức năng của OTP.',expectedAnswer:'SECRET-ANSWER Không cung cấp OTP.',successCriteria:'Nêu từ chối OTP và giải thích.'},
           {errorId:'e1',difficulty:'application',question:'Website xin mật khẩu email để nhận quà. Em làm gì?',hint:'Kiểm tra nguồn.',expectedAnswer:'SECRET-ANSWER Dừng thao tác, báo người lớn.',successCriteria:'Không gửi mật khẩu, biết báo cáo.'}
-        ]}),id,assessment,'openai',model);
+        ]}),id,assessment,provider,model);
       }
     `}));
     const button = name => page.getByRole('button', {name,exact:true});
@@ -44,7 +48,15 @@ const assert = require('node:assert/strict');
     const send = async message => { await composer.fill(message); await button('Gửi cho AI').click(); };
     await page.goto('http://127.0.0.1:3199/hesinhthai4.0/scripts/fixtures/wall-assessment-preview.html');
     await openFirst(); await composer.waitFor();
-    assert.equal(await page.getByLabel('Chọn cách dùng AI').count(),0);
+    const provider=page.getByLabel('Chọn AI cho bài làm',{exact:true});
+    assert.equal(await provider.locator('option').count(),3);
+    assert.equal(await provider.inputValue(),'openai');
+    await button('Đăng nhập bằng Google').click();
+    await page.waitForFunction(()=>window.googleAttempts===1);
+    assert.equal(await provider.isDisabled(),true);
+    assert.equal(await page.getByText(/API sẵn sàng cho chat/).count(),0,'Google sign-in does not mark AI ready');
+    await button('Hủy đăng nhập Google').click();
+    assert.equal(await provider.isEnabled(),true);
     assert.equal(await page.getByRole('link',{name:/Mở AI/}).count(),0);
     await page.getByLabel('Môn học',{exact:true}).fill('Tin học'); await page.getByLabel('Khối / lớp').fill('8');
     await button('Kiểm tra kết nối AI').click(); await page.getByText(/API sẵn sàng cho chat/).waitFor();
@@ -56,25 +68,36 @@ const assert = require('node:assert/strict');
     assert.ok((await page.getByLabel('Nhận xét của giáo viên',{exact:true}).inputValue()).includes('bảo vệ'));
     assert.equal((await saved()).comments,undefined,'Applying a suggestion only fills the teacher draft');
     await button('Gửi nhận xét').click(); await page.waitForFunction(()=>window.saved.comments?.length===1);
+    const beforeChoice=await page.evaluate(()=>window.providerRequests.length);
+    await provider.selectOption('firebase-gemini');
+    assert.equal(await page.getByText(/API sẵn sàng cho chat/).count(),0,'Changing AI clears previous readiness');
+    assert.equal(await page.evaluate(()=>window.providerRequests.length),beforeChoice,'Choosing a provider does not send data');
+    await button('Kiểm tra kết nối AI').click(); await page.getByText(/gemini-ui-fixture.*API sẵn sàng/).waitFor();
     await send('Cần hỏi em thế nào?'); await page.waitForFunction(()=>window.saved.aiChat.messages.length===4);
     const calls=await page.evaluate(()=>window.aiRequests);
     assert.equal(calls[1].history.length,2); assert.equal(calls[1].history[0].text,'Em sai ở đâu?');
     assert.ok(calls[1].request.workText.includes('chia sẻ mật khẩu')); assert.equal(context.pages().length,1,'Chat stays in the same page');
     await log.scrollIntoViewIfNeeded(); await page.screenshot({path:'wall-ai-ui-results/chat-desktop.png'});
+    await provider.scrollIntoViewIfNeeded(); await page.screenshot({path:'wall-ai-ui-results/providers-desktop.png'});
     await page.setViewportSize({width:390,height:844}); await log.scrollIntoViewIfNeeded();
     await page.screenshot({path:'wall-ai-ui-results/chat-mobile.png'});
+    await provider.scrollIntoViewIfNeeded(); await page.screenshot({path:'wall-ai-ui-results/providers-mobile.png'});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile chat must not overflow');
     await page.setViewportSize({width:1366,height:900});
     await send('SIMULATE-API-ERROR'); await page.getByText('Kiểm thử: OpenAI chưa được kết nối.').waitFor();
     assert.equal(await composer.inputValue(),'SIMULATE-API-ERROR'); assert.equal((await saved()).aiChat.messages.length,4);
     await send('WRONG-REQUEST'); await page.getByText('Phản hồi không khớp với bài đang trao đổi.').waitFor();
     assert.equal((await saved()).aiChat.messages.length,4,'Wrong request is never appended');
+    await provider.selectOption('anthropic');
     await page.evaluate(()=>window.failChatSave=true); await send('Gợi ý cách sửa lỗi');
     await page.getByText('Kiểm thử: chưa lưu được chat.').waitFor();
     assert.equal((await saved()).aiChat.messages.length,4);
     const beforeRetry=await page.evaluate(()=>window.aiRequests.length);
     await button('Lưu cuộc trao đổi').click(); await page.waitForFunction(()=>window.saved.aiChat.messages.length===6);
     assert.equal(await page.evaluate(()=>window.aiRequests.length),beforeRetry,'Retrying storage does not call AI again');
+    assert.equal((await saved()).aiChat.messages[1].model,'openai-ui-fixture');
+    assert.equal((await saved()).aiChat.messages[3].model,'gemini-ui-fixture');
+    assert.equal((await saved()).aiChat.messages[5].model,'claude-ui-fixture');
     await button('Đóng').click();
     await page.locator('.lw-post').filter({has:page.getByText('Bài làm khác',{exact:true})}).getByRole('button',{name:/✨ Phân tích AI/}).click();
     await composer.waitFor(); assert.ok(!(await log.textContent()).includes('RENDER-TEXT'),'Conversations stay scoped to each post');
@@ -89,7 +112,7 @@ const assert = require('node:assert/strict');
     await button('Bắt đầu trao đổi mới').click(); await send('Đánh giá theo tiêu chí mới');
     await page.waitForFunction(()=>window.saved.aiChatHistory?.length===1);
     assert.equal((await saved()).aiChatHistory[0].messages.length,6);
-    await button('AI đánh giá bài làm tại đây').click(); await page.getByLabel('Kết luận lỗi 1').waitFor();
+    await button('AI đánh giá bài làm tại đây').click(); await page.getByLabel('Kết luận lỗi 1').waitFor(); assert.equal((await saved()).aiAssessment.source,'anthropic');
     await button('Duyệt nhận xét và lưu điểm').click(); await page.getByText('Hãy xác nhận hoặc loại bỏ từng lỗi trước khi duyệt.').waitFor();
     await page.getByLabel('Kết luận lỗi 1').selectOption('confirmed');
     await page.getByLabel('Nguyên nhân lỗi 1').fill('Nhầm lẫn về bí mật đăng nhập.');
@@ -98,8 +121,8 @@ const assert = require('node:assert/strict');
     await button('Duyệt nhận xét và lưu điểm').click(); await button('Sao chép nhận xét đã duyệt').waitFor();
     assert.equal((await saved()).score,7.5); assert.equal((await saved()).comments.length,2);
     await page.screenshot({path:'wall-ai-ui-results/review-desktop.png'});
-    await step('3. Luyện tập').click(); await button('Tạo luyện tập cá nhân hóa').click();
-    await page.getByLabel('Đề luyện tập 1').waitFor(); await page.getByLabel('Đề luyện tập 1').fill('Bài đã sửa: Bạn A xin OTP để gửi quà. Em xử lý thế nào?');
+    await step('3. Luyện tập').click(); await provider.selectOption('firebase-gemini'); await button('Tạo luyện tập cá nhân hóa').click();
+    await page.getByLabel('Đề luyện tập 1').waitFor(); assert.equal((await saved()).aiAssessment.practice.source,'firebase-gemini'); await page.getByLabel('Đề luyện tập 1').fill('Bài đã sửa: Bạn A xin OTP để gửi quà. Em xử lý thế nào?');
     await button('Duyệt và giao luyện tập').click(); await button('Sao chép phiếu luyện tập').click();
     const worksheet=await page.evaluate(()=>navigator.clipboard.readText()); assert.ok(worksheet.includes('Bài đã sửa')); assert.ok(!worksheet.includes('SECRET-ANSWER'));
     await button('Ghi nhận tiến bộ').click();
