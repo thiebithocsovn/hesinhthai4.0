@@ -35,3 +35,5 @@ try {
  console.log('ERROR_HTTP_STATUS='+String(e?.status||e?.customData?.httpStatus||'unknown').replace(/[^0-9]/g,'').slice(0,3));
  console.log('NOTE=This probe has no reCAPTCHA token and cannot prove student-facing AI works.');
 } finally {await deleteApp(app);}
+
+// Live recheck after Firebase AI Logic setup change, 2026-10-15 15:08 VN.
