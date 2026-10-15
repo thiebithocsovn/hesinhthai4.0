@@ -1,0 +1,94 @@
+name: Verify Firebase Google sign-in authorized domain
+
+on:
+  push:
+    branches:
+      - diagnostics/firebase-domain-check-20261015
+    paths:
+      - .github/workflows/firebase-auth-domain-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-authorized-domain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Query public Firebase Authentication project configuration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          target_domain = 'thiebithocsovn.github.io'
+          config = json.loads(Path('firebase-applet-config.json').read_text(encoding='utf-8'))
+          api_key = config['apiKey']
+          endpoint = ('https://identitytoolkit.googleapis.com/v1/projects?'
+                      + urllib.parse.urlencode({'key': api_key}))
+          request = urllib.request.Request(endpoint, headers={'Accept': 'application/json'})
+          status = 'UNKNOWN'
+          detail = ''
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  body = json.load(response)
+              authorized = body.get('authorizedDomains')
+              if not isinstance(authorized, list):
+                  status = 'UNVERIFIED'
+                  detail = 'The public Firebase project config did not return an authorizedDomains array.'
+              elif target_domain in authorized:
+                  status = 'AUTHORIZED'
+                  detail = 'Domain is present in Firebase Authentication Authorized domains.'
+              else:
+                  status = 'NOT_AUTHORIZED'
+                  detail = 'Domain is missing from Firebase Authentication Authorized domains.'
+          except urllib.error.HTTPError as exc:
+              status = 'API_UNAVAILABLE'
+              try:
+                  info = json.loads(exc.read().decode('utf-8'))
+                  code = info.get('error', {}).get('status', 'UNSPECIFIED')
+              except (ValueError, UnicodeError):
+                  code = 'UNSPECIFIED'
+              detail = f'Firebase API returned HTTP {exc.code}; error code {code}.'
+          except Exception as exc:
+              status = 'API_UNAVAILABLE'
+              detail = type(exc).__name__
+
+          print('FIREBASE_AUTH_DOMAIN_STATUS=' + status)
+          print('TARGET_DOMAIN=' + target_domain)
+          print('DETAIL=' + detail)
+          summary = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary:
+              with open(summary, 'a', encoding='utf-8') as file:
+                  file.write('### Firebase Authentication domain check\n')
+                  file.write(f'- Target: `{target_domain}`\n')
+                  file.write(f'- Status: **{status}**\n')
+                  file.write(f'- Detail: {detail}\n')
+          if status != 'AUTHORIZED':
+              sys.exit(1)
+          PY
+
+      - name: Confirm public GitHub Pages response
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request
+          url = 'https://thiebithocsovn.github.io/hesinhthai4.0/'
+          try:
+              request = urllib.request.Request(url, headers={'User-Agent': 'Firebase-Domain-Diagnostic/1.0'})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  html = response.read(150000).decode('utf-8', errors='replace')
+                  print(f'GITHUB_PAGES_STATUS={response.status}')
+                  print(f'HTML_HAS_ROOT={("id=\"root\"" in html) or ("id=\'root\'" in html)}')
+          except Exception as exc:
+              print(f'GITHUB_PAGES_CHECK_FAILED={type(exc).__name__}')
+          PY
