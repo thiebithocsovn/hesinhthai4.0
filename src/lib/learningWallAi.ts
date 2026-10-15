@@ -1,5 +1,7 @@
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
-import { app, auth } from '../firebase';
+import { getToken } from 'firebase/app-check';
+import { app, appCheck, auth } from '../firebase';
+import { FIREBASE_AI_APP_CHECK_SETUP_MESSAGE, describeFirebaseAiFailure } from './firebaseAiDiagnostics';
 import { WALL_ANALYSIS_INSTRUCTION, wallAnalysisPrompt, parseWallAnalysis, wallPracticePrompt, parseWallPractice,
   type WallAiRequest, type WallAssessment } from './learningWallAssessment';
 import { wallChatPrompt, parseWallChatReply, type WallChatMessage } from './learningWallChat';
@@ -11,13 +13,24 @@ const modelName = import.meta.env.VITE_GOOGLE_AI_MODEL?.trim() || 'gemini-3.1-fl
 async function generateGemini(prompt: string, media: WallAiRequest['media'] = []): Promise<string> {
   const teacherUid = auth.currentUser?.uid;
   if (!teacherUid) throw new Error('Hãy đăng nhập tài khoản giáo viên trước khi gọi AI tự động.');
-  const ai = getAI(app, { backend: new GoogleAIBackend() });
-  const model = getGenerativeModel(ai, {
-    model: modelName, systemInstruction: WALL_ANALYSIS_INSTRUCTION,
-    generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, temperature: 0.3 },
-  });
+  if (!appCheck) throw new Error(FIREBASE_AI_APP_CHECK_SETUP_MESSAGE);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    // Verify attestation before sending any student work to the Gemini endpoint.
+    try {
+      const attestation = await getToken(appCheck, false);
+      if (!attestation.token) throw new Error('App Check token is empty');
+    } catch {
+      throw new Error('Firebase App Check chưa cấp được token. Kiểm tra reCAPTCHA Enterprise ' +
+        'đã đăng ký đúng Web app và tên miền thiebithocsovn.github.io trong Firebase Console → App Check. ' +
+        'Nội dung đang soạn vẫn được giữ.');
+    }
+    if (auth.currentUser?.uid !== teacherUid) throw new Error('Phiên giáo viên đã thay đổi; yêu cầu AI không được gửi.');
+    const ai = getAI(app, { backend: new GoogleAIBackend() });
+    const model = getGenerativeModel(ai, {
+      model: modelName, systemInstruction: WALL_ANALYSIS_INSTRUCTION,
+      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, temperature: 0.3 },
+    });
     const result = await Promise.race([
       model.generateContent([{ text: prompt }, ...media.map(file => ({ inlineData: file }))]),
       new Promise<never>((_resolve, reject) => {
@@ -27,11 +40,9 @@ async function generateGemini(prompt: string, media: WallAiRequest['media'] = []
     if (auth.currentUser?.uid !== teacherUid) throw new Error('Phiên giáo viên đã thay đổi; phản hồi AI không được lưu.');
     return result.response.text();
   } catch (error) {
-    const code = String((error as { code?: string })?.code || '');
-    if (/permission|api-not-enabled|api-key|unauthenticated|fetch-error/i.test(code)) {
-      throw new Error('AI chưa kết nối được. Quản trị viên cần bật Firebase AI Logic cho dự án và kiểm tra App Check. Bài làm và nhận xét đang soạn vẫn được giữ tại đây.');
-    }
-    throw error;
+    // Preserve explicit session, attestation, and timeout messages without hiding the root cause.
+    if (error instanceof Error && /^(Phiên giáo viên|Firebase App Check chưa cấp|AI chưa phản hồi)/.test(error.message)) throw error;
+    throw describeFirebaseAiFailure(error);
   } finally { if (timer) clearTimeout(timer); }
 }
 
