@@ -5,6 +5,9 @@ import { doc, setDoc, deleteDoc, updateDoc, collection, addDoc, onSnapshot, quer
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { ECOSYSTEM_APPLICATIONS } from '../ecosystem';
+import { LibraryCard, useLibraryFont } from './library/LibraryCard';
+import { EcosystemLogo } from './library/LibraryArt';
+import { LIBRARY_CATEGORIES, LIBRARY_COUNTS, setLibraryFilter, useLibraryFilter, visibleLibraryCount } from './library/libraryCatalog';
 import { describeTeacherAccountError, MINIMUM_TEACHER_PASSWORD_LENGTH, provisionTeacherAccount, validateTeacherCredentials } from '../lib/teacherAccounts';
 import { assignPlickerCardIds, filterPlickerStudentsByClasses, removePlickerStudent, renamePlickerStudent } from '../lib/plickerStudents';
 import { isPlickerSystemCategory, mergePlickerCloudRosters, type PlickerLiveQuestionSet } from '../lib/plickerLive';
@@ -158,6 +161,8 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
   const [activeTab, setActiveTab] = useState<'teachers' | 'library'>(initialApplication === 'plicker' || currentUser !== 'admin' ? 'library' : 'teachers');
   const [activeLibraryView, setActiveLibraryView] = useState<'main' | 'gesture-class' | 'learning-wall' | 'lucky-draw' | 'lucky-draw-cards' | 'plicker' | 'head-shake-game' | 'chatbot' | 'create-exam' | 'secret-box' | 'drag-drop-game' | 'excel-merger' | 'pdf-merger'>(initialApplication === 'plicker' ? 'plicker' : 'main');
   const [searchTerm, setSearchTerm] = useState('');
+  const libraryFilter = useLibraryFilter();
+  useLibraryFont();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [newTeacher, setNewTeacher] = useState<Partial<Teacher>>({
@@ -657,14 +662,12 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col md:flex-row">
       {/* Mobile Header */}
       {!(activeTab === 'library' && activeLibraryView !== 'main') && (
-        <header className="md:hidden bg-slate-900 text-white p-4 flex items-center justify-between sticky top-0 z-50">
-          <div className="flex items-center gap-2">
-            <div className="bg-indigo-500 p-1 rounded text-white">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <span className="font-bold text-base">{currentUser === 'admin' ? 'Admin Portal' : 'Teacher Portal'}</span>
+        <header className="lib-mobile-header lib-font flex md:hidden sticky top-0 z-50">
+          <div className="lib-mobile-brand">
+            <EcosystemLogo size={34} />
+            <span><strong>HỆ SINH THÁI GD 4.0</strong><small>{currentUser === 'admin' ? 'Admin Portal' : 'Teacher Portal'}</small></span>
           </div>
-          <button onClick={onLogout} className="p-2 text-slate-400 hover:text-white">
+          <button onClick={onLogout} className="lib-mobile-logout" aria-label="Đăng xuất">
             <LogOut className="w-5 h-5" />
           </button>
         </header>
@@ -672,51 +675,49 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
 
       {/* Sidebar */}
       {!(activeTab === 'library' && activeLibraryView !== 'main') && (
-        <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex shrink-0">
-          <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-            <div className="bg-indigo-500 p-1.5 rounded text-white">
-              <BookOpen className="w-6 h-6" />
-            </div>
-            <span className="font-bold text-lg">{currentUser === 'admin' ? 'Admin Portal' : 'Teacher Portal'}</span>
+        <aside className="lib-sidebar lib-font hidden md:flex">
+          <div className="lib-brand">
+            <EcosystemLogo size={44} />
+            <div><strong>HỆ SINH THÁI GD 4.0</strong><small>Không gian học tập thông minh</small></div>
           </div>
-          <nav className="flex-1 p-4 space-y-2">
+          <div className="lib-role"><Star className="w-4 h-4" fill="currentColor" />{currentUser === 'admin' ? 'Admin Portal' : 'Teacher Portal'}</div>
+          <nav className="lib-nav" aria-label="Điều hướng chính">
             {currentUser === 'admin' && (
-              <button 
+              <button
                 onClick={() => setActiveTab('teachers')}
-                className={`flex items-center gap-3 px-4 py-3 w-full rounded-xl transition-colors ${
-                  activeTab === 'teachers' 
-                    ? 'bg-indigo-600 text-white' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
+                className={activeTab === 'teachers' ? 'is-active' : ''}
+                aria-current={activeTab === 'teachers' ? 'page' : undefined}
               >
                 <Users className="w-5 h-5" />
-                <span className="font-medium">Quản lý giáo viên</span>
+                <span>Quản lý giáo viên</span>
               </button>
             )}
-            <button 
+            <button
               onClick={() => {
                 setActiveTab('library');
                 setActiveLibraryView('main');
               }}
-              className={`flex items-center gap-3 px-4 py-3 w-full rounded-xl transition-colors ${
-                activeTab === 'library' 
-                  ? 'bg-indigo-600 text-white' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
+              className={activeTab === 'library' ? 'is-active' : ''}
+              aria-current={activeTab === 'library' ? 'page' : undefined}
             >
               <Library className="w-5 h-5" />
-              <span className="font-medium">Thư viện tương tác</span>
+              <span>Thư viện tương tác</span>
             </button>
           </nav>
-          <div className="p-4 border-t border-slate-800">
-            <button 
-              onClick={onLogout}
-              className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 hover:bg-slate-800 hover:text-white rounded-xl transition-colors"
-            >
-              <LogOut className="w-5 h-5" />
-              <span className="font-medium">Đăng xuất</span>
-            </button>
+          <div className="lib-stats">
+            <strong>{LIBRARY_COUNTS.all}</strong>
+            <span>ứng dụng & công cụ</span>
+            <hr />
+            {currentUser === 'admin'
+              ? <><strong>{teachers.length}</strong><span>tài khoản giáo viên</span></>
+              : <><strong>{LIBRARY_COUNTS.games}</strong><span>trò chơi lớp học</span></>}
+            <hr />
+            <p>🔒 Dữ liệu tách riêng từng giáo viên</p>
           </div>
+          <button onClick={onLogout} className="lib-logout">
+            <LogOut className="w-5 h-5" />
+            <span>Đăng xuất</span>
+          </button>
         </aside>
       )}
 
@@ -856,147 +857,102 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
           </>
         ) : activeLibraryView === 'main' ? (
           <>
-            <header className="bg-white border-b border-slate-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between">
-              <div>
-                <h1 className="text-xl md:text-2xl font-bold text-slate-800">Thư viện tương tác</h1>
-                <p className="mt-1 text-sm text-slate-500">{ECOSYSTEM_APPLICATIONS.length} ứng dụng trong hệ sinh thái lớp học thông minh</p>
+            <header className="lib-header lib-font">
+              <div className="relative z-10 min-w-0">
+                <h1>Thư viện tương tác</h1>
+                <p className="lib-sub">{LIBRARY_COUNTS.all} ứng dụng và công cụ trong hệ sinh thái lớp học thông minh – Giảng dạy hiện đại, học tập say mê!</p>
+                <div className="lib-facts">
+                  <span>🎮 {LIBRARY_COUNTS.games} trò chơi lớp học</span><i aria-hidden="true" />
+                  <span>🤖 {LIBRARY_COUNTS.ai} ứng dụng AI</span><i aria-hidden="true" />
+                  <span>🔒 Dữ liệu riêng từng giáo viên</span>
+                </div>
               </div>
+              <div className="lib-header-art" aria-hidden="true"><span>🎡</span><span>🤖</span><span>📝</span><span>📊</span></div>
             </header>
-            <div className="flex-1 overflow-auto p-4 md:p-8">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6">
-                <button
-                  type="button"
-                  onClick={() => setActiveLibraryView('gesture-class')}
-                  className="group rounded-2xl border border-indigo-200 bg-white p-3 text-left shadow-sm transition-shadow hover:shadow-md md:p-6"
-                >
-                  <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 transition-transform group-hover:scale-110 md:mb-4 md:h-12 md:w-12">
-                    <MonitorPlay className="h-5 w-5 md:h-6 md:w-6" />
-                  </div>
-                  <h3 className="mb-1 text-sm font-bold text-slate-800 md:mb-2 md:text-lg">GestureClass</h3>
-                  <p className="line-clamp-2 text-[10px] text-slate-500 md:text-sm">Quản lý lớp, ngân hàng câu hỏi, trắc nghiệm cử chỉ, lật thẻ và gọi tên học sinh.</p>
-                </button>
-
-                <div 
-                  onClick={() => setActiveLibraryView('lucky-draw')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <Target className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Vòng quay may mắn</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Vòng quay ngẫu nhiên tạo sự hứng thú trong các hoạt động trên lớp.</p>
+            <div className="lib-content lib-font flex-1 overflow-auto">
+              <div className="lib-toolbar">
+                <div className="lib-tabs" role="group" aria-label="Lọc ứng dụng theo nhóm">
+                  {LIBRARY_CATEGORIES.map(category => (
+                    <button
+                      key={category.id}
+                      type="button"
+                      className={`lib-tab lib-tone-${category.id}`}
+                      aria-pressed={libraryFilter.filter === category.id}
+                      onClick={() => setLibraryFilter({ filter: category.id })}
+                    >
+                      {category.emoji && <span aria-hidden="true">{category.emoji}</span>}
+                      {category.label} <small>({LIBRARY_COUNTS[category.id]})</small>
+                    </button>
+                  ))}
                 </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('lucky-draw-cards')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-pink-100 text-pink-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <BookOpen className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Bốc thẻ</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Công cụ bốc thẻ ngẫu nhiên với hiệu ứng lật thẻ và điều khiển bằng cử chỉ.</p>
-                </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('plicker')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <QrCode className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Tương tác thẻ Plicker</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Công cụ đánh giá trắc nghiệm nhanh sử dụng thẻ mã QR.</p>
-                </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('learning-wall')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <LayoutDashboard className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Tường học tập Ai</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Quản lý lớp học, học sinh, chấm điểm và tổ chức thư mục học tập.</p>
-                </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('head-shake-game')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <MonitorPlay className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Trò chơi lắc đầu chọn đáp án</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Trò chơi tương tác chọn đáp án bằng cách gật đầu hoặc lắc đầu thông qua camera.</p>
-                </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('chatbot')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <MessageSquare className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">AI Phân tích tâm lý</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Chatbot AI hỗ trợ phân tích tâm lý học đường, tư vấn giải pháp cho giáo viên và phụ huynh.</p>
-                </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('create-exam')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-teal-100 text-teal-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <ClipboardCheck className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Tạo kì thi</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Công cụ tạo và quản lý các kì thi, bài kiểm tra trực tuyến.</p>
-                </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('secret-box')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-yellow-100 text-yellow-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <Gift className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Mở ô bí mật</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Trò chơi chọn ô bí mật để nhận phần thưởng hoặc trả lời câu hỏi.</p>
-                </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('drag-drop-game')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-cyan-100 text-cyan-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <Hand className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Kéo thả đúng chỗ</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Trò chơi tương tác kéo thả đáp án vào vị trí chính xác trên hình ảnh hoặc văn bản.</p>
-                </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('excel-merger')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <FileSpreadsheet className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Gộp file Excel</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Công cụ gộp dữ liệu từ nhiều tệp Excel thành một tệp duy nhất nhanh chóng.</p>
-                </div>
-
-                <div 
-                  onClick={() => setActiveLibraryView('pdf-merger')}
-                  className="bg-white p-3 md:p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group"
-                >
-                  <div className="w-9 h-9 md:w-12 md:h-12 bg-red-100 text-red-600 rounded-xl flex items-center justify-center mb-2 md:mb-4 group-hover:scale-110 transition-transform">
-                    <FileText className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <h3 className="text-sm md:text-lg font-bold text-slate-800 mb-1 md:mb-2">Tách, gộp file PDF</h3>
-                  <p className="text-slate-500 text-[10px] md:text-sm line-clamp-2">Tách từng trang, trích khoảng trang hoặc gộp nhiều tệp PDF an toàn ngay trên thiết bị.</p>
-                </div>
+                <label className="lib-search">
+                  <Search className="w-4 h-4 shrink-0" />
+                  <input
+                    type="search"
+                    aria-label="Tìm ứng dụng"
+                    placeholder="Tìm trò chơi, công cụ, ứng dụng AI…"
+                    value={libraryFilter.query}
+                    onChange={event => setLibraryFilter({ query: event.target.value })}
+                  />
+                </label>
               </div>
+              <div className="lib-grid grid">
+                <LibraryCard id="gesture-class" icon={<MonitorPlay />} onOpen={() => setActiveLibraryView('gesture-class')}>
+                  <h3>GestureClass</h3>
+                  <p>Quản lý lớp, ngân hàng câu hỏi, trắc nghiệm cử chỉ, lật thẻ và gọi tên học sinh.</p>
+                </LibraryCard>
+                <LibraryCard id="lucky-draw" icon={<Target />} onOpen={() => setActiveLibraryView('lucky-draw')}>
+                  <h3>Vòng quay may mắn</h3>
+                  <p>Vòng quay ngẫu nhiên tạo sự hứng thú trong các hoạt động trên lớp.</p>
+                </LibraryCard>
+                <LibraryCard id="lucky-draw-cards" icon={<BookOpen />} onOpen={() => setActiveLibraryView('lucky-draw-cards')}>
+                  <h3>Bốc thẻ</h3>
+                  <p>Công cụ bốc thẻ ngẫu nhiên với hiệu ứng lật thẻ và điều khiển bằng cử chỉ.</p>
+                </LibraryCard>
+                <LibraryCard id="plicker" icon={<QrCode />} onOpen={() => setActiveLibraryView('plicker')}>
+                  <h3>Tương tác thẻ Plicker</h3>
+                  <p>Công cụ đánh giá trắc nghiệm nhanh sử dụng thẻ mã QR.</p>
+                </LibraryCard>
+                <LibraryCard id="learning-wall" icon={<LayoutDashboard />} onOpen={() => setActiveLibraryView('learning-wall')}>
+                  <h3>Tường học tập Ai</h3>
+                  <p>Quản lý lớp học, học sinh, chấm điểm và tổ chức thư mục học tập.</p>
+                </LibraryCard>
+                <LibraryCard id="head-shake-game" icon={<MonitorPlay />} onOpen={() => setActiveLibraryView('head-shake-game')}>
+                  <h3>Trò chơi lắc đầu chọn đáp án</h3>
+                  <p>Trò chơi tương tác chọn đáp án bằng cách gật đầu hoặc lắc đầu thông qua camera.</p>
+                </LibraryCard>
+                <LibraryCard id="chatbot" icon={<MessageSquare />} onOpen={() => setActiveLibraryView('chatbot')}>
+                  <h3>AI Giáo viên</h3>
+                  <p>Chatbot AI hỗ trợ phân tích tâm lý học đường, tư vấn giải pháp cho giáo viên và phụ huynh.</p>
+                </LibraryCard>
+                <LibraryCard id="create-exam" icon={<ClipboardCheck />} onOpen={() => setActiveLibraryView('create-exam')}>
+                  <h3>Tạo kì thi</h3>
+                  <p>Công cụ tạo và quản lý các kì thi, bài kiểm tra trực tuyến.</p>
+                </LibraryCard>
+                <LibraryCard id="secret-box" icon={<Gift />} onOpen={() => setActiveLibraryView('secret-box')}>
+                  <h3>Mở ô bí mật</h3>
+                  <p>Trò chơi chọn ô bí mật để nhận phần thưởng hoặc trả lời câu hỏi.</p>
+                </LibraryCard>
+                <LibraryCard id="drag-drop-game" icon={<Hand />} onOpen={() => setActiveLibraryView('drag-drop-game')}>
+                  <h3>Kéo thả đúng chỗ</h3>
+                  <p>Trò chơi tương tác kéo thả đáp án vào vị trí chính xác trên hình ảnh hoặc văn bản.</p>
+                </LibraryCard>
+                <LibraryCard id="excel-merger" icon={<FileSpreadsheet />} onOpen={() => setActiveLibraryView('excel-merger')}>
+                  <h3>Gộp file Excel</h3>
+                  <p>Công cụ gộp dữ liệu từ nhiều tệp Excel thành một tệp duy nhất nhanh chóng.</p>
+                </LibraryCard>
+                <LibraryCard id="pdf-merger" icon={<FileText />} onOpen={() => setActiveLibraryView('pdf-merger')}>
+                  <h3>Tách, gộp file PDF</h3>
+                  <p>Tách từng trang, trích khoảng trang hoặc gộp nhiều tệp PDF an toàn ngay trên thiết bị.</p>
+                </LibraryCard>
+              </div>
+              {visibleLibraryCount(libraryFilter) === 0 && (
+                <div className="lib-empty" role="status">
+                  <strong>Không tìm thấy ứng dụng phù hợp</strong>
+                  <span>Thử từ khóa khác hoặc xem tất cả ứng dụng.</span>
+                  <button type="button" onClick={() => setLibraryFilter({ filter: 'all', query: '' })}>Xem tất cả</button>
+                </div>
+              )}
             </div>
           </>
         ) : activeLibraryView === 'learning-wall' ? (
@@ -1608,12 +1564,12 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
 
       {/* Mobile Navigation */}
       {!(activeTab === 'library' && activeLibraryView !== 'main') && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around p-2 z-50">
+        <nav className="lib-font md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-200 flex items-center justify-around p-2 z-50 shadow-[0_-6px_18px_rgba(30,27,75,0.08)]">
           {currentUser === 'admin' && (
             <button 
               onClick={() => setActiveTab('teachers')}
               className={`flex flex-col items-center gap-1 p-2 transition-colors ${
-                activeTab === 'teachers' ? 'text-indigo-600' : 'text-slate-400'
+                activeTab === 'teachers' ? 'text-[#5b4ce0] font-bold' : 'text-slate-400'
               }`}
             >
               <Users className="w-6 h-6" />
@@ -1626,7 +1582,7 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
               setActiveLibraryView('main');
             }}
             className={`flex flex-col items-center gap-1 p-2 transition-colors ${
-              activeTab === 'library' ? 'text-indigo-600' : 'text-slate-400'
+              activeTab === 'library' ? 'text-[#5b4ce0] font-bold' : 'text-slate-400'
             }`}
           >
             <Library className="w-6 h-6" />

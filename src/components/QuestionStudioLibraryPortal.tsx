@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ListChecks } from 'lucide-react';
+import { LibraryCard } from './library/LibraryCard';
 
 interface QuestionStudioLibraryPortalProps {
   onOpen?: () => void;
@@ -49,20 +50,10 @@ export default function QuestionStudioLibraryPortal({ onOpen = openQuestionStudi
   if (!target) return null;
 
   return createPortal(
-    <button
-      type="button"
-      onClick={onOpen}
-      data-question-studio-library-card="true"
-      className="group rounded-2xl border border-violet-200 bg-white p-3 text-left shadow-sm transition-shadow hover:shadow-md md:p-6"
-    >
-      <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-600 transition-transform group-hover:scale-110 md:mb-4 md:h-12 md:w-12">
-        <ListChecks className="h-5 w-5 md:h-6 md:w-6" />
-      </div>
-      <h3 className="mb-1 text-sm font-bold text-slate-800 md:mb-2 md:text-lg">Trắc nghiệm 10 dạng</h3>
-      <p className="line-clamp-2 text-[10px] text-slate-500 md:text-sm">
-        Tạo ngân hàng 10 dạng câu hỏi trắc nghiệm cơ bản với một Question Engine dùng chung.
-      </p>
-    </button>,
+    <LibraryCard id="question-studio" icon={<ListChecks />} onOpen={onOpen} data-question-studio-library-card="true">
+      <h3>Trắc nghiệm 10 dạng</h3>
+      <p>Tạo ngân hàng 10 dạng câu hỏi trắc nghiệm cơ bản với một Question Engine dùng chung.</p>
+    </LibraryCard>,
     target,
   );
 }
