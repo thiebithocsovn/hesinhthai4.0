@@ -2,7 +2,7 @@ name: Restore, verify and publish Hesinhthai 4.0
 
 on:
   push:
-    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013, feat/wall-inline-chat-20261014, feat/wall-openai-20261014, feat/wall-cloud-run-20261014, feat/wall-ai-providers-20261014]
+    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013, feat/wall-inline-chat-20261014, feat/wall-openai-20261014, feat/wall-cloud-run-20261014, feat/wall-ai-providers-20261014, fix/wall-gemini-appcheck-20261015]
   workflow_dispatch:
 
 permissions:
@@ -64,6 +64,17 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Check Gemini App Check configuration without exposing the key
+        shell: bash
+        run: |
+          if [[ -z "${VITE_FIREBASE_APP_CHECK_SITE_KEY:-}" ]]; then
+            echo "::warning::Firebase Gemini is not ready: VITE_FIREBASE_APP_CHECK_SITE_KEY is not configured."
+            echo "### Gemini App Check: missing public site key" >> "$GITHUB_STEP_SUMMARY"
+            echo "Register the Web app with reCAPTCHA Enterprise and set VITE_FIREBASE_APP_CHECK_SITE_KEY as a GitHub Actions variable." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Gemini App Check site key is configured (registration and real attestation still require browser verification)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Validate TypeScript (required)
         run: npm run lint
 
@@ -76,6 +87,7 @@ jobs:
           npm run test:wall-providers
           npm run test:wall-api
           npm run test:ai-services
+          npm run test:firebase-ai-diagnostics
           npm run test:platform
           npm run test:auth-flow
           npm run test:smart-timetable
