@@ -5,8 +5,8 @@ import OMRScanner from './OMRScanner';
 import ExamReceiptDialog from './ExamReceiptDialog';
 import TeacherExamPrintStation from './TeacherExamPrintStation';
 import { loadExamRosterMetadata } from '../lib/examRoster';
-import { gradeSubmittedExam } from '../lib/teacherExamPrinting';
-import { buildExamReceiptHtml, DEFAULT_EXAM_RECEIPT_SETTINGS, getExamReceiptSettings, getReceiptStudentClassId, type ExamReceiptSettings } from '../lib/examReceipt';
+import { gradeSubmittedExam, type TeacherPrintState } from '../lib/teacherExamPrinting';
+import { buildExamReceiptHtml, DEFAULT_EXAM_RECEIPT_SETTINGS, getExamReceiptSettings, getReceiptStudentClassId, receiptReadyToSign, receiptSignTiming, type ExamReceiptSettings } from '../lib/examReceipt';
 import * as XLSX from 'xlsx';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where, getDoc, writeBatch } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -125,6 +125,8 @@ interface ExamResult {
   teacherId?: string;
   manualGrades?: Record<string, ManualGrade>;
   manualGradedAt?: string;
+  receiptPrintedAt?: string;
+  teacherPrint?: TeacherPrintState;
 }
 
 interface ExamSession {
@@ -2609,12 +2611,19 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                             )}
                           </td>
                           <td className="px-6 py-4 text-center border-l border-slate-200">
+                            {exam && examHasManualQuestions(exam) && (result.receiptPrintedAt || result.teacherPrint?.status === 'sent'
+                              ? <span className="mr-1 text-xs font-medium text-emerald-700" title="Học sinh ký phiếu này một lần">Đã in phiếu</span>
+                              : receiptReadyToSign(exam, result) ? <span className="mr-1 text-xs font-semibold text-violet-700">Chờ in phiếu</span> : null)}
                             <button type="button" disabled={!exam || !student} onClick={async () => {
                               if (!exam || !student) return;
+                              if (examHasManualQuestions(exam) && !receiptReadyToSign(exam, result) && !window.confirm('Bài này chưa chấm xong phần tự luận / thực hành. Học sinh chỉ ký phiếu một lần, nên phiếu in bây giờ sẽ không có điểm cuối cùng. Vẫn mở phiếu?')) return;
+                              if (examHasManualQuestions(exam) && (result.receiptPrintedAt || result.teacherPrint?.status === 'sent') && !window.confirm('Phiếu ký của em này đã được in. Chỉ in lại khi phiếu bị mất hoặc hỏng – học sinh không cần ký thêm phiếu khác. Mở lại phiếu?')) return;
                               const receiptExam = { ...exam, classNames: { ...exam.classNames, ...Object.fromEntries(classes.map(item => [item.id, item.name])) } };
                               try {
                                 const grade = getExamReceiptSettings(exam).autoPrint ? gradeSubmittedExam(exam, { ...result, teacherId: result.teacherId || exam.teacherId || '' }) : { score: result.score, totalQuestions: result.totalQuestions };
                                 if (getExamReceiptSettings(exam).autoPrint) await setDoc(doc(db, 'results', result.id), { ...grade, teacherGradedAt: new Date().toISOString() }, { merge: true });
+                                // The station never prints a receipt the teacher already opened for signing.
+                                if (examHasManualQuestions(exam) && !result.receiptPrintedAt && receiptReadyToSign(exam, result)) await setDoc(doc(db, 'results', result.id), { receiptPrintedAt: new Date().toISOString() }, { merge: true });
                                 setReceiptHtml(buildExamReceiptHtml(receiptExam, student, { ...result, ...grade }, activeSessions.find(item => item.studentId === result.studentId && item.examId === result.examId)?.startTime));
                                 setShowReceipt(true);
                               } catch (error) { alert(error instanceof Error ? error.message : 'Không thể chấm và mở phiếu.'); }
@@ -2663,6 +2672,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                   return classes.find(item => item.id === classId)?.name || gradingExam.classNames?.[classId || ''] || '';
                 }}
                 onClose={() => setGradingExamId(null)}
+                signTiming={getExamReceiptSettings(gradingExam).autoPrint || receiptSignTiming(gradingExam) === 'after-grading' ? receiptSignTiming(gradingExam) : undefined}
               />
             );
           })()}
@@ -2835,6 +2845,20 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                   </div>
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={getExamReceiptSettings(editingExam).autoPrint} onChange={event => setEditingExam({ ...editingExam, receiptSettings: { ...getExamReceiptSettings(editingExam), autoPrint: event.target.checked } })} />Tự động in tại máy giáo viên khi nhận bài nộp</label>
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={getExamReceiptSettings(editingExam).includeCorrectAnswers} onChange={event => setEditingExam({ ...editingExam, receiptSettings: { ...getExamReceiptSettings(editingExam), includeCorrectAnswers: event.target.checked } })} />In đáp án đúng và kết quả từng câu trên phiếu</label>
+                  {examHasManualQuestions(editingExam) && (
+                    <fieldset className="rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+                      <legend className="px-1 text-sm font-semibold text-violet-900">Học sinh chỉ ký phiếu một lần – in phiếu khi nào?</legend>
+                      {([
+                        ['after-grading', 'Sau khi chấm xong tự luận / thực hành (khuyên dùng)', 'Lúc nộp bài chưa in. Thầy cô tích xong câu cuối của em nào, trạm in tự in phiếu có điểm cuối cùng cho em đó.'],
+                        ['at-submit', 'Ngay khi học sinh nộp bài', 'Phiếu ghi điểm trắc nghiệm và mã đối chiếu bài làm. Điểm tự luận / thực hành công bố trên hệ thống, không in phiếu thứ hai.'],
+                      ] as const).map(([value, title, hint]) => (
+                        <label key={value} className="mt-2 flex cursor-pointer items-start gap-2 text-sm">
+                          <input type="radio" className="mt-1" name="sign-timing" checked={receiptSignTiming(editingExam) === value} onChange={() => setEditingExam({ ...editingExam, receiptSettings: { ...getExamReceiptSettings(editingExam), signTiming: value } })} />
+                          <span><span className="font-semibold text-slate-800">{title}</span><span className="block text-xs text-slate-600">{hint}</span></span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  )}
                   <p className="text-xs text-slate-500">Bật trạm in trên máy giáo viên trước giờ thi và cấu hình Chrome in không cần xác nhận. Máy học sinh chỉ nộp bài; giáo viên có thể in lại tại tab Kết quả. Nếu các học sinh khác còn thi, thầy có thể bỏ chọn in đáp án đúng.</p>
                 </div>
 

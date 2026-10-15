@@ -205,6 +205,23 @@ export function describeManualAnswer(question: GradableQuestion, answer: unknown
   return text || 'Không trả lời';
 }
 
+/**
+ * Short code printed on the signed receipt and shown while grading, so the teacher can
+ * confirm the essay/practical work being graded is exactly what the student submitted.
+ */
+export function manualSubmissionCode(questions: readonly GradableQuestion[], answers: Record<string, unknown> | undefined): string {
+  const manual = questions.filter(isManualQuestion);
+  if (!manual.length) return '';
+  let hash = 0x811c9dc5;
+  const source = JSON.stringify(manual.map(question => [question.id, answers?.[question.id] ?? null]));
+  for (let index = 0; index < source.length; index++) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const hex = (hash >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  return `${hex.slice(0, 4)}-${hex.slice(4)}`;
+}
+
 export function answersPayloadBytes(answers: Record<string, unknown>): number {
   return new TextEncoder().encode(JSON.stringify(answers)).length;
 }

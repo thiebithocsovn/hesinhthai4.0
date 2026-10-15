@@ -1,6 +1,6 @@
 import { evaluateQuestion, type QuestionDefinition, type QuestionResponse } from './questionEngine';
 import { getSubmittedExamClassId } from './examStudentClasses';
-import { describeManualAnswer, examHasManualQuestions, examUsesWeightedScoring, formatPoints, isManualQuestion, questionMaxPoints, summarizeExamScore, type ManualGrade, type RubricItem } from './examManualGrading';
+import { describeManualAnswer, examHasManualQuestions, examUsesWeightedScoring, formatPoints, isManualQuestion, manualSubmissionCode, questionMaxPoints, summarizeExamScore, type ManualGrade, type RubricItem } from './examManualGrading';
 
 export interface ExamReceiptSettings {
   autoPrint: boolean;
@@ -8,7 +8,11 @@ export interface ExamReceiptSettings {
   schoolName: string;
   subject: string;
   invigilatorName: string;
+  /** Exams with essay/practical parts: when the single signed receipt is printed. */
+  signTiming?: ReceiptSignTiming;
 }
+
+export type ReceiptSignTiming = 'after-grading' | 'at-submit';
 
 export const DEFAULT_EXAM_RECEIPT_SETTINGS: ExamReceiptSettings = {
   autoPrint: false,
@@ -63,6 +67,20 @@ export interface ReceiptResult {
 
 export function getExamReceiptSettings(exam: ReceiptExam): ExamReceiptSettings {
   return { ...DEFAULT_EXAM_RECEIPT_SETTINGS, ...exam.receiptSettings };
+}
+
+/**
+ * Students sign one receipt per exam. Objective-only exams print at submission as before;
+ * exams with essay/practical parts print after grading unless the teacher chose otherwise.
+ */
+export function receiptSignTiming(exam: ReceiptExam): ReceiptSignTiming {
+  return examHasManualQuestions(exam) ? (getExamReceiptSettings(exam).signTiming || 'after-grading') : 'at-submit';
+}
+
+/** True when the one signed receipt for this submission may be printed now. */
+export function receiptReadyToSign(exam: ReceiptExam, result: Pick<ReceiptResult, 'answers' | 'examVersion' | 'manualGrades'>): boolean {
+  if (receiptSignTiming(exam) !== 'after-grading') return true;
+  return summarizeExamScore(exam, result, receiptQuestionIsCorrect).complete;
 }
 
 export function getReceiptStudentClassId(exam: Pick<ReceiptExam, 'classNames' | 'studentDirectory'>, student: Pick<ReceiptStudent, 'id' | 'classId'>, result?: Pick<ReceiptResult, 'answers'>): string | undefined {
@@ -178,6 +196,10 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
   const date = (value?: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '……………………';
   const grade = result.totalQuestions > 0 ? Math.round(result.score / result.totalQuestions * 100) / 10 : 0;
   const weighted = examUsesWeightedScoring(exam) ? summarizeExamScore(exam, result, receiptQuestionIsCorrect) : null;
+  const submissionCode = manualSubmissionCode(questions, result.answers);
+  const signNote = submissionCode
+    ? `<p class="record">Mã đối chiếu phần tự luận / thực hành: <b>${escape(submissionCode)}</b>. ${weighted && !weighted.complete ? 'Phần này do giáo viên chấm theo hướng dẫn chấm; điểm cuối cùng được công bố trên hệ thống, học sinh không cần ký lại.' : 'Phiếu có điểm cuối cùng; học sinh ký một lần.'}</p>`
+    : '';
   const summaryHtml = weighted
     ? `<span>Trắc nghiệm: ${formatPoints(weighted.objectiveEarned)}/${formatPoints(weighted.objectiveMax)} điểm</span>${examHasManualQuestions(exam) ? `<span>Tự luận / thực hành: ${weighted.complete ? `${formatPoints(weighted.manualEarned)}/${formatPoints(weighted.manualMax)} điểm` : 'chờ giáo viên chấm'}</span>` : ''}<span>Điểm: ${weighted.complete ? `${formatPoints(weighted.score10)} / 10` : '……… / 10'}</span>`
     : `<span>Số câu đúng: ${result.score}/${result.totalQuestions}</span><span>Số câu chưa đúng: ${Math.max(0, result.totalQuestions - result.score)}</span><span>Điểm: ${grade.toLocaleString('vi-VN')} / 10</span>`;
@@ -202,7 +224,7 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
   <div class="summary">${summaryHtml}</div>
   <p class="confirmation">Tôi xác nhận các câu trả lời trên là bài làm của tôi và đã nộp bài.</p>
   <div class="signatures"><div><b>HỌC SINH</b><div><i>(Ký và ghi rõ họ tên)</i></div><div class="signature-space"></div><b>${escape(student.name)}</b></div><div><b>GIÁO VIÊN / GIÁM THỊ</b><div><i>(Ký và ghi rõ họ tên)</i></div><div class="signature-space"></div>${settings.invigilatorName.trim() ? `<b>${escape(settings.invigilatorName.trim())}</b>` : '………………………………'}</div></div>
-  <p class="record">Mã bài nộp: ${escape(result.id)} · Trạng thái: ĐÃ NỘP BÀI · Thời gian trên phiếu: giờ Việt Nam.</p></main></body></html>`;
+  <p class="record">Mã bài nộp: ${escape(result.id)} · Trạng thái: ĐÃ NỘP BÀI · Thời gian trên phiếu: giờ Việt Nam.</p>${signNote}</main></body></html>`;
 }
 
 /** Resolves after the browser finishes its print/preview cycle so jobs never overlap. */

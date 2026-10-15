@@ -13,7 +13,9 @@ import {
   summarizeExamScore,
   type GradableQuestion,
 } from '../src/lib/examManualGrading';
-import { buildExamReceiptHtml, receiptQuestionIsCorrect, type ReceiptQuestion } from '../src/lib/examReceipt';
+import { buildExamReceiptHtml, receiptQuestionIsCorrect, receiptReadyToSign, receiptSignTiming, type ReceiptQuestion } from '../src/lib/examReceipt';
+import { manualSubmissionCode } from '../src/lib/examManualGrading';
+import { pendingTeacherPrintResults, type TeacherPrintResult } from '../src/lib/teacherExamPrinting';
 
 const mc = (id: string, correctAnswer: number, points?: number): ReceiptQuestion & GradableQuestion => ({ id, text: id, options: ['A', 'B', 'C', 'D'], correctAnswer, type: 'multiple_choice', ...(points ? { points } : {}) });
 const essay: ReceiptQuestion & GradableQuestion = { id: 'essay', text: 'Nêu 2 cách giữ an toàn mật khẩu', options: [], correctAnswer: -1, type: 'essay', sampleAnswer: 'Không chia sẻ mật khẩu', rubric: [{ id: 'e1', text: 'Không chia sẻ mật khẩu', points: 1 }, { id: 'e2', text: 'Đặt mật khẩu khó đoán', points: 1 }] };
@@ -84,5 +86,39 @@ assert.ok(manager.includes('protectExamForAccess(stripTeacherOnlyFields(authoriz
 assert.ok(manager.includes('`manualGrades.${questionId}`') || readFileSync(new URL('../src/components/ExamManualGradingPanel.tsx', import.meta.url), 'utf8').includes('`manualGrades.${questionId}`'), 'Grades are saved per question on the result.');
 assert.ok(!/manualGrades/.test(runner.slice(runner.indexOf("await setDoc(doc(db, 'results'"), runner.indexOf('cheatEvents,', runner.indexOf("await setDoc(doc(db, 'results'")))), 'Student submissions never write teacher-only grade fields.');
 assert.ok(runner.includes('MAX_ANSWERS_PAYLOAD_BYTES'), 'Submissions stay below the Firestore document limit.');
+
+// Students sign one receipt per exam.
+assert.equal(receiptSignTiming(legacy as never), 'at-submit', 'Objective-only exams still print at submission.');
+assert.equal(receiptSignTiming(exam), 'after-grading', 'Essay/practical exams print once grading is complete by default.');
+assert.equal(receiptSignTiming({ ...exam, receiptSettings: { signTiming: 'at-submit' } }), 'at-submit');
+assert.equal(receiptReadyToSign(exam, { answers }), false);
+const fullyGraded = { essay: gradeFromChecks(essay, ['e1']), practical: gradeFromChecks(practical, ['p1']) };
+assert.equal(receiptReadyToSign(exam, { answers, manualGrades: fullyGraded }), true);
+
+const since = '2026-10-15T08:00:00.000Z';
+const base: TeacherPrintResult = { id: 'r1', examId: 'exam', studentId: 's1', teacherId: 't1', score: 1, totalQuestions: 5, submittedAt: '2026-10-15T08:05:00.000Z', answers };
+const queued = (result: TeacherPrintResult, baseline: string[] = [], targetExam = exam) => pendingTeacherPrintResults([result], 't1', 'exam', since, Date.parse('2026-10-15T09:00:00.000Z'), baseline, targetExam).length;
+assert.equal(queued(base), 0, 'Ungraded essay/practical work is not printed yet.');
+assert.equal(queued({ ...base, manualGrades: fullyGraded, manualGradedAt: '2026-10-15T08:30:00.000Z' }), 1, 'The receipt prints once the last grade is saved.');
+assert.equal(queued({ ...base, submittedAt: '2026-10-15T07:00:00.000Z', manualGrades: fullyGraded, manualGradedAt: '2026-10-15T08:30:00.000Z' }, ['r1']), 1, 'Work submitted before the station started prints when graded during the station.');
+assert.equal(queued({ ...base, manualGrades: fullyGraded, manualGradedAt: '2026-10-15T07:30:00.000Z' }, ['r1']), 0, 'Work graded before the station started is printed from the results table instead.');
+assert.equal(queued({ ...base, manualGrades: fullyGraded, manualGradedAt: '2026-10-15T08:30:00.000Z', receiptPrintedAt: '2026-10-15T08:31:00.000Z' }), 0, 'A signed receipt is never printed twice.');
+assert.equal(queued({ ...base, manualGrades: fullyGraded, manualGradedAt: '2026-10-15T08:59:50.000Z' }), 0, 'While the teacher is still ticking, the receipt waits for grading to settle.');
+assert.equal(queued({ ...base, manualGrades: fullyGraded, manualGradedAt: '2026-10-15T08:59:30.000Z' }), 1, 'Twenty quiet seconds after the last tick, it prints.');
+assert.equal(queued({ ...base, manualGrades: fullyGraded, manualGradedAt: '2026-10-15T08:30:00.000Z', teacherPrint: { status: 'sent', stationId: 'x', claimedAt: since, updatedAt: since } }), 0);
+const atSubmitExam = { ...exam, receiptSettings: { signTiming: 'at-submit' as const } };
+assert.equal(queued(base, [], atSubmitExam), 1, 'At-submit exams print as soon as the work arrives.');
+assert.equal(queued({ ...base, manualGrades: fullyGraded, manualGradedAt: '2026-10-15T08:30:00.000Z' }, ['r1'], atSubmitExam), 0, 'Grading later never triggers a second receipt for at-submit exams.');
+assert.equal(pendingTeacherPrintResults([base], 't1', 'exam', since, Date.now(), []).length, 1, 'Callers without an exam keep the original behaviour.');
+
+// Submission code binds the signed receipt to the work being graded.
+const code = manualSubmissionCode(exam.questions, answers);
+assert.match(code, /^[0-9A-F]{4}-[0-9A-F]{4}$/);
+assert.equal(manualSubmissionCode(exam.questions, { ...answers }), code);
+assert.notEqual(manualSubmissionCode(exam.questions, { ...answers, essay: 'Bài khác' }), code);
+assert.equal(manualSubmissionCode(legacy.questions as never, {}), '');
+const atSubmitReceipt = buildExamReceiptHtml(atSubmitExam, { id: 's1', name: 'Học sinh A' }, { id: 'r1', score: 2, totalQuestions: 5, submittedAt: since, answers });
+assert.ok(atSubmitReceipt.includes(code) && atSubmitReceipt.includes('không cần ký lại'));
+assert.ok(finalReceipt.includes('Phiếu có điểm cuối cùng; học sinh ký một lần.'));
 
 console.log('Exam essay/practical grading checks passed.');

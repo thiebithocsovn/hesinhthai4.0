@@ -10,6 +10,7 @@ import {
   highlightRuns,
   isManualQuestion,
   isSubmittedPracticalFile,
+  manualSubmissionCode,
   questionMaxPoints,
   QUICK_COMMENTS,
   rubricKeywords,
@@ -33,6 +34,8 @@ interface Props {
   studentName: (result: GradingResult) => string;
   classLabel: (result: GradingResult) => string;
   onClose: () => void;
+  /** 'after-grading': the single signed receipt prints once a student's last essay/practical grade is saved. */
+  signTiming?: 'after-grading' | 'at-submit';
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -151,7 +154,7 @@ function GradeCard({ question, result, label, sublabel, keywords, onSave }: {
 }
 
 /** Grade essay and practical questions one question at a time across the whole class. */
-export default function ExamManualGradingPanel({ exam, results, studentName, classLabel, onClose }: Props) {
+export default function ExamManualGradingPanel({ exam, results, studentName, classLabel, onClose, signTiming }: Props) {
   const manual = useMemo(() => exam.questions.map((question, index) => ({ question, number: index + 1 })).filter(item => isManualQuestion(item.question)), [exam.questions]);
   const [selectedId, setSelectedId] = useState(manual[0]?.question.id || '');
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('all');
@@ -195,6 +198,13 @@ export default function ExamManualGradingPanel({ exam, results, studentName, cla
         <button type="button" onClick={onClose} className="ml-auto flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-black sm:ml-0"><X className="h-4 w-4" />Xong</button>
       </header>
 
+      {signTiming && manual.length > 0 && (
+        <p className="border-b border-violet-200 bg-violet-50 px-4 py-2 text-sm text-violet-900 md:px-6">
+          {signTiming === 'after-grading'
+            ? 'Học sinh ký phiếu một lần: chấm xong tất cả câu tự luận / thực hành của em nào thì khoảng 20 giây sau lần tích cuối, trạm in (nếu đang bật) tự in phiếu có điểm cuối cùng cho em đó; nếu không bật trạm, in ở cột Thao tác trong bảng kết quả.'
+            : 'Phiếu ký đã in lúc nộp bài kèm mã đối chiếu. Điểm chấm ở đây được công bố trên hệ thống, không in phiếu thứ hai.'}
+        </p>
+      )}
       {!manual.length ? (
         <div className="flex flex-1 items-center justify-center p-6 text-center text-slate-500">Kỳ thi này chưa có câu tự luận hoặc thực hành.</div>
       ) : (
@@ -245,7 +255,7 @@ export default function ExamManualGradingPanel({ exam, results, studentName, cla
                     question={selected.question}
                     result={{ ...result, manualGrades: { ...result.manualGrades, ...(local[`${result.id}:${selected.question.id}`] ? { [selected.question.id]: local[`${result.id}:${selected.question.id}`] } : {}) } }}
                     label={anonymous ? `Bài số ${results.indexOf(result) + 1}` : studentName(result)}
-                    sublabel={anonymous ? '' : classLabel(result)}
+                    sublabel={[anonymous ? '' : classLabel(result), `Mã đối chiếu ${manualSubmissionCode(exam.questions, result.answers)}`].filter(Boolean).join(' · ')}
                     keywords={keywords}
                     onSave={grade => save(result, selected.question.id, grade)}
                   />

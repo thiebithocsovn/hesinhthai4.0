@@ -1,4 +1,4 @@
-import { receiptQuestionIsCorrect, type ReceiptExam, type ReceiptResult } from './examReceipt';
+import { receiptQuestionIsCorrect, receiptReadyToSign, receiptSignTiming, type ReceiptExam, type ReceiptResult } from './examReceipt';
 
 export interface TeacherPrintState {
   status: 'claimed' | 'dispatching' | 'sent' | 'failed';
@@ -12,6 +12,10 @@ export interface TeacherPrintResult extends ReceiptResult {
   studentId: string;
   teacherId: string;
   teacherPrint?: TeacherPrintState;
+  /** Last time the teacher saved an essay/practical grade on this submission. */
+  manualGradedAt?: string;
+  /** Set once the one signed receipt was printed or opened for printing; never print it again automatically. */
+  receiptPrintedAt?: string;
 }
 
 export function gradeSubmittedExam(exam: ReceiptExam, result: TeacherPrintResult): { score: number; totalQuestions: number } {
@@ -23,12 +27,26 @@ export function gradeSubmittedExam(exam: ReceiptExam, result: TeacherPrintResult
   return { score: selected.filter(question => receiptQuestionIsCorrect(question, result.answers?.[question.id])).length, totalQuestions: selected.length };
 }
 
-export function pendingTeacherPrintResults(results: readonly TeacherPrintResult[], teacherId: string, examId: string, since: string, now = Date.now(), baselineIds?: readonly string[]): TeacherPrintResult[] {
+/** Quiet period after the last essay/practical grade before the one signed receipt prints. */
+export const GRADING_SETTLE_MS = 20_000;
+
+export function pendingTeacherPrintResults(results: readonly TeacherPrintResult[], teacherId: string, examId: string, since: string, now = Date.now(), baselineIds?: readonly string[], exam?: ReceiptExam): TeacherPrintResult[] {
   const cutoff = Date.parse(since);
   if (!Number.isFinite(cutoff)) return [];
   const baseline = baselineIds ? new Set(baselineIds) : null;
+  // Exams with essay/practical parts print the single signed receipt once grading is complete,
+  // including submissions that arrived before the station started but were graded during it.
+  const afterGrading = Boolean(exam && exam.id === examId && receiptSignTiming(exam) === 'after-grading');
   return results.filter(result => {
-    if (result.teacherId !== teacherId || result.examId !== examId || !Number.isFinite(Date.parse(result.submittedAt)) || (baseline ? baseline.has(result.id) : Date.parse(result.submittedAt) < cutoff)) return false;
+    if (result.teacherId !== teacherId || result.examId !== examId || !Number.isFinite(Date.parse(result.submittedAt))) return false;
+    if (afterGrading) {
+      if (result.receiptPrintedAt || !receiptReadyToSign(exam!, result)) return false;
+      const gradedAt = Date.parse(result.manualGradedAt || '');
+      // The teacher may still be ticking criteria on the last question; wait until grading settles.
+      if (Number.isFinite(gradedAt) && now - gradedAt < GRADING_SETTLE_MS) return false;
+      const gradedDuringStation = gradedAt >= cutoff;
+      if (!gradedDuringStation && (baseline ? baseline.has(result.id) : Date.parse(result.submittedAt) < cutoff)) return false;
+    } else if (baseline ? baseline.has(result.id) : Date.parse(result.submittedAt) < cutoff) return false;
     if (!result.teacherPrint) return true;
     // A claim can be recovered before dispatch; dispatching is deliberately never replayed automatically.
     return result.teacherPrint.status === 'claimed' && now - Date.parse(result.teacherPrint.claimedAt) > 60_000;
@@ -40,6 +58,8 @@ export interface PreparedTeacherReceipt {
   score: number;
   totalQuestions: number;
   studentName: string;
+  /** Overrides the "x/y câu đúng" status line, e.g. for weighted essay/practical scores. */
+  summaryText?: string;
 }
 
 export interface TeacherPrintQueueDependencies {
@@ -88,7 +108,7 @@ export class TeacherExamPrintQueue {
         dispatching = true;
         await this.dependencies.print(receipt.html);
         await this.dependencies.markSent(claimed);
-        this.dependencies.report(result.id, 'sent', `${receipt.studentName}: đã gửi lệnh in · ${receipt.score}/${receipt.totalQuestions} câu đúng`);
+        this.dependencies.report(result.id, 'sent', `${receipt.studentName}: đã gửi lệnh in · ${receipt.summaryText || `${receipt.score}/${receipt.totalQuestions} câu đúng`}`);
       } catch (error) {
         const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code).replace(/^firestore\//, '') : '';
         const retryable = !dispatching && ['unavailable', 'deadline-exceeded', 'aborted', 'network-request-failed'].includes(code);

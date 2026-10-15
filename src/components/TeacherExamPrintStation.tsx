@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Printer } from 'lucide-react';
 import { collection, doc, getDoc, onSnapshot, query, runTransaction, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { buildExamReceiptHtml, getExamReceiptSettings, getReceiptStudentClassId, printExamReceipt, type ReceiptExam, type ReceiptStudent } from '../lib/examReceipt';
+import { buildExamReceiptHtml, getExamReceiptSettings, getReceiptStudentClassId, printExamReceipt, receiptQuestionIsCorrect, receiptSignTiming, type ReceiptExam, type ReceiptStudent } from '../lib/examReceipt';
+import { examUsesWeightedScoring, formatPoints, summarizeExamScore } from '../lib/examManualGrading';
 import { gradeSubmittedExam, pendingTeacherPrintResults, TeacherExamPrintQueue, type TeacherPrintResult, type TeacherPrintState } from '../lib/teacherExamPrinting';
 
 interface StationExam extends ReceiptExam { teacherId?: string; status: string }
@@ -52,7 +53,8 @@ export default function TeacherExamPrintStation({ exams, authenticatedUid }: Pro
         const snapshot = await transaction.get(resultRef(result.id));
         if (!snapshot.exists()) return null;
         const current = { ...snapshot.data(), id: snapshot.id } as TeacherPrintResult;
-        if (!matches(current) || !pendingTeacherPrintResults([current], station.teacherId, station.examId, station.since, Date.now(), station.baselineIds).length) return null;
+        const stationExam = latestExams.current.find(item => item.id === station.examId && item.teacherId === station.teacherId);
+        if (!matches(current) || !pendingTeacherPrintResults([current], station.teacherId, station.examId, station.since, Date.now(), station.baselineIds, stationExam).length) return null;
         const state = stamp('claimed', new Date().toISOString());
         transaction.update(snapshot.ref, { teacherPrint: state });
         return { ...current, teacherPrint: state };
@@ -75,14 +77,17 @@ export default function TeacherExamPrintStation({ exams, authenticatedUid }: Pro
         }
         let startedAt: string | undefined;
         try { const session = await getDoc(doc(db, 'exam_sessions', result.id)); if (session.exists() && session.data().teacherId === result.teacherId) startedAt = session.data().startTime; } catch { /* Start time is optional on the receipt. */ }
-        return { ...grade, studentName: student.name, html: buildExamReceiptHtml(receiptExam, student, { ...result, ...grade }, startedAt) };
+        const weighted = examUsesWeightedScoring(exam) ? summarizeExamScore(exam, result, receiptQuestionIsCorrect) : null;
+        const summaryText = weighted ? (weighted.complete ? `${formatPoints(weighted.score10)}/10 điểm` : `trắc nghiệm ${formatPoints(weighted.objectiveEarned)}/${formatPoints(weighted.objectiveMax)} điểm`) : undefined;
+        return { ...grade, studentName: student.name, summaryText, html: buildExamReceiptHtml(receiptExam, student, { ...result, ...grade }, startedAt) };
       },
       markDispatching: async (result, receipt) => runTransaction(db, async transaction => {
         const snapshot = await transaction.get(resultRef(result.id));
         if (!snapshot.exists()) return false;
         const current = snapshot.data() as TeacherPrintResult;
         if (!matches(current) || !ownedClaim(current)) return false;
-        transaction.update(snapshot.ref, { score: receipt.score, totalQuestions: receipt.totalQuestions, teacherGradedAt: new Date().toISOString(), teacherPrint: stamp('dispatching', current.teacherPrint!.claimedAt) });
+        const dispatchedAt = new Date().toISOString();
+        transaction.update(snapshot.ref, { score: receipt.score, totalQuestions: receipt.totalQuestions, teacherGradedAt: dispatchedAt, receiptPrintedAt: dispatchedAt, teacherPrint: stamp('dispatching', current.teacherPrint!.claimedAt) });
         return true;
       }),
       print: printExamReceipt,
@@ -106,7 +111,11 @@ export default function TeacherExamPrintStation({ exams, authenticatedUid }: Pro
       },
       report,
     });
-    const feed = () => { if (!latestExams.current.some(exam => exam.id === station.examId && exam.teacherId === station.teacherId)) return; queue.add(pendingTeacherPrintResults(latest, station.teacherId, station.examId, station.since, Date.now(), station.baselineIds)); };
+    const feed = () => {
+      const stationExam = latestExams.current.find(exam => exam.id === station.examId && exam.teacherId === station.teacherId);
+      if (!stationExam) return;
+      queue.add(pendingTeacherPrintResults(latest, station.teacherId, station.examId, station.since, Date.now(), station.baselineIds, stationExam));
+    };
     const unsubscribe = onSnapshot(query(collection(db, 'results'), where('teacherId', '==', station.teacherId)), { includeMetadataChanges: true }, snapshot => {
       if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return;
       latest = snapshot.docs.map(item => ({ ...item.data(), id: item.id } as TeacherPrintResult));
@@ -129,6 +138,7 @@ export default function TeacherExamPrintStation({ exams, authenticatedUid }: Pro
   return <section className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4" aria-label="Máy in giáo viên">
     <h3 className="flex items-center gap-2 font-bold text-blue-900"><Printer size={20} />Máy giáo viên: nhận bài → chấm → tự in phiếu ký</h3>
     <p className="mt-2 text-sm text-slate-600">Cấu hình Chrome và máy in một lần, bật trạm trước giờ thi và giữ cửa sổ giáo viên này mở. Máy học sinh chỉ nộp bài. Mỗi bài được xếp hàng và gửi lệnh lần lượt.</p>
+    {selected && receiptSignTiming(selected) === 'after-grading' && <p className="mt-2 rounded-lg bg-white/70 p-2 text-sm text-violet-900">Đề có tự luận / thực hành: mỗi phiếu ký được in <b>một lần</b>, ngay khi thầy cô chấm xong bài của em đó (kể cả bài nộp trước khi bật trạm nếu được chấm trong lúc trạm đang bật). Học sinh chỉ ký một lần trên phiếu có điểm cuối cùng.</p>}
     <div className="mt-3 flex flex-wrap items-center gap-3">
       <select aria-label="Kỳ thi in tự động" value={station?.examId || selected?.id || ''} disabled={!!station} onChange={event => setSelectedId(event.target.value)} className="max-w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="" disabled>Chọn kỳ thi</option>{exams.map(exam => <option key={exam.id} value={exam.id}>{exam.title}</option>)}</select>
       {!station ? <button type="button" disabled={!ready || !baselineReady || !selected || !getExamReceiptSettings(selected).autoPrint} onClick={start} className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-40">Bật trạm in giáo viên</button> : <button type="button" onClick={stop} className="rounded-lg bg-slate-700 px-4 py-2 font-semibold text-white">Dừng trạm in</button>}
