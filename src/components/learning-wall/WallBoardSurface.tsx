@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Plus, Search, LayoutGrid, Columns3, AlignJustify, Star, Archive, Settings2, Share2, X, MoreHorizontal, Heart, MessageCircle, ImagePlus, Link2, Paperclip, Camera, Send, Pin, Pencil, Trash2, Download, Play, ChevronLeft, ChevronRight, LockKeyhole, Globe, Check, Copy, LayoutDashboard, FolderOpen, MapPin, Grip, Inbox, LoaderCircle, ExternalLink, RotateCcw, RotateCw, Maximize } from 'lucide-react';
+import { ArrowLeft, Plus, Search, LayoutGrid, Columns3, AlignJustify, Star, Archive, Settings2, Share2, X, MoreHorizontal, Heart, MessageCircle, ImagePlus, Link2, Paperclip, Camera, Send, Pin, Pencil, Trash2, Download, Play, ChevronLeft, ChevronRight, LockKeyhole, Globe, Check, Copy, LayoutDashboard, FolderOpen, MapPin, Grip, Inbox, LoaderCircle, ExternalLink, RotateCcw, RotateCw, Maximize, Users, Sparkles, UserRound } from 'lucide-react';
 import {
   WALL_LAYOUTS, WALL_POST_COLORS, WALL_FILE_ACCEPT, assertWallSize, boardPosts, exportWallCsv, wallSubmissionData,
   orderWallPosts, reactionCount, safeWallAttachment, safeWallImage, safeWallUrl, readWallFile,
@@ -8,7 +8,8 @@ import {
 } from '../../lib/learningWall';
 import './learning-wall.css';
 import WallBackgroundPicker from './WallBackgroundPicker';
-import { wallBackgroundStyle } from '../../lib/learningWallBackground';
+import { WALL_COVER_COUNT, WallCoverArt, WallHeadingArt, WallOwlMark, WallTeacherArt, WallTeacherAvatar, wallSeed } from './WallArt';
+import { safeBackgroundImage, wallBackgroundStyle } from '../../lib/learningWallBackground';
 import { useWallDirection, type WallDirection } from './useWallDirection';
 import type { WallAssessment } from '../../lib/learningWallAssessment';
 import type { WallChat } from '../../lib/learningWallChat';
@@ -17,6 +18,33 @@ const WallAiAssessment = lazy(() => import('./WallAiAssessment'));
 const WallAiProgress = lazy(() => import('./WallAiProgress'));
 
 const WallMap = lazy(() => import('./WallMap'));
+
+const WALL_FONT_URL = 'https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&display=swap';
+function useWallFont() {
+  useEffect(() => {
+    if (typeof document === 'undefined' || document.querySelector('link[data-lw-font]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet'; link.href = WALL_FONT_URL; link.dataset.lwFont = 'true';
+    document.head.appendChild(link);
+  }, []);
+}
+
+function boardGrade(title: string): string {
+  return /l[ớơo]p\s*(\d{1,2})/iu.exec(title.normalize('NFC'))?.[1] || '';
+}
+
+function BoardBadges({ board, favorite, count }: { board: WallCategory; favorite: boolean; count: number }) {
+  const grade = boardGrade(board.title);
+  const status = board.wallDeleted ? { icon: <Trash2 size={12} />, label: 'Thùng rác', tone: 'muted' }
+    : board.wallArchived ? { icon: <Archive size={12} />, label: 'Lưu trữ', tone: 'muted' }
+    : count >= 10 ? { icon: <Sparkles size={12} />, label: 'Sôi nổi', tone: 'lively' }
+    : board.wallShareId ? { icon: <Link2 size={12} />, label: 'Có liên kết', tone: 'shared' }
+    : { icon: <LockKeyhole size={12} />, label: 'Riêng tư', tone: 'private' };
+  return <div className="lw-card-badges">
+    {favorite ? <span className="lw-chip lw-chip-pin"><Pin size={12} />Đã ghim</span> : grade ? <span className="lw-chip"><Users size={12} />Lớp {grade}</span> : <span />}
+    <span className={`lw-chip lw-chip-${status.tone}`}>{status.icon}{status.label}</span>
+  </div>;
+}
 
 function DirectionButtons({ value, onChange, label }: { value: WallDirection; onChange: (value: WallDirection) => void; label: string }) {
   return <div className="lw-direction" role="group" aria-label={label}>
@@ -175,6 +203,7 @@ function defaultDraft(board: WallCategory, categories: WallCategory[], displayNa
 
 export default function WallBoardSurface(props: Props) {
   const { categories, posts, boardId, onOpen, onBack, displayName, ownerUid, guest = false, actions } = props;
+  useWallFont();
   const board = categories.find(item => item.id === boardId && !item.wallDeleted);
   const [dashboardDirection, setDashboardDirection] = useWallDirection(ownerUid, 'dashboard');
   const [boardDirection, setBoardDirection] = useWallDirection(ownerUid, `board::${boardId || ''}`);
@@ -232,6 +261,14 @@ export default function WallBoardSurface(props: Props) {
   const roots = categories.filter(item => !item.parentId && (filter === 'trash' ? item.wallDeleted : !item.wallDeleted && (filter === 'archived' ? item.wallArchived : !item.wallArchived))
     && (filter !== 'favorites' || favorites.includes(item.id)) && (!search || `${item.title} ${item.wallDescription || ''}`.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))));
   const currentPosts = useMemo(() => board ? boardPosts(board, categories, posts) : [], [board, categories, posts]);
+  // Spread the illustrated covers across all boards in creation order, so covers rarely repeat
+  // and stay put when boards are filtered, archived or newly added.
+  const coverVariants = useMemo(() => {
+    const created = (item: WallCategory) => wallTimestamp(item.createdAt) || Number.MAX_SAFE_INTEGER;
+    const ordered = categories.filter(item => !item.parentId).sort((a, b) => created(a) - created(b) || a.id.localeCompare(b.id));
+    const offset = ordered.length ? wallSeed(ordered[0].authorId || ordered[0].id) : 0;
+    return new Map(ordered.map((item, index) => [item.id, (offset + index) % WALL_COVER_COUNT]));
+  }, [categories]);
   const visiblePosts = orderWallPosts(currentPosts, sort, search);
   const detail = posts.find(post => post.id === detailId);
   const layout = wallLayout(board?.wallLayout);
@@ -296,9 +333,9 @@ export default function WallBoardSurface(props: Props) {
   {panel === 'settings' && board && !guest && <button type="button" className="lw-button lw-danger" disabled={busy} onClick={() => { setDeleteTarget(board); setPanel('delete-board'); }}><Trash2 size={17} />Xóa lớp / bảng</button>}</form>;
 
   return <div className={`lw-app ${board ? 'lw-board-open' : ''}`}>
-    {!board && <aside className="lw-sidebar"><button className="lw-brand" onClick={() => { setFilter('all'); setSearch(''); }}><span className="lw-brand-mark">t</span><span>Tường học tập Ai<small>Không gian cùng học</small></span></button><button className="lw-button lw-primary lw-create" onClick={() => { setBoardDraft({ title: '', wallIcon: '📚', wallLayout: 'wall', wallBackground: 'sage', wallDescription: '' }); setPanel('create'); }}><Plus size={20} />Tạo bảng mới</button>
-      <nav aria-label="Danh mục bảng"><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}><LayoutDashboard size={19} />Bảng của tôi</button><button className={filter === 'favorites' ? 'active' : ''} onClick={() => setFilter('favorites')}><Star size={19} />Đã đánh dấu</button><button className={filter === 'archived' ? 'active' : ''} onClick={() => setFilter('archived')}><Archive size={19} />Đã lưu trữ</button><button className={filter === 'trash' ? 'active' : ''} onClick={() => setFilter('trash')}><Trash2 size={19} />Thùng rác</button></nav>
-      <div className="lw-sidebar-note"><LockKeyhole size={18} /><p>Bảng mặc định riêng tư.<br />Thầy cô quyết định nội dung nào được chia sẻ.</p></div><div className="lw-account"><span className="lw-avatar">{displayName.slice(0, 1)}</span><div><strong>{displayName}</strong><small>{props.administrator ? 'Quản trị toàn hệ thống' : 'Không gian giáo viên'}</small></div></div><button className="lw-back" onClick={onBack}><ArrowLeft size={17} />Về hệ sinh thái</button>
+    {!board && <aside className="lw-sidebar"><button className="lw-brand" onClick={() => { setFilter('all'); setSearch(''); }}><span className="lw-brand-mark"><WallOwlMark /></span><span>Tường học tập Ai<small>Không gian cùng học</small></span></button><button className="lw-button lw-primary lw-create" onClick={() => { setBoardDraft({ title: '', wallIcon: '📚', wallLayout: 'wall', wallBackground: 'sage', wallDescription: '' }); setPanel('create'); }}><Plus size={20} />Tạo bảng mới</button>
+      <nav aria-label="Danh mục bảng"><button className={filter === 'all' ? 'active' : ''} aria-current={filter === 'all' ? 'page' : undefined} onClick={() => setFilter('all')}><LayoutDashboard size={19} />Bảng của tôi</button><button className={filter === 'favorites' ? 'active' : ''} aria-current={filter === 'favorites' ? 'page' : undefined} onClick={() => setFilter('favorites')}><Star size={19} className="lw-nav-star" fill="currentColor" />Đã đánh dấu</button><button className={filter === 'archived' ? 'active' : ''} aria-current={filter === 'archived' ? 'page' : undefined} onClick={() => setFilter('archived')}><Archive size={19} />Đã lưu trữ</button><button className={filter === 'trash' ? 'active' : ''} aria-current={filter === 'trash' ? 'page' : undefined} onClick={() => setFilter('trash')}><Trash2 size={19} />Thùng rác</button></nav>
+      <div className="lw-sidebar-art"><WallTeacherArt /></div><div className="lw-sidebar-note"><LockKeyhole size={18} /><p>Bảng mặc định riêng tư.<br />Thầy cô quyết định nội dung nào được chia sẻ.</p></div><div className="lw-account"><span className="lw-avatar lw-avatar-art"><WallTeacherAvatar /></span><div><strong>{displayName}</strong><small>{props.administrator ? 'Quản trị toàn hệ thống' : 'Không gian giáo viên'}</small></div></div><button className="lw-back" onClick={onBack}><ArrowLeft size={17} />Về hệ sinh thái</button>
     </aside>}
     <main className="lw-main" style={board ? wallBackgroundStyle(board) : undefined}>
       <header className="lw-topbar">{board ? <><div className="lw-row lw-board-nav"><button className="lw-icon" onClick={() => guest ? onBack() : onOpen(null)} aria-label="Về danh sách bảng"><ArrowLeft size={21} /></button><h1 className="lw-topbar-title"><span className="lw-topbar-icon" aria-hidden="true">{board.wallIcon || '📚'}</span><span className="lw-topbar-title-text">{board.title}</span></h1><span className="lw-badge">{guest ? 'Bảng được chia sẻ' : 'Không gian riêng'}</span></div><div className="lw-row lw-board-controls"><button className="lw-button lw-soft" onClick={() => { setSlide(0); setPanel('present'); }} disabled={!currentPosts.length}><Play size={17} /><span className="lw-hide-mobile">Trình chiếu</span></button>{!guest && <><button className="lw-button lw-soft" onClick={() => setPanel('share')}><Share2 size={17} />Chia sẻ</button><button className="lw-icon" aria-label="Cài đặt bảng" onClick={() => { setBoardDraft({ title: board.title, wallDescription: board.wallDescription || '', wallIcon: board.wallIcon || '📚', wallLayout: layout, wallBackground: board.wallBackground || 'sage', bgType: board.bgType, bgValue: board.bgValue || '', wallComments: board.wallComments !== false, wallReactions: board.wallReactions !== false }); setPanel('settings'); }}><Settings2 size={21} /></button></>}</div></>
@@ -316,8 +353,8 @@ export default function WallBoardSurface(props: Props) {
           : <div className={`lw-posts lw-layout-${layout}${directionClass}`}>{visiblePosts.map(post => <div key={post.id} className="lw-post-wrap">{layout === 'timeline' && <time>{wallTimestamp(post.createdAt) ? new Date(wallTimestamp(post.createdAt)).toLocaleDateString('vi-VN') : 'Bài mới'}</time>}{card(post)}</div>)}</div>}
         {!visiblePosts.length && layout !== 'columns' && layout !== 'map' && <div className="lw-empty"><MessageCircle size={38} /><h2>{search ? 'Chưa có bài phù hợp' : 'Bắt đầu bằng một ý tưởng'}</h2><p>{search ? 'Thử một từ khóa khác.' : 'Thêm câu hỏi, hình ảnh hoặc chia sẻ sản phẩm học tập đầu tiên.'}</p>{canPost && <button className="lw-button" onClick={() => openPost()}><Plus size={18} />Thêm bài đầu tiên</button>}</div>}
         {canPost && <button className="lw-fab" aria-label="Thêm bài đăng" onClick={() => openPost()}><Plus size={30} /></button>}
-      </> : <section className="lw-dashboard"><div className="lw-dashboard-heading"><div><p className="lw-eyebrow">MỖI Ý TƯỞNG ĐỀU CÓ MỘT CHỖ</p><h1>{filter === 'favorites' ? 'Bảng đã đánh dấu' : filter === 'archived' ? 'Bảng đã lưu trữ' : filter === 'trash' ? 'Thùng rác' : props.administrator ? 'Bảng toàn hệ thống' : 'Bảng của tôi'}</h1><p>Tập hợp ý tưởng. Chia sẻ bài làm. Cùng nhau khám phá.</p></div><button className="lw-button lw-primary" onClick={() => { setBoardDraft({ title: '', wallIcon: '📚', wallLayout: 'wall', wallBackground: 'sage', wallDescription: '' }); setPanel('create'); }}><Plus size={18} />Tạo bảng</button></div><div className="lw-dashboard-tools"><label className="lw-search"><Search size={18} /><input aria-label="Tìm bảng" placeholder="Tìm bảng theo tên…" value={search} onChange={event => setSearch(event.target.value)} /></label><DirectionButtons label="Hướng sắp xếp danh sách bảng" value={dashboardDirection || 'horizontal'} onChange={setDashboardDirection} /><span>{roots.length} bảng</span>{filter === 'trash' && !guest && <button type="button" className="lw-button lw-danger" disabled={busy || props.loading || props.offline || !trashedBoards.length} onClick={() => setPanel('empty-trash')}><Trash2 size={17} />Xóa sạch thùng rác</button>}</div>
-        {props.loading ? <div className="lw-empty"><LoaderCircle className="lw-spin" />Đang tải bảng…</div> : <div className={`lw-board-grid ${dashboardDirection === 'vertical' ? 'lw-board-list' : ''}`}>{roots.map(item => { const count = boardPosts(item, categories, posts).length; return <article className="lw-board-card" key={item.id}><button className="lw-board-cover" style={wallBackgroundStyle(item, false)} onClick={() => onOpen(item.id)} disabled={Boolean(item.wallDeleted)} aria-label={`Mở bảng ${item.title}`}><span className="lw-card-emoji">{item.wallIcon || '📚'}</span><span className="lw-mini-cards"><i /><i /><i /></span></button><button className={`lw-favorite ${favorites.includes(item.id) ? 'active' : ''}`} aria-pressed={favorites.includes(item.id)} aria-label={`Đánh dấu ${item.title}`} onClick={() => toggleFavorite(item.id)}><Star size={18} fill={favorites.includes(item.id) ? 'currentColor' : 'none'} /></button><div className="lw-board-card-body"><button className="lw-board-card-title" disabled={Boolean(item.wallDeleted)} onClick={() => onOpen(item.id)}>{item.title}</button><p>{item.wallDescription || `${categories.filter(child => child.parentId === item.id && child.title.trim()).length} cột · ${count} bài đăng`}</p><div><span><LockKeyhole size={12} />{item.author || displayName}</span><span>{WALL_LAYOUTS.find(layout => layout.id === wallLayout(item.wallLayout))?.label}</span></div><div className="lw-row">{!guest && (item.wallDeleted ? <button type="button" className="lw-button" disabled={busy} onClick={() => void run(() => actions.updateBoard(item, { wallDeleted: false }), 'Đã khôi phục bảng. Liên kết học sinh vẫn tắt.', false)}><Archive size={16} />Khôi phục</button> : <button type="button" className="lw-button lw-danger" disabled={busy} aria-label={`Xóa bảng ${item.title}`} onClick={() => { setDeleteTarget(item); setPanel('delete-board'); }}><Trash2 size={16} />Xóa bảng</button>)}</div></div></article>; })}</div>}
+      </> : <section className="lw-dashboard"><div className="lw-dashboard-heading"><div><p className="lw-eyebrow">MỖI Ý TƯỞNG ĐỀU CÓ MỘT CHỖ</p><div className="lw-heading-line"><h1>{filter === 'favorites' ? 'Bảng đã đánh dấu' : filter === 'archived' ? 'Bảng đã lưu trữ' : filter === 'trash' ? 'Thùng rác' : props.administrator ? 'Bảng toàn hệ thống' : 'Bảng của tôi'}</h1><WallHeadingArt /></div><p>Tập hợp ý tưởng. Chia sẻ bài làm. Cùng nhau khám phá.</p></div><button className="lw-button lw-primary" onClick={() => { setBoardDraft({ title: '', wallIcon: '📚', wallLayout: 'wall', wallBackground: 'sage', wallDescription: '' }); setPanel('create'); }}><Plus size={18} />Tạo bảng</button></div><div className="lw-dashboard-tools"><label className="lw-search"><Search size={18} /><input aria-label="Tìm bảng" placeholder="Tìm bảng theo tên…" value={search} onChange={event => setSearch(event.target.value)} /></label><DirectionButtons label="Hướng sắp xếp danh sách bảng" value={dashboardDirection || 'horizontal'} onChange={setDashboardDirection} /><span className="lw-board-total">{roots.length} bảng</span>{filter === 'trash' && !guest && <button type="button" className="lw-button lw-danger" disabled={busy || props.loading || props.offline || !trashedBoards.length} onClick={() => setPanel('empty-trash')}><Trash2 size={17} />Xóa sạch thùng rác</button>}</div>
+        {props.loading ? <div className="lw-empty"><LoaderCircle className="lw-spin" />Đang tải bảng…</div> : <div className={`lw-board-grid ${dashboardDirection === 'vertical' ? 'lw-board-list' : ''}`}>{roots.map(item => { const count = boardPosts(item, categories, posts).length; const favorite = favorites.includes(item.id); const photo = item.bgType === 'image' ? safeBackgroundImage(item.bgValue) : ''; return <article className="lw-board-card" key={item.id}><button className="lw-board-cover" style={photo ? wallBackgroundStyle(item, false) : undefined} onClick={() => onOpen(item.id)} disabled={Boolean(item.wallDeleted)} aria-label={`Mở bảng ${item.title}`}>{!photo && <WallCoverArt seed={item.id} variant={coverVariants.get(item.id)} />}</button><BoardBadges board={item} favorite={favorite} count={count} /><div className="lw-board-card-body"><div className="lw-board-card-titlebar"><button className="lw-board-card-title" disabled={Boolean(item.wallDeleted)} onClick={() => onOpen(item.id)}>{item.title}</button><button className={`lw-favorite ${favorite ? 'active' : ''}`} aria-pressed={favorite} aria-label={`${favorite ? 'Bỏ ghim' : 'Ghim'} ${item.title}`} title={favorite ? 'Bỏ ghim' : 'Ghim bảng'} onClick={() => toggleFavorite(item.id)}><Star size={17} fill={favorite ? 'currentColor' : 'none'} /></button></div><p>{item.wallDescription || `${categories.filter(child => child.parentId === item.id && child.title.trim()).length} cột · ${count} bài đăng`}</p><div className="lw-board-card-meta"><span><UserRound size={13} />{item.author || displayName}</span><span>{WALL_LAYOUTS.find(layout => layout.id === wallLayout(item.wallLayout))?.label}</span></div><div className="lw-row">{!guest && (item.wallDeleted ? <button type="button" className="lw-button" disabled={busy} onClick={() => void run(() => actions.updateBoard(item, { wallDeleted: false }), 'Đã khôi phục bảng. Liên kết học sinh vẫn tắt.', false)}><Archive size={16} />Khôi phục</button> : <button type="button" className="lw-button lw-danger" disabled={busy} aria-label={`Xóa bảng ${item.title}`} onClick={() => { setDeleteTarget(item); setPanel('delete-board'); }}><Trash2 size={16} />Xóa bảng</button>)}</div></div></article>; })}</div>}
         {!props.loading && !roots.length && <div className="lw-empty"><FolderOpen size={44} /><h2>{search ? 'Không tìm thấy bảng' : filter === 'all' ? 'Một không gian mới để cùng học' : 'Chưa có bảng trong mục này'}</h2><p>{filter === 'all' ? 'Tạo bảng đầu tiên hoặc mở lại bảng lớp học đã có.' : 'Các bảng phù hợp sẽ xuất hiện tại đây.'}</p></div>}
       </section>}
     </main>
