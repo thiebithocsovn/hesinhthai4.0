@@ -1,0 +1,56 @@
+name: Current Firebase AI configuration diagnostic
+on:
+  push:
+    branches: [diagnostics/firebase-ai-config-20261015]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  config:
+    runs-on: ubuntu-latest
+    env:
+      APP_CHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APP_CHECK_SITE_KEY }}
+      GOOGLE_AI_MODEL: ${{ vars.VITE_GOOGLE_AI_MODEL }}
+      WALL_OPENAI_API_URL: ${{ vars.VITE_WALL_OPENAI_API_URL }}
+      WALL_ANTHROPIC_API_URL: ${{ vars.VITE_WALL_ANTHROPIC_API_URL }}
+    steps:
+      - name: Check variables safely without printing values
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Live repository variable check"
+            if [[ -n "${APP_CHECK_SITE_KEY:-}" ]]; then
+              echo "- App Check site key variable: CONFIGURED"
+              echo "APP_CHECK_SITE_KEY_STATUS=CONFIGURED"
+            else
+              echo "- App Check site key variable: MISSING"
+              echo "APP_CHECK_SITE_KEY_STATUS=MISSING"
+            fi
+            if [[ -n "${GOOGLE_AI_MODEL:-}" ]]; then
+              echo "- Gemini model variable: CONFIGURED"
+              echo "GOOGLE_AI_MODEL_STATUS=CONFIGURED"
+            else
+              echo "- Gemini model variable: DEFAULT_MODEL"
+              echo "GOOGLE_AI_MODEL_STATUS=DEFAULT_MODEL"
+            fi
+            if [[ -n "${WALL_OPENAI_API_URL:-}" ]]; then
+              echo "- Private OpenAI proxy URL: CONFIGURED"
+              echo "OPENAI_PROXY_STATUS=CONFIGURED"
+            else
+              echo "- Private OpenAI proxy URL: MISSING"
+              echo "OPENAI_PROXY_STATUS=MISSING"
+            fi
+            if [[ -n "${WALL_ANTHROPIC_API_URL:-}" ]]; then
+              echo "- Private Claude proxy URL: CONFIGURED"
+              echo "CLAUDE_PROXY_STATUS=CONFIGURED"
+            else
+              echo "- Private Claude proxy URL: MISSING"
+              echo "CLAUDE_PROXY_STATUS=MISSING"
+            fi
+            echo "- This check cannot establish whether Firebase AI Logic API or App Check attestation is enabled in Google Cloud."
+          } | tee "$GITHUB_STEP_SUMMARY"
+          if [[ -z "${APP_CHECK_SITE_KEY:-}" ]]; then
+            echo "::error::Gemini cannot obtain production App Check attestation because VITE_FIREBASE_APP_CHECK_SITE_KEY is unset."
+            exit 1
+          fi
