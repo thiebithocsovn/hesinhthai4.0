@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, type AppCheck } from 'firebase/app-check';
 import { getAuth } from 'firebase/auth';
 import {
   initializeFirestore,
@@ -11,17 +11,21 @@ import firebaseConfig from '../firebase-applet-config.json';
 
 export const app = initializeApp(firebaseConfig);
 
+// Gemini API calls require a real production attestation provider; never disable App Check as a workaround.
+// The reCAPTCHA Enterprise site key is public, but must be registered for this Web app and domain.
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY?.trim();
-if (appCheckSiteKey && typeof window !== 'undefined') {
+export const appCheck: AppCheck | null = (() => {
+  if (!appCheckSiteKey || typeof window === 'undefined') return null;
   try {
-    initializeAppCheck(app, {
+    return initializeAppCheck(app, {
       provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
       isTokenAutoRefreshEnabled: true,
     });
   } catch (error) {
     console.warn('Không thể khởi tạo Firebase App Check.', error);
+    return null;
   }
-}
+})();
 
 // Shared school computers must not retain a previous teacher's Firestore cache.
 // Persistent offline storage is opt-in for individually managed devices only.
