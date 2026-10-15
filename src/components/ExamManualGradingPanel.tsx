@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, CheckCircle2, Download, EyeOff, Hand, LoaderCircle, Paperclip, X } from 'lucide-react';
+import { Bot, Check, CheckCircle2, Download, EyeOff, Hand, LoaderCircle, Paperclip, X } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
@@ -17,6 +17,14 @@ import {
   type GradableQuestion,
   type ManualGrade,
 } from '../lib/examManualGrading';
+import { analyzePracticalFile, evaluateAutoCheck, type AutoCheck, type AutoCheckResult, type PracticalFileFacts } from '../lib/practicalFileCheck';
+
+const MACHINE_BADGE: Record<AutoCheckResult['status'], { text: string; className: string }> = {
+  pass: { text: '✓ Máy: đạt', className: 'bg-emerald-100 text-emerald-800' },
+  near: { text: '≈ Gần đúng', className: 'bg-amber-100 text-amber-800' },
+  fail: { text: '✗ Chưa thấy', className: 'bg-red-100 text-red-700' },
+  unknown: { text: '? Không rõ', className: 'bg-slate-100 text-slate-600' },
+};
 
 interface GradingQuestion extends GradableQuestion { text: string }
 
@@ -63,8 +71,24 @@ function GradeCard({ question, result, label, sublabel, keywords, onSave }: {
   const [state, setState] = useState<SaveState>('idle');
   const timer = useRef<number | undefined>(undefined);
   const answer = result.answers?.[question.id];
+  const file = question.type === 'practical' && isSubmittedPracticalFile(answer) ? answer : null;
+  const hasAutoChecks = rubric.some(item => item.auto?.kind);
+  const [facts, setFacts] = useState<PracticalFileFacts | null>(null);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  // Read the submitted Word / PowerPoint / Scratch file once to suggest which criteria are met.
+  useEffect(() => {
+    setFacts(null);
+    if (!file || !hasAutoChecks) return;
+    let cancelled = false;
+    void analyzePracticalFile(file).then(value => { if (!cancelled) setFacts(value); });
+    return () => { cancelled = true; };
+  }, [file?.dataUrl, hasAutoChecks]);
+
+  const machine = new Map<string, AutoCheckResult>();
+  if (file && facts) for (const item of rubric) if (item.auto?.kind) machine.set(item.id, evaluateAutoCheck(item.auto as AutoCheck, facts, file.name));
+  const machinePassed = rubric.filter(item => machine.get(item.id)?.status === 'pass').length;
 
   const points = rubric.length ? gradeFromChecks(question, checks).points : Math.min(max, Math.max(0, Number(directPoints) || 0));
 
@@ -112,14 +136,31 @@ function GradeCard({ question, result, label, sublabel, keywords, onSave }: {
         ) : <p className="rounded-xl bg-slate-50 p-3 italic text-slate-500">{describeManualAnswer(question, answer)}.</p>}
       </div>
 
+      {file && hasAutoChecks && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          <Bot className="h-4 w-4 shrink-0" />
+          {facts ? <span className="flex-1">Máy đã đọc tệp: <b>{machinePassed}/{machine.size}</b> tiêu chí kiểm tra được là đạt. Thầy cô xem lại rồi quyết định.</span> : <span className="flex flex-1 items-center gap-1.5"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Máy đang đọc tệp…</span>}
+          {facts && machine.size > 0 && (
+            <button type="button" onClick={() => {
+              const next = rubric.filter(item => machine.has(item.id) ? machine.get(item.id)!.status === 'pass' : checks.includes(item.id)).map(item => item.id);
+              setChecks(next); schedule(next, comment, directPoints);
+            }} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700">Tích theo gợi ý của máy</button>
+          )}
+        </div>
+      )}
       {rubric.length ? (
         <div className="flex flex-col gap-2">
           {rubric.map(item => {
             const on = checks.includes(item.id);
+            const verdict = machine.get(item.id);
             return (
               <button key={item.id} type="button" onClick={() => toggle(item.id)} aria-pressed={on} className={`flex min-h-[46px] items-center gap-3 rounded-xl border px-3 py-2 text-left transition-colors ${on ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
                 <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 ${on ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300'}`}>{on && <Check className="h-4 w-4" />}</span>
-                <span className="flex-1 text-sm text-slate-800">{item.text || 'Tiêu chí chưa đặt tên'}</span>
+                <span className="flex-1 text-sm text-slate-800">
+                  {item.text || 'Tiêu chí chưa đặt tên'}
+                  {verdict?.detail && <span className="mt-0.5 block text-xs text-slate-500">{verdict.detail}</span>}
+                </span>
+                {verdict && <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${MACHINE_BADGE[verdict.status].className}`} title={verdict.detail}>{MACHINE_BADGE[verdict.status].text}</span>}
                 <span className="shrink-0 text-sm font-bold text-slate-600">{formatPoints(item.points)}đ</span>
               </button>
             );

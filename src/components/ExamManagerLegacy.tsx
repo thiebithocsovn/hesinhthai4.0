@@ -29,6 +29,7 @@ import {
   type RubricItem,
 } from '../lib/examManualGrading';
 import { receiptQuestionIsCorrect } from '../lib/examReceipt';
+import { autoCheckOption, autoCheckOptionsFor } from '../lib/practicalFileCheck';
 import { buildStudentExamSchedule, canStudentEnterExam, formatExamScheduleDate, getExamScheduleState } from '../lib/examSchedule';
 import {
   createExamAccessDocumentId,
@@ -2992,13 +2993,46 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                                 <span className="text-sm font-semibold text-slate-700">{q.type === 'essay' ? 'Các ý chấm' : 'Tiêu chí chấm'} (tích khi chấm, điểm tự cộng)</span>
                                 <button type="button" onClick={() => handleUpdateRubric(q.id, rubric => [...rubric, newRubricItem('', 0.5)])} className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800"><Plus className="h-4 w-4" />Thêm {q.type === 'essay' ? 'ý' : 'tiêu chí'}</button>
                               </div>
+                              {q.type === 'practical' && (q.practicalMode || 'file') === 'file' && autoCheckOptionsFor(q.acceptedFiles).length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-sky-50 p-2">
+                                  <span className="text-xs font-semibold text-sky-900">Thêm nhanh tiêu chí máy tự kiểm tra:</span>
+                                  {autoCheckOptionsFor(q.acceptedFiles).map(option => (
+                                    <button key={option.kind} type="button" onClick={() => handleUpdateRubric(q.id, rubric => [...rubric, { ...newRubricItem(option.criterion, 0.5), auto: { kind: option.kind, ...(option.defaultValue ? { value: option.defaultValue } : {}) } }])} className="rounded-full border border-sky-200 bg-white px-2.5 py-1 text-xs font-medium text-sky-800 hover:bg-sky-100">+ {option.criterion}</button>
+                                  ))}
+                                </div>
+                              )}
                               {(q.rubric || []).map((item, itemIndex) => (
-                                <div key={item.id} className="flex items-center gap-2">
+                                <div key={item.id} className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
                                   <span className="w-6 shrink-0 text-center text-sm font-bold text-slate-400">{itemIndex + 1}</span>
                                   <input value={item.text} onChange={event => handleUpdateRubric(q.id, rubric => rubric.map(entry => entry.id === item.id ? { ...entry, text: event.target.value } : entry))} placeholder={q.type === 'essay' ? 'Nội dung ý học sinh cần nêu' : 'Điều quan sát được trong bài làm'} className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" aria-label={`Nội dung ${q.type === 'essay' ? 'ý' : 'tiêu chí'} ${itemIndex + 1}`} />
                                   <input type="number" min={0.25} max={10} step={0.25} value={item.points} onChange={event => handleUpdateRubric(q.id, rubric => rubric.map(entry => entry.id === item.id ? { ...entry, points: Math.max(0.25, Math.min(10, Number(event.target.value) || 0.25)) } : entry))} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-right text-sm" aria-label={`Điểm ${q.type === 'essay' ? 'ý' : 'tiêu chí'} ${itemIndex + 1}`} />
                                   <span className="text-xs text-slate-500">đ</span>
                                   <button type="button" onClick={() => handleUpdateRubric(q.id, rubric => rubric.filter(entry => entry.id !== item.id))} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" title="Xóa dòng này"><Trash2 className="h-4 w-4" /></button>
+                                </div>
+                                {q.type === 'practical' && (q.practicalMode || 'file') === 'file' && autoCheckOptionsFor(q.acceptedFiles).length > 0 && (
+                                  <div className="ml-8 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                                    <span>Máy kiểm tra:</span>
+                                    <select value={item.auto?.kind || ''} onChange={event => {
+                                      const option = autoCheckOption(event.target.value);
+                                      handleUpdateRubric(q.id, rubric => rubric.map(entry => entry.id !== item.id ? entry : option ? { ...entry, auto: { kind: option.kind, ...(option.defaultValue ? { value: option.defaultValue } : {}) } } : (({ auto: _removed, ...rest }) => rest)(entry)));
+                                    }} className="rounded-md border border-slate-300 bg-white px-2 py-1" aria-label={`Máy kiểm tra tiêu chí ${itemIndex + 1}`}>
+                                      <option value="">Không – thầy cô tự xem</option>
+                                      {autoCheckOptionsFor(q.acceptedFiles).map(option => <option key={option.kind} value={option.kind}>{option.label}</option>)}
+                                    </select>
+                                    {autoCheckOption(item.auto?.kind)?.input && (
+                                      <input
+                                        type={autoCheckOption(item.auto?.kind)?.input === 'number' ? 'number' : 'text'}
+                                        min={1}
+                                        value={item.auto?.value || ''}
+                                        placeholder={autoCheckOption(item.auto?.kind)?.placeholder || ''}
+                                        onChange={event => handleUpdateRubric(q.id, rubric => rubric.map(entry => entry.id === item.id && entry.auto ? { ...entry, auto: { ...entry.auto, value: event.target.value.slice(0, 120) } } : entry))}
+                                        className={`rounded-md border border-slate-300 px-2 py-1 ${autoCheckOption(item.auto?.kind)?.input === 'number' ? 'w-16' : 'w-56'}`}
+                                        aria-label={`Giá trị máy kiểm tra tiêu chí ${itemIndex + 1}`}
+                                      />
+                                    )}
+                                  </div>
+                                )}
                                 </div>
                               ))}
                               {!(q.rubric || []).length && <p className="text-xs text-amber-700">Chưa có {q.type === 'essay' ? 'ý chấm' : 'tiêu chí'} nào: câu này được tính {formatPoints(questionMaxPoints(q))} điểm và thầy cô nhập điểm trực tiếp khi chấm.</p>}

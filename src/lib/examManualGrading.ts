@@ -12,6 +12,8 @@ export interface RubricItem {
   id: string;
   text: string;
   points: number;
+  /** Optional automatic check on the submitted practical file (a suggestion while grading). */
+  auto?: { kind: string; value?: string };
 }
 
 export interface GradableQuestion {
