@@ -29,6 +29,7 @@
     "test:exam-access-rules": "node --import tsx scripts/test-exam-access-rules.ts",
     "test:exam-privacy": "node --import tsx scripts/test-exam-privacy.ts",
     "test:ai-services": "node --import tsx scripts/test-ai-services.ts",
+    "test:firebase-ai-diagnostics": "node --import tsx scripts/test-firebase-ai-diagnostics.ts",
     "test:platform-metrics": "node --import tsx scripts/test-platform-metrics.ts",
     "test:scalability": "node --import tsx scripts/test-scalability.ts",
     "test:teacher-isolation": "node --import tsx scripts/test-teacher-isolation.ts",
