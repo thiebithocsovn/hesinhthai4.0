@@ -228,3 +228,13 @@ npm run test:exam-privacy
 npm run test:pwa
 npm run build
 ```
+
+## Cấu hình Firebase App Check cho GitHub Pages (15/10/2026)
+
+Website chính thức: <https://thiebithocsovn.github.io/hesinhthai4.0/>.
+
+1. Trong Google Cloud, tạo khóa **reCAPTCHA Enterprise Web** cho `thiebithocsovn.github.io`.
+2. Đăng ký đúng Web app của dự án `gen-lang-client-0870957273` trong Firebase Console → App Check, sử dụng site key đã tạo.
+3. Lưu site key **công khai** vào GitHub Actions → Secrets and variables → Actions → **Variables**, tên `VITE_FIREBASE_APP_CHECK_SITE_KEY`. Không dùng API key, secret key, service-account JSON hay token App Check thay cho site key.
+4. Triển khai lại workflow `main.yml` trên nhánh `main` để Vite nhúng cấu hình mới vào trang tĩnh. Kết quả `APP_CHECK_SITE_KEY_STATUS=CONFIGURED` xác nhận biến có mặt tại thời điểm kiểm tra, nhưng **không** xác minh site key đã được đăng ký đúng, App Check token hợp lệ hoặc Firebase AI Logic đã bật.
+5. Sau triển khai, đăng nhập giáo viên → Tường học tập Ai → chọn **Gemini** → **Kiểm tra kết nối AI**. Chỉ khi Gemini trả lời được thì kết nối thực tế mới được xem là hoạt động. Nếu lỗi, kiểm tra việc đăng ký App Check, enforcement AI Logic và model cấu hình; không tắt App Check để vượt lỗi.
