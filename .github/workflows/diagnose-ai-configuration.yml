@@ -55,4 +55,4 @@ jobs:
             exit 1
           fi
 
-# Recheck requested 2026-10-15: inspect current repository variable presence without logging values.
+# Fresh verification after user added App Check site key — 2026-10-15.
