@@ -55,4 +55,4 @@ jobs:
             exit 1
           fi
 
-# Fresh verification after user added App Check site key — 2026-10-15.
+# Verification following reCAPTCHA key creation screenshot; check GitHub variables, never print site key.
