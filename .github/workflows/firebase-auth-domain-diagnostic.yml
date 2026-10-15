@@ -88,7 +88,7 @@ jobs:
               with urllib.request.urlopen(request, timeout=30) as response:
                   html = response.read(150000).decode('utf-8', errors='replace')
                   print(f'GITHUB_PAGES_STATUS={response.status}')
-                  print(f'HTML_HAS_ROOT={("id=\"root\"" in html) or ("id=\'root\'" in html)}')
+                  print('HTML_HAS_ROOT=' + str(('id="root"' in html) or ("id='root'" in html)))
           except Exception as exc:
               print(f'GITHUB_PAGES_CHECK_FAILED={type(exc).__name__}')
           PY
