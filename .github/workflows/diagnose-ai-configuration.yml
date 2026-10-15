@@ -54,3 +54,5 @@ jobs:
             echo "::error::Gemini cannot obtain production App Check attestation because VITE_FIREBASE_APP_CHECK_SITE_KEY is unset."
             exit 1
           fi
+
+# Recheck requested 2026-10-15: inspect current repository variable presence without logging values.
