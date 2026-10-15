@@ -1,0 +1,21 @@
+name: Probe Firebase AI Logic current state
+on:
+  push:
+    branches: [diagnostics/firebase-ai-config-20261015]
+    paths: ['.github/workflows/probe-firebase-ai-logic.yml', 'scripts/diagnose-firebase-ai.mjs']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - name: Probe countTokens without sending student data
+        run: node scripts/diagnose-firebase-ai.mjs
