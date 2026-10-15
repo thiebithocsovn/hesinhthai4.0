@@ -11,6 +11,24 @@ import * as XLSX from 'xlsx';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where, getDoc, writeBatch } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
+import ExamManualGradingPanel from './ExamManualGradingPanel';
+import {
+  examHasManualQuestions,
+  examPointBreakdown,
+  examUsesWeightedScoring,
+  formatPoints,
+  isManualQuestion,
+  newRubricItem,
+  PRACTICAL_FILE_PRESETS,
+  questionMaxPoints,
+  stripTeacherOnlyFields,
+  describeManualAnswer,
+  summarizeExamScore,
+  type ManualGrade,
+  type PracticalMode,
+  type RubricItem,
+} from '../lib/examManualGrading';
+import { receiptQuestionIsCorrect } from '../lib/examReceipt';
 import { buildStudentExamSchedule, canStudentEnterExam, formatExamScheduleDate, getExamScheduleState } from '../lib/examSchedule';
 import {
   createExamAccessDocumentId,
@@ -39,10 +57,17 @@ interface Question {
   text: string;
   options: string[];
   correctAnswer: number;
-  type?: 'multiple_choice' | 'short_answer' | 'matching';
+  type?: 'multiple_choice' | 'short_answer' | 'matching' | 'essay' | 'practical';
   correctTextAnswer?: string;
   matchingPairs?: { id: string; left: string; right: string }[];
   shuffledRight?: { id: string; right: string }[];
+  /** Weight of the question; essay and practical questions use the sum of their rubric. */
+  points?: number;
+  rubric?: RubricItem[];
+  /** Teacher-only marking guide; removed from the payload students receive. */
+  sampleAnswer?: string;
+  practicalMode?: PracticalMode;
+  acceptedFiles?: string;
 }
 
 interface Exam {
@@ -64,6 +89,7 @@ interface Exam {
   receiptSettings?: Partial<ExamReceiptSettings>;
   classNames?: Record<string, string>;
   accessVersionCode?: string;
+  roundScoreToInteger?: boolean;
 }
 
 interface StudentClass {
@@ -97,6 +123,8 @@ interface ExamResult {
   };
   examVersion?: string;
   teacherId?: string;
+  manualGrades?: Record<string, ManualGrade>;
+  manualGradedAt?: string;
 }
 
 interface ExamSession {
@@ -154,7 +182,7 @@ async function synchronizeExamPublication(exam: Exam, previousExam: Exam = exam,
   }
   for (const authorized of authorizedExams) {
     batch.set(doc(db, PUBLIC_EXAM_ACCESS_COLLECTION, await createExamAccessDocumentId(authorized.code)),
-      await protectExamForAccess(authorized.exam, authorized.code));
+      await protectExamForAccess(stripTeacherOnlyFields(authorized.exam), authorized.code));
   }
   const schedule = await createPublicExamSchedule(exam);
   batch.set(doc(db, PUBLIC_EXAM_SCHEDULES_COLLECTION, schedule.id), schedule);
@@ -178,6 +206,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const restoredPublishedExamIds = useRef(new Set<string>());
   const [publicationError, setPublicationError] = useState('');
   const [publicationRetry, setPublicationRetry] = useState(0);
+  const [gradingExamId, setGradingExamId] = useState<string | null>(null);
 
   useEffect(() => {
     if (appMode !== 'teacher') return;
@@ -421,20 +450,30 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
       const student = students.find(s => s.id === result.studentId);
       const studentClass = classes.find(c => c.id === getReceiptStudentClassId(examToExport, student || { id: result.studentId }, result));
       const pendingTeacherGrade = getExamReceiptSettings(examToExport).autoPrint && !result.teacherGradedAt;
+      const weightedSummary = examUsesWeightedScoring(examToExport) ? summarizeExamScore(examToExport, result, receiptQuestionIsCorrect) : null;
       const percentage = Math.round((result.score / result.totalQuestions) * 100);
       const calculatedScore = Math.round((result.score / result.totalQuestions) * 100) / 10;
       const rowData: any = {
         'STT': index + 1,
         'Họ tên': student?.name || 'Unknown',
         'Lớp': studentClass?.name || examToExport.classNames?.[getReceiptStudentClassId(examToExport, student || { id: result.studentId }, result) || ''] || 'Unknown',
-        'Điểm': pendingTeacherGrade ? 'Chờ máy giáo viên chấm' : calculatedScore,
-        'Tỉ lệ %': pendingTeacherGrade ? '' : `${percentage}%`,
+        'Điểm': pendingTeacherGrade ? 'Chờ máy giáo viên chấm' : weightedSummary ? (weightedSummary.complete ? weightedSummary.score10 : `Chờ chấm ${weightedSummary.pendingManual} câu`) : calculatedScore,
+        'Tỉ lệ %': pendingTeacherGrade ? '' : weightedSummary ? (weightedSummary.complete && weightedSummary.max ? `${Math.round(weightedSummary.earned / weightedSummary.max * 100)}%` : '') : `${percentage}%`,
         'Mã đề': result.examVersion || 'Gốc',
       };
+      if (weightedSummary) {
+        rowData['Điểm trắc nghiệm'] = `${formatPoints(weightedSummary.objectiveEarned)}/${formatPoints(weightedSummary.objectiveMax)}`;
+        rowData['Điểm tự luận/thực hành'] = weightedSummary.manualCount ? `${formatPoints(weightedSummary.manualEarned)}/${formatPoints(weightedSummary.manualMax)}${weightedSummary.complete ? '' : ' (chưa chấm xong)'}` : '';
+      }
 
       examToExport.questions.forEach((q, qIndex) => {
         const answerVal = result.answers?.[q.id];
         let answerStr = '—';
+        if (isManualQuestion(q)) {
+          const grade = result.manualGrades?.[q.id];
+          rowData[`Q${qIndex + 1}`] = `${describeManualAnswer(q, answerVal)}${grade ? ` [${formatPoints(grade.points)}đ${grade.comment ? ` – ${grade.comment}` : ''}]` : ' [chờ chấm]'}`;
+          return;
+        }
         if (answerVal !== undefined) {
           if (q.type === 'short_answer') {
             answerStr = String(answerVal);
@@ -482,6 +521,25 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Kết quả thi");
     XLSX.writeFile(workbook, `Ket_qua_thi_${examToExport.title.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`);
+  };
+
+  // Latest submission per student for one exam, honouring the class filter (same as the results table).
+  const latestExamResults = (examId: string): ExamResult[] => {
+    const latest = new Map<string, ExamResult>();
+    results
+      .filter(r => r.examId === examId)
+      .filter(r => {
+        if (selectedClassIdForResults === 'all') return true;
+        const student = students.find(s => s.id === r.studentId);
+        return getReceiptStudentClassId(exams.find(exam => exam.id === r.examId) || {}, student || { id: r.studentId }, r) === selectedClassIdForResults;
+      })
+      .forEach(r => {
+        const existing = latest.get(r.studentId);
+        if (!existing || new Date(r.submittedAt).getTime() > new Date(existing.submittedAt).getTime()) latest.set(r.studentId, r);
+      });
+    const lastName = (id: string) => (students.find(s => s.id === id)?.name || '').trim().split(' ').pop() || '';
+    return [...latest.values()].sort((a, b) => lastName(a.studentId).localeCompare(lastName(b.studentId), 'vi') ||
+      (students.find(s => s.id === a.studentId)?.name || '').localeCompare(students.find(s => s.id === b.studentId)?.name || '', 'vi'));
   };
 
   const handleDeleteResult = (resultId: string) => {
@@ -595,6 +653,51 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
         ]
       });
     }
+  };
+
+  const handleAddEssayQuestion = () => {
+    if (!editingExam) return;
+    setEditingExam({
+      ...editingExam,
+      questions: [...editingExam.questions, {
+        id: Math.random().toString(36).substr(2, 9),
+        text: 'Câu hỏi tự luận mới',
+        options: [],
+        correctAnswer: -1,
+        type: 'essay',
+        sampleAnswer: '',
+        rubric: [newRubricItem('Ý 1: ', 0.5), newRubricItem('Ý 2: ', 0.5)],
+      }],
+    });
+  };
+
+  const handleAddPracticalQuestion = () => {
+    if (!editingExam) return;
+    setEditingExam({
+      ...editingExam,
+      questions: [...editingExam.questions, {
+        id: Math.random().toString(36).substr(2, 9),
+        text: 'Bài thực hành: mô tả nhiệm vụ học sinh cần làm trên máy tính',
+        options: [],
+        correctAnswer: -1,
+        type: 'practical',
+        practicalMode: 'file',
+        acceptedFiles: 'word',
+        rubric: [
+          newRubricItem('Hoàn thành đúng nội dung yêu cầu', 1),
+          newRubricItem('Trình bày đúng định dạng (chữ đậm, căn giữa…)', 1),
+          newRubricItem('Lưu tệp đúng tên, đúng vị trí', 0.5),
+        ],
+      }],
+    });
+  };
+
+  const handleUpdateRubric = (qId: string, change: (rubric: RubricItem[]) => RubricItem[]) => {
+    if (!editingExam) return;
+    setEditingExam({
+      ...editingExam,
+      questions: editingExam.questions.map(q => q.id === qId ? { ...q, rubric: change(q.rubric || []) } : q),
+    });
   };
 
   const handleUpdateQuestion = (qId: string, field: string, value: any, optionIndex?: number, matchingSide?: 'left' | 'right') => {
@@ -840,7 +943,11 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
           let code = createSecureExamAccessCode(10);
           while (code === exam.id || versionCodes.includes(code)) code = createSecureExamAccessCode(10);
           versionCodes.push(code);
-          const shuffledQuestions = [...exam.questions].sort(() => Math.random() - 0.5).map(q => {
+          // Objective questions are shuffled; essay and practical tasks stay at the end in the teacher's order.
+          const objectiveQuestions = exam.questions.filter(q => !isManualQuestion(q));
+          const manualQuestions = exam.questions.filter(q => isManualQuestion(q));
+          const shuffledQuestions = [...[...objectiveQuestions].sort(() => Math.random() - 0.5), ...manualQuestions].map(q => {
+            if (isManualQuestion(q)) return q;
             const optionsWithIndex = q.options.map((opt, index) => ({ text: opt, isCorrect: index === q.correctAnswer }));
             const shuffledOptions = optionsWithIndex.sort(() => Math.random() - 0.5);
             const newCorrectAnswerIndex = shuffledOptions.findIndex(opt => opt.isCorrect);
@@ -884,6 +991,12 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
 
     const formatQuestionAnswer = (q: Question, index: number) => {
       let ans = `<b>Câu ${index + 1}:</b> `;
+      if (isManualQuestion(q)) {
+        const guide = (q.rubric || []).map(item => `${item.text} (${formatPoints(item.points)}đ)`).join('; ');
+        ans += `${q.type === 'essay' ? 'Tự luận' : 'Thực hành'} – ${formatPoints(questionMaxPoints(q))} điểm. ${guide}`;
+        if (q.sampleAnswer) ans += `<br/><i>Gợi ý đáp án:</i> ${q.sampleAnswer}`;
+        return `<p>${ans}</p>`;
+      }
       if (q.type === 'short_answer') {
         ans += q.correctTextAnswer || '';
       } else if (q.type === 'matching') {
@@ -2285,6 +2398,18 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
+                  {(() => {
+                    const currentExam = exams.find(e => e.id === (selectedExamIdForResults || exams[0]?.id));
+                    if (!currentExam || !examHasManualQuestions(currentExam)) return null;
+                    const latest = latestExamResults(currentExam.id);
+                    const pending = latest.filter(result => currentExam.questions.some(q => isManualQuestion(q) && !result.manualGrades?.[q.id])).length;
+                    return (
+                      <button type="button" onClick={() => setGradingExamId(currentExam.id)} className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 font-semibold text-white shadow-sm hover:bg-violet-700">
+                        <Edit2 className="h-5 w-5" />Chấm tự luận & thực hành
+                        {pending > 0 && <span className="rounded-full bg-white/25 px-2 py-0.5 text-xs">{pending} bài chờ</span>}
+                      </button>
+                    );
+                  })()}
                   {exams.length > 0 && results.filter(r => r.examId === (selectedExamIdForResults || exams[0]?.id)).length > 0 && (
                     <button
                       onClick={handleExportExcel}
@@ -2308,7 +2433,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                         <div className="flex flex-col items-center">
                           <span>Điểm</span>
                           <span className="text-xs font-normal text-slate-500 mt-1">
-                            Hết {(exams.find(e => e.id === (selectedExamIdForResults || exams[0]?.id))?.questions.length) || 0}
+                            {(() => { const currentExam = exams.find(e => e.id === (selectedExamIdForResults || exams[0]?.id)); return currentExam && examUsesWeightedScoring(currentExam) ? `Thang 10 · ${formatPoints(examPointBreakdown(currentExam).total)}đ` : `Hết ${currentExam?.questions.length || 0}`; })()}
                           </span>
                         </div>
                       </th>
@@ -2330,7 +2455,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                         return (
                           <th key={idx} className="px-2 py-4 text-sm font-bold text-slate-800 tracking-wider text-center border-r border-slate-200 min-w-[60px]">
                             <div className="flex flex-col items-center gap-1">
-                              <span>Q{idx + 1}</span>
+                              <span>Q{idx + 1}{q.type === 'essay' ? ' · TL' : q.type === 'practical' ? ' · TH' : ''}</span>
                             </div>
                           </th>
                         );
@@ -2397,13 +2522,28 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                               <div className="text-xs text-slate-500 mt-0.5">{exam && (classes.find(item => item.id === getReceiptStudentClassId(exam, student || { id: result.studentId }, result))?.name || exam.classNames?.[getReceiptStudentClassId(exam, student || { id: result.studentId }, result) || '']) || 'Chưa được gán lớp'}</div>
                             </td>
                             <td className="px-4 py-3 sticky left-[250px] bg-white group-hover:bg-slate-50 z-10 border-r border-slate-200 text-center font-medium text-slate-800 min-w-[120px] max-w-[120px] w-[120px]">
-                              {exam && getExamReceiptSettings(exam).autoPrint && !result.teacherGradedAt ? <span className="text-xs text-amber-700">Chờ máy giáo viên chấm</span> : result.score === 0 ? '0' : `${calculatedScore} (${percentage}%)`}
+                              {exam && getExamReceiptSettings(exam).autoPrint && !result.teacherGradedAt ? <span className="text-xs text-amber-700">Chờ máy giáo viên chấm</span> : exam && examUsesWeightedScoring(exam) ? (() => {
+                                const summary = summarizeExamScore(exam, result, receiptQuestionIsCorrect);
+                                return summary.complete
+                                  ? <span title={`${formatPoints(summary.earned)}/${formatPoints(summary.max)} điểm`}>{formatPoints(summary.score10)}</span>
+                                  : <button type="button" onClick={() => setGradingExamId(exam.id)} className="text-xs font-semibold text-amber-700 underline" title={`Trắc nghiệm ${formatPoints(summary.objectiveEarned)}/${formatPoints(summary.objectiveMax)} điểm`}>Chờ chấm {summary.pendingManual} câu</button>;
+                              })() : result.score === 0 ? '0' : `${calculatedScore} (${percentage}%)`}
                             </td>
                           <td className="px-4 py-3 sticky left-[370px] bg-white group-hover:bg-slate-50 z-10 border-r border-slate-200 text-center font-medium text-slate-600 min-w-[100px] max-w-[100px] w-[100px]">
                             {result.examVersion || 'Gốc'}
                           </td>
                           {exam ? (
                             exam.questions.map((q, idx) => {
+                              if (isManualQuestion(q)) {
+                                const grade = result.manualGrades?.[q.id];
+                                return (
+                                  <td key={q.id} className={`px-2 py-3 text-center border-r border-slate-200 ${grade ? 'bg-emerald-50/40' : 'bg-amber-50/60'}`}>
+                                    <div title={`Câu ${idx + 1}: ${describeManualAnswer(q, result.answers?.[q.id])}${grade?.comment ? ` – ${grade.comment}` : ''}`}>
+                                      {grade ? <span className="font-bold text-emerald-700">{formatPoints(grade.points)}</span> : <button type="button" onClick={() => setGradingExamId(exam.id)} className="text-xs font-semibold text-amber-700 underline">Chấm</button>}
+                                    </div>
+                                  </td>
+                                );
+                              }
                               const studentAns = result.answers?.[q.id];
                               const isCorrect = studentAns === q.correctAnswer;
                               const isUnanswered = studentAns === undefined;
@@ -2508,6 +2648,24 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
               </div>
             </div>
           )}
+
+          {gradingExamId && (() => {
+            const gradingExam = exams.find(exam => exam.id === gradingExamId);
+            if (!gradingExam) return null;
+            return (
+              <ExamManualGradingPanel
+                exam={gradingExam}
+                results={latestExamResults(gradingExam.id)}
+                studentName={result => students.find(s => s.id === result.studentId)?.name || 'Học sinh đã xóa'}
+                classLabel={result => {
+                  const student = students.find(s => s.id === result.studentId);
+                  const classId = getReceiptStudentClassId(gradingExam, student || { id: result.studentId }, result);
+                  return classes.find(item => item.id === classId)?.name || gradingExam.classNames?.[classId || ''] || '';
+                }}
+                onClose={() => setGradingExamId(null)}
+              />
+            );
+          })()}
 
           {teacherTab === 'scanning' && (
             <div className="max-w-4xl mx-auto">
@@ -2682,9 +2840,36 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
 
                 {/* Questions */}
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-slate-800 text-lg">Danh sách câu hỏi ({editingExam.questions.length})</h4>
-                    <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-lg">Danh sách câu hỏi ({editingExam.questions.length})</h4>
+                      {(() => {
+                        const breakdown = examPointBreakdown(editingExam);
+                        return (
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600">
+                            <span className="font-semibold text-slate-800">Tổng điểm đề: {formatPoints(breakdown.total)}</span>
+                            <span>Trắc nghiệm {formatPoints(breakdown.objective)}</span>
+                            <span className="text-violet-700">Tự luận {formatPoints(breakdown.essay)}</span>
+                            <span className="text-emerald-700">Thực hành {formatPoints(breakdown.practical)}</span>
+                            <span className="text-slate-500">→ quy về thang 10</span>
+                            <label className="flex items-center gap-1.5 text-slate-600"><input type="checkbox" checked={Boolean(editingExam.roundScoreToInteger)} onChange={event => setEditingExam({ ...editingExam, roundScoreToInteger: event.target.checked })} />Làm tròn điểm tổng về số nguyên</label>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={handleAddEssayQuestion}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-violet-50 border border-violet-200 hover:bg-violet-100 text-violet-700 rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        <Plus className="w-4 h-4" /> Thêm câu Tự luận
+                      </button>
+                      <button
+                        onClick={handleAddPracticalQuestion}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        <Plus className="w-4 h-4" /> Thêm bài Thực hành
+                      </button>
                       <button 
                         onClick={() => setIsImportModalOpen(true)}
                         className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium transition-colors"
@@ -2729,7 +2914,18 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                       </button>
                       
                       <div className="mb-4 pr-10">
-                        <label className="block text-sm font-bold text-slate-700 mb-1">Câu {qIdx + 1}:</label>
+                        <div className="mb-1 flex flex-wrap items-center gap-2">
+                          <label className="block text-sm font-bold text-slate-700">Câu {qIdx + 1}:</label>
+                          {q.type === 'essay' && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700">Tự luận</span>}
+                          {q.type === 'practical' && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Thực hành</span>}
+                          {isManualQuestion(q) && (q.rubric || []).length > 0 ? (
+                            <span className="ml-auto text-sm font-semibold text-slate-700">{formatPoints(questionMaxPoints(q))} điểm</span>
+                          ) : (
+                            <label className="ml-auto flex items-center gap-1.5 text-sm text-slate-600">Điểm
+                              <input type="number" min={0.25} max={10} step={0.25} value={q.points ?? 1} onChange={event => handleUpdateQuestion(q.id, 'points', Math.max(0.25, Math.min(10, Number(event.target.value) || 1)))} className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-right" aria-label={`Điểm câu ${qIdx + 1}`} />
+                            </label>
+                          )}
+                        </div>
                         <RichTextEditor
                           value={q.text}
                           onChange={(val) => handleUpdateQuestion(q.id, 'text', val)}
@@ -2738,7 +2934,53 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                       </div>
 
                       <div className="grid grid-cols-1 gap-3">
-                        {q.type === 'short_answer' ? (
+                        {isManualQuestion(q) ? (
+                          <div className="flex flex-col gap-4">
+                            {q.type === 'essay' && (
+                              <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Gợi ý đáp án (chỉ giáo viên thấy khi chấm)
+                                <textarea value={q.sampleAnswer || ''} onChange={event => handleUpdateQuestion(q.id, 'sampleAnswer', event.target.value)} rows={3} placeholder="Ví dụ: Không chia sẻ mật khẩu cho người khác; đặt mật khẩu dài, khó đoán…" className="w-full rounded-lg border border-slate-300 px-3 py-2 font-normal focus:border-violet-500 focus:ring-2 focus:ring-violet-100" />
+                              </label>
+                            )}
+                            {q.type === 'practical' && (
+                              <div className="flex flex-col gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+                                <div className="flex flex-wrap gap-2 text-sm">
+                                  <span className="font-medium text-slate-700">Cách nhận bài:</span>
+                                  {([['file', 'Học sinh nộp tệp bài làm'], ['observe', 'Giáo viên chấm trực tiếp tại lớp']] as const).map(([mode, label]) => (
+                                    <label key={mode} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 ${ (q.practicalMode || 'file') === mode ? 'border-emerald-500 bg-white font-semibold text-emerald-800' : 'border-emerald-200 text-slate-600'}`}>
+                                      <input type="radio" name={`practical-mode-${q.id}`} checked={(q.practicalMode || 'file') === mode} onChange={() => handleUpdateQuestion(q.id, 'practicalMode', mode)} />{label}
+                                    </label>
+                                  ))}
+                                </div>
+                                {(q.practicalMode || 'file') === 'file' ? (
+                                  <label className="flex flex-wrap items-center gap-2 text-sm text-slate-700">Loại tệp học sinh nộp:
+                                    <select value={q.acceptedFiles || 'any'} onChange={event => handleUpdateQuestion(q.id, 'acceptedFiles', event.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1">
+                                      {PRACTICAL_FILE_PRESETS.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                                    </select>
+                                    <span className="text-xs text-slate-500">Tối đa 500 KB/tệp; ảnh được tự thu nhỏ.</span>
+                                  </label>
+                                ) : (
+                                  <p className="text-xs text-slate-600">Học sinh làm bài trên máy, thầy cô quan sát trong giờ. Khi học sinh bấm Nộp bài, mở Kết quả → Chấm tự luận & thực hành (dùng được trên điện thoại) và tích tiêu chí.</p>
+                                )}
+                              </div>
+                            )}
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-semibold text-slate-700">{q.type === 'essay' ? 'Các ý chấm' : 'Tiêu chí chấm'} (tích khi chấm, điểm tự cộng)</span>
+                                <button type="button" onClick={() => handleUpdateRubric(q.id, rubric => [...rubric, newRubricItem('', 0.5)])} className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800"><Plus className="h-4 w-4" />Thêm {q.type === 'essay' ? 'ý' : 'tiêu chí'}</button>
+                              </div>
+                              {(q.rubric || []).map((item, itemIndex) => (
+                                <div key={item.id} className="flex items-center gap-2">
+                                  <span className="w-6 shrink-0 text-center text-sm font-bold text-slate-400">{itemIndex + 1}</span>
+                                  <input value={item.text} onChange={event => handleUpdateRubric(q.id, rubric => rubric.map(entry => entry.id === item.id ? { ...entry, text: event.target.value } : entry))} placeholder={q.type === 'essay' ? 'Nội dung ý học sinh cần nêu' : 'Điều quan sát được trong bài làm'} className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" aria-label={`Nội dung ${q.type === 'essay' ? 'ý' : 'tiêu chí'} ${itemIndex + 1}`} />
+                                  <input type="number" min={0.25} max={10} step={0.25} value={item.points} onChange={event => handleUpdateRubric(q.id, rubric => rubric.map(entry => entry.id === item.id ? { ...entry, points: Math.max(0.25, Math.min(10, Number(event.target.value) || 0.25)) } : entry))} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-right text-sm" aria-label={`Điểm ${q.type === 'essay' ? 'ý' : 'tiêu chí'} ${itemIndex + 1}`} />
+                                  <span className="text-xs text-slate-500">đ</span>
+                                  <button type="button" onClick={() => handleUpdateRubric(q.id, rubric => rubric.filter(entry => entry.id !== item.id))} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" title="Xóa dòng này"><Trash2 className="h-4 w-4" /></button>
+                                </div>
+                              ))}
+                              {!(q.rubric || []).length && <p className="text-xs text-amber-700">Chưa có {q.type === 'essay' ? 'ý chấm' : 'tiêu chí'} nào: câu này được tính {formatPoints(questionMaxPoints(q))} điểm và thầy cô nhập điểm trực tiếp khi chấm.</p>}
+                            </div>
+                          </div>
+                        ) : q.type === 'short_answer' ? (
                           <div className="flex items-start gap-2">
                             <div className="flex-1 flex flex-col gap-2">
                               <label className="text-sm font-medium text-slate-700">Đáp án đúng:</label>

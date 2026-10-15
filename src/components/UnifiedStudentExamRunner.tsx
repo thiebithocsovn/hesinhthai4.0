@@ -22,6 +22,19 @@ import {
   type PrivateStudentRosterEntry,
 } from '../lib/teacherIsolation';
 import QuestionEngineStudentQuestion, { questionTypeLabel } from './QuestionEngineStudentQuestion';
+import ExamManualStudentQuestion from './ExamManualStudentQuestion';
+import {
+  answersPayloadBytes,
+  examHasManualQuestions,
+  examUsesWeightedScoring,
+  formatFileSize,
+  formatPoints,
+  isManualQuestion,
+  MAX_ANSWERS_PAYLOAD_BYTES,
+  questionMaxPoints,
+  summarizeExamScore,
+  type GradableQuestion,
+} from '../lib/examManualGrading';
 import { StudentExamPortalBackdrop, StudentExamPortalBook, StudentExamPortalCap, StudentExamPortalIdea } from './StudentExamPortalArtwork';
 import './student-exam-portal.css';
 import ExamReceiptDialog from './ExamReceiptDialog';
@@ -38,11 +51,15 @@ interface UnifiedExamQuestion {
   text: string;
   options: string[];
   correctAnswer: number;
-  type?: 'multiple_choice' | 'short_answer' | 'matching' | 'question_engine';
+  type?: 'multiple_choice' | 'short_answer' | 'matching' | 'question_engine' | 'essay' | 'practical';
   correctTextAnswer?: string;
   matchingPairs?: LegacyMatchingPair[];
   shuffledRight?: { id: string; right: string }[];
   engineQuestion?: QuestionDefinition;
+  points?: number;
+  rubric?: GradableQuestion['rubric'];
+  practicalMode?: GradableQuestion['practicalMode'];
+  acceptedFiles?: string;
 }
 
 interface UnifiedExam {
@@ -60,6 +77,7 @@ interface UnifiedExam {
   accessVersionCode?: string;
   isShuffled?: boolean;
   shuffledVersions?: { code: string; questions: UnifiedExamQuestion[] }[];
+  roundScoreToInteger?: boolean;
 }
 
 interface StudentAccount {
@@ -93,6 +111,7 @@ function engineQuestionForExam(question: UnifiedExamQuestion): QuestionDefinitio
 }
 
 function legacyQuestionIsCorrect(question: UnifiedExamQuestion, answer: unknown): boolean {
+  if (isManualQuestion(question)) return false;
   if (question.type === 'short_answer') {
     const actual = String(answer ?? '').trim().toLocaleLowerCase('vi-VN');
     const expected = String(question.correctTextAnswer || '').trim().toLocaleLowerCase('vi-VN');
@@ -139,7 +158,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   const [status, setStatus] = useState<'login' | 'waiting' | 'taking' | 'finished'>(() => activeExam && currentStudent ? 'waiting' : 'login');
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
-  const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
+  const [score, setScore] = useState<{ correct: number; total: number; objectiveEarned?: number; objectiveMax?: number; manualCount?: number; weighted?: boolean; score10?: number } | null>(null);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [cheatEvents, setCheatEvents] = useState({ rightClicks: 0, tabChanges: 0, windowResizes: 0 });
   const [cheatWarning, setCheatWarning] = useState('');
@@ -360,10 +379,12 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       setCheatEvents(previous => ({ ...previous, rightClicks: previous.rightClicks + 1 }));
       setCheatWarning('Không được sử dụng chuột phải trong khi làm bài.');
     };
+    // Practical tasks need Word, Paint or Scratch, so leaving the page is recorded for the teacher but not interrupted.
+    const allowsOtherApps = Boolean(activeExam?.questions.some(question => question.type === 'practical'));
     const onVisibility = () => {
       if (!document.hidden) return;
       setCheatEvents(previous => ({ ...previous, tabChanges: previous.tabChanges + 1 }));
-      setCheatWarning('Không được chuyển tab hoặc ẩn cửa sổ khi đang làm bài.');
+      if (!allowsOtherApps) setCheatWarning('Không được chuyển tab hoặc ẩn cửa sổ khi đang làm bài.');
     };
     const onResize = () => setCheatEvents(previous => ({ ...previous, windowResizes: previous.windowResizes + 1 }));
     document.addEventListener('contextmenu', onContext);
@@ -374,10 +395,15 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('resize', onResize);
     };
-  }, [status]);
+  }, [status, activeExam]);
 
   const submitExam = async () => {
     if (!activeExam || !currentStudent || status !== 'taking' || submittingRef.current) return;
+    const payloadBytes = answersPayloadBytes(answers);
+    if (payloadBytes > MAX_ANSWERS_PAYLOAD_BYTES) {
+      setLoginError(`Bài làm có tệp quá lớn (${formatFileSize(payloadBytes)}). Em hãy thay tệp bằng ảnh chụp màn hình rồi nộp lại.`);
+      return;
+    }
     submittingRef.current = true;
     setSubmitting(true);
     setLoginError('');
@@ -413,7 +439,12 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       try { sessionStorage.setItem(createTeacherStorageKey(`submitted_exam_${currentStudent.id}_${activeExam.id}`, activeExam.teacherId), '1'); } catch { /* The server result has already been saved. */ }
       setReceiptHtml(buildExamReceiptHtml(activeExam, currentStudent, { id: resultId, score: correct, totalQuestions: activeExam.questions.length, submittedAt, answers, examVersion }, startedAtRef.current));
       setCheatWarning('');
-      setScore({ correct, total: activeExam.questions.length });
+      const weighted = examUsesWeightedScoring(activeExam);
+      const objective = weighted ? summarizeExamScore(activeExam, { answers }, (question, answer) => {
+        const engine = engineQuestionForExam(question);
+        return engine ? evaluateQuestion(engine, answer as QuestionResponse).correct : legacyQuestionIsCorrect(question, answer);
+      }) : null;
+      setScore({ correct, total: activeExam.questions.length, weighted, objectiveEarned: objective?.objectiveEarned, objectiveMax: objective?.objectiveMax, manualCount: objective?.manualCount, score10: objective?.score10 });
       setStatus('finished');
     } catch (error) {
       console.error('Không thể nộp bài:', error);
@@ -551,9 +582,11 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
               const engine = engineQuestionForExam(question);
               return (
                 <section key={question.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-                  <div className="mb-4 flex flex-wrap items-center gap-2"><span className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-bold text-white">Câu {index + 1}</span>{engine && <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">{questionTypeLabel(engine)}</span>}</div>
+                  <div className="mb-4 flex flex-wrap items-center gap-2"><span className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-bold text-white">Câu {index + 1}</span>{engine && <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">{questionTypeLabel(engine)}</span>}{question.type === 'essay' && <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">Tự luận</span>}{question.type === 'practical' && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Thực hành</span>}{examUsesWeightedScoring(activeExam) && <span className="ml-auto text-xs font-semibold text-slate-500">{formatPoints(questionMaxPoints(question))} điểm</span>}</div>
                   <div className="mb-5 text-base font-medium leading-7 text-slate-800" dangerouslySetInnerHTML={{ __html: question.text }} />
-                  {engine ? (
+                  {isManualQuestion(question) ? (
+                    <ExamManualStudentQuestion question={question} answer={answers[question.id]} onChange={value => setAnswers(previous => { const next = { ...previous }; if (value === undefined || value === '') delete next[question.id]; else next[question.id] = value; return next; })} />
+                  ) : engine ? (
                     <QuestionEngineStudentQuestion question={engine} answer={answers[question.id] as QuestionResponse} onChange={value => setAnswers(previous => ({ ...previous, [question.id]: value }))} />
                   ) : question.type === 'short_answer' ? (
                     <input value={String(answers[question.id] ?? '')} onChange={event => setAnswers(previous => ({ ...previous, [question.id]: event.target.value }))} className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="Nhập câu trả lời..." />
@@ -574,7 +607,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
         <main className="flex flex-1 items-center justify-center p-4"><section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><CheckCircle className="h-12 w-12" /></div><h2 className="text-3xl font-bold">Hoàn thành!</h2>
           <p className="mt-2 text-slate-500">{autoSubmitted ? 'Đã hết thời gian và hệ thống tự động nộp bài.' : 'Bài làm đã được ghi nhận thành công.'}</p>
-          {activeExam && getExamReceiptSettings(activeExam).autoPrint ? <div className="my-7 rounded-2xl bg-blue-50 p-6"><p className="font-semibold text-blue-800">Đã chuyển bài đến máy giáo viên để chấm và in phiếu.</p><p className="mt-2 text-sm text-slate-600">Em nhận phiếu từ giáo viên và ký xác nhận. Máy học sinh không cần in.</p></div> : <><div className="my-7 rounded-2xl bg-slate-50 p-6"><div className="text-sm text-slate-500">Kết quả</div><div className="mt-1 text-5xl font-black text-blue-600">{score.total ? Math.round((score.correct / score.total) * 100) / 10 : 0}<span className="text-2xl font-medium text-slate-400"> / 10</span></div><div className="mt-2 text-sm text-slate-500">{score.correct}/{score.total} câu đúng</div></div><button type="button" onClick={() => setShowReceipt(true)} className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-bold text-white"><Printer size={18} />Xem / in phiếu ký</button></>}
+          {activeExam && getExamReceiptSettings(activeExam).autoPrint ? <div className="my-7 rounded-2xl bg-blue-50 p-6"><p className="font-semibold text-blue-800">Đã chuyển bài đến máy giáo viên để chấm và in phiếu.</p><p className="mt-2 text-sm text-slate-600">Em nhận phiếu từ giáo viên và ký xác nhận. Máy học sinh không cần in.</p></div> : <>{score.weighted && activeExam && examHasManualQuestions(activeExam) ? <div className="my-7 rounded-2xl bg-slate-50 p-6 text-left"><div className="text-sm text-slate-500">Phần chấm tự động</div><div className="mt-1 text-3xl font-black text-blue-600">{formatPoints(score.objectiveEarned || 0)}<span className="text-lg font-medium text-slate-400"> / {formatPoints(score.objectiveMax || 0)} điểm</span></div><p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">Phần tự luận / thực hành ({score.manualCount} câu) sẽ được giáo viên chấm. Điểm tổng có sau khi giáo viên chấm xong.</p></div> : score.weighted && activeExam ? <div className="my-7 rounded-2xl bg-slate-50 p-6"><div className="text-sm text-slate-500">Kết quả</div><div className="mt-1 text-5xl font-black text-blue-600">{formatPoints(score.score10 || 0)}<span className="text-2xl font-medium text-slate-400"> / 10</span></div><div className="mt-2 text-sm text-slate-500">{formatPoints(score.objectiveEarned || 0)}/{formatPoints(score.objectiveMax || 0)} điểm</div></div> : <div className="my-7 rounded-2xl bg-slate-50 p-6"><div className="text-sm text-slate-500">Kết quả</div><div className="mt-1 text-5xl font-black text-blue-600">{score.total ? Math.round((score.correct / score.total) * 100) / 10 : 0}<span className="text-2xl font-medium text-slate-400"> / 10</span></div><div className="mt-2 text-sm text-slate-500">{score.correct}/{score.total} câu đúng</div></div>}<button type="button" onClick={() => setShowReceipt(true)} className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-bold text-white"><Printer size={18} />Xem / in phiếu ký</button></>}
           <button type="button" onClick={reset} className="w-full rounded-xl bg-slate-900 px-4 py-3 font-bold text-white hover:bg-black">Về cổng học sinh</button>
         </section></main>
       )}

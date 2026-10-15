@@ -1,5 +1,6 @@
 import { evaluateQuestion, type QuestionDefinition, type QuestionResponse } from './questionEngine';
 import { getSubmittedExamClassId } from './examStudentClasses';
+import { describeManualAnswer, examHasManualQuestions, examUsesWeightedScoring, formatPoints, isManualQuestion, questionMaxPoints, summarizeExamScore, type ManualGrade, type RubricItem } from './examManualGrading';
 
 export interface ExamReceiptSettings {
   autoPrint: boolean;
@@ -26,6 +27,9 @@ export interface ReceiptQuestion {
   correctTextAnswer?: string;
   matchingPairs?: { id: string; left: string; right: string }[];
   engineQuestion?: QuestionDefinition;
+  points?: number;
+  rubric?: RubricItem[];
+  practicalMode?: 'file' | 'observe';
 }
 
 export interface ReceiptExam {
@@ -37,6 +41,7 @@ export interface ReceiptExam {
   classNames?: Record<string, string>;
   studentDirectory?: Record<string, { id: string; classId?: string }>;
   shuffledVersions?: { code: string; questions: ReceiptQuestion[] }[];
+  roundScoreToInteger?: boolean;
 }
 
 export interface ReceiptStudent {
@@ -53,6 +58,7 @@ export interface ReceiptResult {
   submittedAt: string;
   answers?: Record<string, unknown>;
   examVersion?: string;
+  manualGrades?: Record<string, ManualGrade>;
 }
 
 export function getExamReceiptSettings(exam: ReceiptExam): ExamReceiptSettings {
@@ -72,6 +78,7 @@ const mapAnswer = (answer: unknown): Record<string, unknown> =>
 const boolLabel = (value: unknown) => typeof value === 'boolean' ? value ? 'Đúng' : 'Sai' : '—';
 
 export function receiptQuestionIsCorrect(question: ReceiptQuestion, answer: unknown): boolean {
+  if (isManualQuestion(question)) return false;
   if (question.type === 'question_engine' && question.engineQuestion) {
     return evaluateQuestion(question.engineQuestion, answer as QuestionResponse).correct;
   }
@@ -93,7 +100,7 @@ function questionOptions(question: ReceiptQuestion): string[] | null {
     if (payload.type === 'true_false') return ['Đúng', 'Sai'];
     return null;
   }
-  if (question.type === 'short_answer' || question.type === 'matching') return null;
+  if (question.type === 'short_answer' || question.type === 'matching' || isManualQuestion(question)) return null;
   return question.options;
 }
 
@@ -108,6 +115,11 @@ function selectedOptions(question: ReceiptQuestion, answer: unknown): number[] {
 }
 
 function answerText(question: ReceiptQuestion, answer: unknown, correct = false): string {
+  if (isManualQuestion(question)) {
+    if (correct) return 'Theo hướng dẫn chấm';
+    const text = describeManualAnswer(question, answer);
+    return text.length > 400 ? `${text.slice(0, 400)}…` : text;
+  }
   const payload = question.type === 'question_engine' ? question.engineQuestion?.payload : undefined;
   if (payload) {
     switch (payload.type) {
@@ -142,7 +154,13 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
   const entries = questions.map((question, index) => ({ question, number: index + 1, answer: result.answers?.[question.id] }));
   const choices = entries.filter(entry => { const options = questionOptions(entry.question); return options && options.length > 0 && options.length <= 8; });
   const details = entries.filter(entry => !choices.includes(entry));
-  const outcome = (question: ReceiptQuestion, answer: unknown) => receiptQuestionIsCorrect(question, answer) ? 'Đúng' : 'Sai';
+  const outcome = (question: ReceiptQuestion, answer: unknown) => {
+    if (isManualQuestion(question)) {
+      const grade = result.manualGrades?.[question.id];
+      return grade ? `${formatPoints(grade.points)}/${formatPoints(questionMaxPoints(question))}đ` : 'Chờ chấm';
+    }
+    return receiptQuestionIsCorrect(question, answer) ? 'Đúng' : 'Sai';
+  };
   let tables = '';
   for (let offset = 0; offset < choices.length;) {
     const chunkSize = choices.length - offset <= 13 ? choices.length - offset : 12;
@@ -159,6 +177,10 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
   if (details.length) tables += `<table class="detail-table"><thead><tr><th>Câu</th><th>Bài làm học sinh</th>${settings.includeCorrectAnswers ? '<th>Đáp án đúng</th><th>Kết quả</th>' : ''}</tr></thead><tbody>${details.map(entry => `<tr><td>${entry.number}</td><td>${escape(plain(answerText(entry.question, entry.answer)))}</td>${settings.includeCorrectAnswers ? `<td>${escape(plain(answerText(entry.question, entry.answer, true)))}</td><td>${outcome(entry.question, entry.answer)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
   const date = (value?: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '……………………';
   const grade = result.totalQuestions > 0 ? Math.round(result.score / result.totalQuestions * 100) / 10 : 0;
+  const weighted = examUsesWeightedScoring(exam) ? summarizeExamScore(exam, result, receiptQuestionIsCorrect) : null;
+  const summaryHtml = weighted
+    ? `<span>Trắc nghiệm: ${formatPoints(weighted.objectiveEarned)}/${formatPoints(weighted.objectiveMax)} điểm</span>${examHasManualQuestions(exam) ? `<span>Tự luận / thực hành: ${weighted.complete ? `${formatPoints(weighted.manualEarned)}/${formatPoints(weighted.manualMax)} điểm` : 'chờ giáo viên chấm'}</span>` : ''}<span>Điểm: ${weighted.complete ? `${formatPoints(weighted.score10)} / 10` : '……… / 10'}</span>`
+    : `<span>Số câu đúng: ${result.score}/${result.totalQuestions}</span><span>Số câu chưa đúng: ${Math.max(0, result.totalQuestions - result.score)}</span><span>Điểm: ${grade.toLocaleString('vi-VN')} / 10</span>`;
   return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu nộp bài - ${escape(student.name)}</title><style>
     @page { size: A4 portrait; margin: 15mm; }
     * { box-sizing: border-box; } body { margin: 0; color: #000; background: #fff; font: 14px 'Times New Roman', serif; line-height: 1.35; }
@@ -177,7 +199,7 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
   <h1>BIÊN BẢN LÀM BÀI KIỂM TRA</h1>
   <div class="metadata"><div><p>Họ và tên: <b>${escape(student.name)}</b></p><p>Lớp: ${escape(exam.classNames?.[getReceiptStudentClassId(exam, student, result) || ''] || 'Chưa được gán lớp')}</p><p>Mã học sinh / SBD: ${escape(student.id)}</p><p>Môn: ${escape(settings.subject || '……………………')}</p></div><div><p>Kỳ thi: ${escape(exam.title)}</p><p>Mã đề: ${escape(result.examVersion || 'Gốc')}</p><p>Thời gian làm bài: ${exam.durationMinutes} phút</p><p>Bắt đầu: ${escape(date(startedAt))}</p><p>Kết thúc: ${escape(date(result.submittedAt))}</p></div></div>
   ${tables}<p class="legend">Dấu ×: phương án học sinh đã chọn. Ô trống / dấu —: chưa trả lời. Câu đúng được tính theo cách chấm của kỳ thi.</p>
-  <div class="summary"><span>Số câu đúng: ${result.score}/${result.totalQuestions}</span><span>Số câu chưa đúng: ${Math.max(0, result.totalQuestions - result.score)}</span><span>Điểm: ${grade.toLocaleString('vi-VN')} / 10</span></div>
+  <div class="summary">${summaryHtml}</div>
   <p class="confirmation">Tôi xác nhận các câu trả lời trên là bài làm của tôi và đã nộp bài.</p>
   <div class="signatures"><div><b>HỌC SINH</b><div><i>(Ký và ghi rõ họ tên)</i></div><div class="signature-space"></div><b>${escape(student.name)}</b></div><div><b>GIÁO VIÊN / GIÁM THỊ</b><div><i>(Ký và ghi rõ họ tên)</i></div><div class="signature-space"></div>${settings.invigilatorName.trim() ? `<b>${escape(settings.invigilatorName.trim())}</b>` : '………………………………'}</div></div>
   <p class="record">Mã bài nộp: ${escape(result.id)} · Trạng thái: ĐÃ NỘP BÀI · Thời gian trên phiếu: giờ Việt Nam.</p></main></body></html>`;

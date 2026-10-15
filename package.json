@@ -56,6 +56,7 @@
     "test:learning-wall-rules": "node scripts/test-learning-wall-rules.mjs",
     "deploy:learning-wall": "npx --yes firebase-tools@^15.17.0 deploy --config firebase.learning-wall-production.json --only firestore:rules --project gen-lang-client-0870957273 --non-interactive",
     "test:exam-receipt": "node --import tsx scripts/test-exam-receipt.ts",
+    "test:exam-manual-grading": "node --import tsx scripts/test-exam-manual-grading.ts",
     "test:teacher-printing": "node --import tsx scripts/test-teacher-exam-printing.ts"
   },
   "dependencies": {
