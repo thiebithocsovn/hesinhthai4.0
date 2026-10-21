@@ -6,6 +6,7 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import firebaseConfig from './firebase-applet-config.json';
 import { createWallOpenAiRouter, createWallAiQuota } from './server/wallOpenAi';
+import { buildOmrResponseSchema } from './src/lib/examOmr';
 
 dotenv.config();
 
@@ -140,7 +141,7 @@ app.post("/api/chat", async (req, res) => {
 // Scan API (OMR)
 app.post("/api/scan", async (req, res) => {
   try {
-    const { image, prompt } = req.body;
+    const { image, prompt, questionNumbers } = req.body;
     
     const contents = [{
       parts: [
@@ -149,36 +150,7 @@ app.post("/api/scan", async (req, res) => {
       ]
     }];
 
-    const responseSchema = {
-      type: "object",
-      properties: {
-        sbd: { type: "string" },
-        maDe: { type: "string" },
-        part1: { 
-          type: "object",
-          properties: {
-            "1": { type: "string" },
-            "2": { type: "string" }
-          },
-          description: "Results for Part 1 (Questions 1-40)"
-        },
-        part2: { 
-          type: "object",
-          properties: {
-            "1": { type: "object", properties: { "a": { type: "string" } } }
-          },
-          description: "Results for Part 2 (Questions 1-8)"
-        },
-        part3: { 
-          type: "object", 
-          properties: {
-            "1": { type: "string" }
-          },
-          description: "Results for Part 3 (Questions 1-6)"
-        }
-      },
-      required: ["sbd", "maDe", "part1"]
-    };
+    const responseSchema = buildOmrResponseSchema(questionNumbers);
 
     const result = await callGemini(GEMINI_MODEL, contents, undefined, responseSchema);
     let text = result.candidates?.[0]?.content?.parts?.[0]?.text || "{}";

@@ -14,6 +14,7 @@ import { describeExamAccessError } from '../lib/examAccessError';
 import ExamManualGradingPanel from './ExamManualGradingPanel';
 import ExamSubmissionReview from './ExamSubmissionReview';
 import type { QuestionDefinition } from '../lib/questionEngine';
+import { choiceQuestionEntries, synchronizeExamVersions } from '../lib/examQuestionLayout';
 import {
   examHasManualQuestions,
   examPointBreakdown,
@@ -546,8 +547,8 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
         if (!canAccessTeacherOwnedRecord(accessScope, editingExam)) {
           throw new Error('Bạn không có quyền thay đổi kỳ thi của giáo viên khác.');
         }
-        const examToSave = { ...editingExam };
         const previousExam = exams.find(exam => exam.id === editingExam.id) || editingExam;
+        const examToSave = synchronizeExamVersions(editingExam, previousExam);
         await synchronizeExamPublication(examToSave, previousExam);
         setIsExamModalOpen(false);
         setEditingExam(null);
@@ -2702,6 +2703,10 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                           <ChevronRight className="w-5 h-5 text-slate-400 rotate-90" />
                         </div>
                       </div>
+                      {selectedExamIdForScan && (() => {
+                        const selected = exams.find(exam => exam.id === selectedExamIdForScan);
+                        return selected ? <p className="mt-3 rounded-lg bg-indigo-50 p-3 text-sm font-semibold text-indigo-800">Phiếu chấm gồm đúng {choiceQuestionEntries(selected.questions).length} câu trắc nghiệm theo đề đã chọn.</p> : null;
+                      })()}
                     </div>
 
                     <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
@@ -2709,7 +2714,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                         Bước 2: Quét phiếu
                       </label>
                       <button 
-                        disabled={!selectedExamIdForScan}
+                        disabled={!selectedExamIdForScan || !choiceQuestionEntries(exams.find(exam => exam.id === selectedExamIdForScan)?.questions || []).length}
                         onClick={() => setIsScannerOpen(true)}
                         className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-indigo-200 group"
                       >
@@ -2828,6 +2833,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                 <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                   <h4 className="flex items-center gap-2 text-lg font-bold text-slate-800"><Printer size={20} />Phiếu xác nhận nộp bài</h4>
                   <p className="text-sm text-slate-500">Phiếu A4 theo Mẫu số 01: thông tin học sinh, bảng đáp án, kết quả và chữ ký học sinh / giám thị. Máy giáo viên nhận bài, chấm lại theo đúng mã đề, lưu điểm rồi lần lượt gửi lệnh in.</p>
+                  <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-800">Phiếu có đúng {choiceQuestionEntries(editingExam.questions).length} câu trắc nghiệm; {editingExam.questions.length - choiceQuestionEntries(editingExam.questions).length} câu thuộc các phần khác. Số ô tự cập nhật theo đề, không thêm câu trống.</p>
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="text-sm font-medium text-slate-700">Tên trường<input value={getExamReceiptSettings(editingExam).schoolName} onChange={event => setEditingExam({ ...editingExam, receiptSettings: { ...getExamReceiptSettings(editingExam), schoolName: event.target.value } })} placeholder="TH & THCS Na Rì 1" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
                     <label className="text-sm font-medium text-slate-700">Môn kiểm tra<input value={getExamReceiptSettings(editingExam).subject} onChange={event => setEditingExam({ ...editingExam, receiptSettings: { ...getExamReceiptSettings(editingExam), subject: event.target.value } })} placeholder="Ví dụ: Toán 8" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>

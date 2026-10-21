@@ -2,6 +2,7 @@ import { evaluateQuestion, type QuestionDefinition, type QuestionResponse } from
 import { getSubmittedExamClassId } from './examStudentClasses';
 import { canTeacherGradeQuestion, describeManualAnswer, examHasManualQuestions, examUsesWeightedScoring, formatPoints, isManualQuestion, manualSubmissionCode, questionMaxPoints, summarizeExamScore, type ManualGrade, type RubricItem } from './examManualGrading';
 import { examQuestionHtml } from './examQuestionContent';
+import { choiceQuestionOptions } from './examQuestionLayout';
 
 export interface ExamReceiptSettings {
   autoPrint: boolean;
@@ -115,17 +116,6 @@ export function receiptQuestionIsCorrect(question: ReceiptQuestion, answer: unkn
   return typeof answer === 'number' && answer === question.correctAnswer;
 }
 
-function questionOptions(question: ReceiptQuestion): string[] | null {
-  const payload = question.engineQuestion?.payload;
-  if (question.type === 'question_engine' && payload) {
-    if (payload.type === 'single_choice' || payload.type === 'multiple_choice') return payload.options.map(option => option.text);
-    if (payload.type === 'true_false') return ['Đúng', 'Sai'];
-    return null;
-  }
-  if (question.type === 'short_answer' || question.type === 'matching' || isManualQuestion(question)) return null;
-  return question.options;
-}
-
 function selectedOptions(question: ReceiptQuestion, answer: unknown): number[] {
   const payload = question.engineQuestion?.payload;
   if (question.type === 'question_engine' && payload) {
@@ -173,7 +163,7 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
   const settings = getExamReceiptSettings(exam);
   const questions = exam.shuffledVersions?.find(version => version.code === result.examVersion)?.questions || exam.questions;
   const entries = questions.map((question, index) => ({ question, number: index + 1, answer: result.answers?.[question.id] }));
-  const choices = entries.filter(entry => { const options = questionOptions(entry.question); return options && options.length > 0 && options.length <= 8; });
+  const choices = entries.filter(entry => { const options = choiceQuestionOptions(entry.question); return options && options.length > 0 && options.length <= 8; });
   const written = entries.filter(entry => canTeacherGradeQuestion(entry.question));
   const details = entries.filter(entry => !choices.includes(entry) && !written.includes(entry));
   const outcome = (question: ReceiptQuestion, answer: unknown) => {
@@ -184,13 +174,13 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
     }
     return receiptQuestionIsCorrect(question, answer) ? 'Đúng' : 'Sai';
   };
-  let tables = '';
+  let tables = choices.length ? `<p class="choice-count">Phần trắc nghiệm: <b>${choices.length} câu</b></p>` : '';
   for (let offset = 0; offset < choices.length;) {
     const chunkSize = choices.length - offset <= 13 ? choices.length - offset : 12;
     const chunk = choices.slice(offset, offset + chunkSize);
     offset += chunkSize;
-    const rows = Math.max(4, ...chunk.map(entry => questionOptions(entry.question)!.length));
-    tables += `<table class="answer-grid"><thead><tr><th colspan="2" class="row-title">Câu hỏi</th>${chunk.map(entry => `<th>${entry.number}</th>`).join('')}</tr></thead><tbody>`;
+    const rows = Math.max(4, ...chunk.map(entry => choiceQuestionOptions(entry.question)!.length));
+    tables += `<table class="answer-grid" data-question-count="${chunk.length}"><thead><tr><th colspan="2" class="row-title">Câu hỏi</th>${chunk.map(entry => `<th>${entry.number}</th>`).join('')}</tr></thead><tbody>`;
     for (let row = 0; row < rows; row++) {
       tables += `<tr>${row === 0 ? `<th rowspan="${rows}" class="row-title">Trả<br>lời</th>` : ''}<th class="option-label">${row + 1}<small>(${label(row)})</small></th>${chunk.map(entry => `<td>${selectedOptions(entry.question, entry.answer).includes(row) ? '×' : ''}</td>`).join('')}</tr>`;
     }

@@ -3,6 +3,8 @@ import { withExamStudentClass } from '../src/lib/examStudentClasses';
 import { buildExamReceiptHtml, getExamReceiptSettings, receiptQuestionIsCorrect, type ReceiptExam, type ReceiptQuestion } from '../src/lib/examReceipt';
 import { toExamQuestion } from '../src/lib/questionExamBridge';
 import type { QuestionDefinition } from '../src/lib/questionEngine';
+import { choiceQuestionEntries, synchronizeExamVersions } from '../src/lib/examQuestionLayout';
+import { buildOmrScanRequest, buildOmrResponseSchema, gradeOmrResponse } from '../src/lib/examOmr';
 
 const exam: ReceiptExam = { id: 'exam-1', title: 'Kiểm tra Toán 8', durationMinutes: 45, classNames: { class1: '8A4' }, receiptSettings: { autoPrint: true, schoolName: 'TH & THCS Na Rì 1', subject: 'Toán 8' }, questions: Array.from({ length: 25 }, (_, index) => ({ id: `q${index}`, text: 'Câu hỏi', options: ['A', 'B', 'C', 'D'], correctAnswer: index % 4 })) };
 const result = { id: 'student-1_exam-1', score: 24, totalQuestions: 25, submittedAt: '2026-10-04T14:00:00Z', answers: Object.fromEntries(exam.questions.slice(0, 24).map(q => [q.id, q.correctAnswer])), examVersion: 'Gốc' };
@@ -62,3 +64,58 @@ assert.ok(receiptQuestionIsCorrect(short, ' đa thức '));
 assert.ok(!receiptQuestionIsCorrect(short, undefined));
 assert.ok(!receiptQuestionIsCorrect(exam.questions[0], undefined));
 console.info('Exam receipt: A4 grids, 25 questions, 10 question types, shuffled answers, unanswered questions, privacy and escaping passed.');
+
+// The answer sheet is driven by the exam, never padded to a fixed template.
+const makeQuestions = (count: number): ReceiptQuestion[] => Array.from({ length: count }, (_, index) => ({ id: `count-${index}`, text: `Câu ${index + 1}`, options: ['A', 'B', 'C', 'D'], correctAnswer: index % 4, type: 'multiple_choice' }));
+const printedNumbers = (receipt: string) => [...receipt.matchAll(/<table class="answer-grid"[^>]*><thead>(.*?)<\/thead>/gs)].flatMap(table => [...table[1].matchAll(/<th>(\d+)<\/th>/g)].map(cell => Number(cell[1])));
+for (const count of [0, 1, 2, 8, 10, 12, 13, 14, 25, 28, 40, 55, 101]) {
+  const selectedExam = { ...exam, questions: makeQuestions(count) };
+  const countResult = { ...result, answers: {}, score: 0, totalQuestions: count };
+  const receipt = buildExamReceiptHtml(selectedExam, student, countResult);
+  assert.deepEqual(printedNumbers(receipt), Array.from({ length: count }, (_, index) => index + 1), `${count} questions must produce exactly ${count} answer columns.`);
+  if (count) {
+    assert.ok(receipt.includes(`Phần trắc nghiệm: <b>${count} câu</b>`));
+    const request = buildOmrScanRequest(selectedExam);
+    assert.equal(request.questionNumbers.length, count);
+    const schema = buildOmrResponseSchema(request.questionNumbers);
+    assert.equal(Object.keys(schema.properties.part1.properties).length, count);
+    const scan = gradeOmrResponse(selectedExam, { maDe: 'Gốc', part1: Object.fromEntries(makeQuestions(count).map((question, index) => [index + 1, String.fromCharCode(65 + question.correctAnswer)]).concat([[count + 1, 'A']])) });
+    assert.equal(scan.totalCount, count);
+    assert.equal(scan.correctCount, count);
+    assert.equal(scan.details.length, count, 'Marks outside the selected exam are ignored.');
+  } else {
+    assert.ok(!receipt.includes('class="answer-grid"'));
+    assert.throws(() => buildOmrScanRequest(selectedExam), /chưa có câu trắc nghiệm/);
+  }
+}
+
+const mixedQuestions = [...makeQuestions(5), { ...short, id: 'written-short', options: ['Old option that must not become a choice row'] }, ...makeQuestions(5).map(question => ({ ...question, id: `${question.id}-last` })), { id: 'written-essay', text: 'Tự luận', type: 'essay', options: ['Old A', 'Old B'], correctAnswer: -1 }];
+const mixedExam = { ...exam, questions: mixedQuestions };
+assert.equal(choiceQuestionEntries(mixedQuestions).length, 10, 'Written tasks never add multiple-choice cells.');
+assert.deepEqual(printedNumbers(buildExamReceiptHtml(mixedExam, student, { ...result, answers: {}, totalQuestions: 12 })), [1, 2, 3, 4, 5, 7, 8, 9, 10, 11], 'Keep the actual question numbers when written tasks are interleaved.');
+const mixedScan = gradeOmrResponse(mixedExam, { part1: { 1: 'A', 6: 'A', 12: 'A', 40: 'A' } });
+assert.equal(mixedScan.totalCount, 10);
+assert.deepEqual(mixedScan.details.map(detail => detail.question), [1, 2, 3, 4, 5, 7, 8, 9, 10, 11]);
+assert.throws(() => buildOmrResponseSchema(undefined), /không hợp lệ/);
+assert.throws(() => buildOmrResponseSchema([1, -1]), /không hợp lệ/);
+assert.throws(() => gradeOmrResponse(mixedExam, { maDe: 'UNKNOWN' }), /không thuộc kỳ thi/);
+
+// Editing a previously shuffled 28-question exam down to 10 updates all version copies.
+const originalQuestions = makeQuestions(28);
+const previousExam = { ...exam, questions: originalQuestions, shuffledVersions: [{ code: 'VERSION-1', questions: [...originalQuestions].reverse().map(question => ({ ...question, options: [...question.options].reverse(), correctAnswer: 3 - question.correctAnswer })) }] };
+const edited = { ...previousExam, questions: originalQuestions.slice(0, 10).map((question, index) => index ? question : { ...question, options: ['New A', 'New B', 'New C', 'New D'], correctAnswer: 1 }) };
+const synchronized = synchronizeExamVersions(edited, previousExam);
+assert.equal(synchronized.shuffledVersions![0].questions.length, 10);
+assert.equal(synchronized.shuffledVersions![0].code, 'VERSION-1');
+assert.deepEqual(synchronized.shuffledVersions![0].questions.map(question => question.id), [...edited.questions].reverse().map(question => question.id));
+const updatedChoice = synchronized.shuffledVersions![0].questions.find(question => question.id === 'count-0')!;
+assert.deepEqual(updatedChoice.options, ['New D', 'New C', 'New B', 'New A']);
+assert.equal(updatedChoice.correctAnswer, 2, 'Keep the updated answer key aligned with the existing option permutation.');
+const versionReceipt = buildExamReceiptHtml(synchronized, student, { ...result, answers: {}, examVersion: 'VERSION-1', totalQuestions: 10 });
+assert.equal(printedNumbers(versionReceipt).length, 10);
+assert.ok(!printedNumbers(versionReceipt).includes(11));
+const grown = synchronizeExamVersions({ ...synchronized, questions: [...synchronized.questions, { ...originalQuestions[0], id: 'added' }] }, synchronized);
+assert.equal(grown.shuffledVersions![0].questions.length, 11);
+assert.equal(grown.shuffledVersions![0].questions.filter(question => question.id === 'added').length, 1);
+assert.equal(previousExam.shuffledVersions[0].questions.length, 28, 'Synchronization never mutates the earlier exam object.');
+console.info('Dynamic exam sheets passed: 0–101 choice questions, exact 10/28 cells, mixed written tasks, OCR schemas, no 40-question cap, and synchronized shuffled versions.');

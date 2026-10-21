@@ -5,6 +5,8 @@ import { collection, addDoc, getDocs, query, where, serverTimestamp } from 'fire
 import * as XLSX from 'xlsx';
 import { postApiJson } from '../lib/api';
 import { isValidTeacherUid } from '../lib/teacherIsolation';
+import { choiceQuestionEntries } from '../lib/examQuestionLayout';
+import { buildOmrScanRequest, gradeOmrResponse } from '../lib/examOmr';
 
 interface OMRScannerProps {
   examId: string;
@@ -103,7 +105,7 @@ export default function OMRScanner({ examId, exams, students, classes, teacherId
   };
 
   const processImageWithGemini = async () => {
-    if (!capturedImage) return;
+    if (!capturedImage || !exam) return;
 
     setIsProcessing(true);
     setError(null);
@@ -111,65 +113,15 @@ export default function OMRScanner({ examId, exams, students, classes, teacherId
     try {
       const base64Data = capturedImage.split(',')[1];
       
-      const prompt = `
-        Hãy phân tích ảnh phiếu trả lời trắc nghiệm này. AI sẽ tự động căn chỉnh, xoay và làm phẳng phiếu để đọc chính xác:
-        1. Số báo danh (7. Số báo danh): Đọc giá trị được tô ở các cột (6 chữ số).
-        2. Mã đề thi (8. Mã đề thi): Đọc giá trị được tô ở các cột (3 chữ số).
-        3. PHẦN I: Trả lời câu hỏi trắc nghiệm 4 lựa chọn (40 câu).
-        4. PHẦN II: Trả lời Đúng/Sai (8 câu, mỗi câu 4 ý a,b,c,d).
-        5. PHẦN III: Trả lời ngắn bằng số (6 câu).
-
-        Yêu cầu trả về JSON chính xác.
-      `;
-
-      const data = await postApiJson<any>('scan', { image: base64Data, prompt });
-      
-      // Grading
-      const finalResult = gradeExam(data);
-      setResults(finalResult);
+      const request = buildOmrScanRequest(exam);
+      const data = await postApiJson<any>('scan', { image: base64Data, ...request });
+      setResults(gradeOmrResponse(exam, data));
     } catch (err) {
       console.error("Error processing image:", err);
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra khi phân tích ảnh. Vui lòng đảm bảo ảnh chụp đủ sáng và không bị lóa.");
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const gradeExam = (data: any) => {
-    if (!exam) return data;
-
-    let score = 0;
-    const details = [];
-    
-    // Grading logic depends on exam structure. 
-    // This is a simplified demo grading logic matching the standard 40-question Part I format.
-    const part1Answers = data.part1 || {};
-    
-    // Check Part I
-    const numPart1 = Math.min(exam.questions.length, 40);
-    for (let i = 0; i < numPart1; i++) {
-      const q = exam.questions[i];
-      const studentAnswer = part1Answers[i + 1];
-      const correctAnswerStr = String.fromCharCode(65 + q.correctAnswer);
-      const isCorrect = studentAnswer === correctAnswerStr;
-      
-      if (isCorrect) score += (q.points || 0.25); // Default 0.25 if not set
-      
-      details.push({
-        question: i + 1,
-        studentAnswer,
-        correctAnswer: correctAnswerStr,
-        isCorrect
-      });
-    }
-
-    return {
-      ...data,
-      score: Number(score.toFixed(2)),
-      correctCount: details.filter(d => d.isCorrect).length,
-      totalCount: numPart1,
-      details
-    };
   };
 
   const handleSaveResult = async () => {
@@ -220,7 +172,7 @@ export default function OMRScanner({ examId, exams, students, classes, teacherId
       'Họ và tên': res.studentName || 'N/A',
       'Mã đề': res.examVersion || '---',
       'Điểm số': res.score,
-      'Số câu đúng': `${res.details?.filter((d: any) => d.isCorrect).length || 0}/${res.totalQuestions || 40}`,
+      'Số câu đúng': `${res.details?.filter((d: any) => d.isCorrect).length || 0}/${res.totalQuestions ?? choiceQuestionEntries(exam?.questions || []).length}`,
       'Thời gian nộp': new Date(res.submittedAt).toLocaleString('vi-VN')
     }));
 
@@ -246,7 +198,7 @@ export default function OMRScanner({ examId, exams, students, classes, teacherId
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-800">Quét phiếu OMR AI</h2>
-            <p className="text-[10px] text-slate-500 uppercase font-black tracking-tighter">Tự động căn chỉnh & Chấm điểm</p>
+            <p className="text-[10px] text-slate-500 uppercase font-black tracking-tighter">{choiceQuestionEntries(exam?.questions || []).length} câu trắc nghiệm · Tự động căn chỉnh & Chấm điểm</p>
           </div>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
@@ -424,7 +376,7 @@ export default function OMRScanner({ examId, exams, students, classes, teacherId
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-slate-800">Chi tiết Phần I (Trắc nghiệm)</h4>
-                    <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded-full font-bold">40 CÂU</span>
+                    <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded-full font-bold">{results.totalCount} CÂU</span>
                   </div>
                   <div className="grid grid-cols-5 gap-2">
                     {results.details.map((d: any) => (
