@@ -78,6 +78,13 @@ jobs:
       - name: Validate TypeScript (required)
         run: npm run lint
 
+      - name: Verify exam answers, manual grading and printed receipts
+        run: |
+          npm run test:exam-manual-grading
+          npm run test:exam-receipt
+          npm run test:teacher-printing
+          npm run test:exam-privacy
+
       - name: Run learning wall and app checks
         run: |
           npm run test:learning-wall

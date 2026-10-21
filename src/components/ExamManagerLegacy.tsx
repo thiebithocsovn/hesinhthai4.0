@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Play, CheckCircle, Clock, Users, FileText, LogOut, ChevronRight, ChevronLeft, Save, PlayCircle, StopCircle, Calendar, Upload, X, Download, Shuffle, Activity, ArrowRight, Camera, GraduationCap, BookOpen, Bell, ShieldCheck, UserRound, KeyRound, CalendarClock, Loader2, Printer } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Play, CheckCircle, Clock, Users, FileText, LogOut, ChevronRight, ChevronLeft, Save, PlayCircle, StopCircle, Calendar, Upload, X, Download, Shuffle, Activity, ArrowRight, Camera, GraduationCap, BookOpen, Bell, ShieldCheck, UserRound, KeyRound, CalendarClock, Loader2, Printer, Eye } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 import OMRScanner from './OMRScanner';
 import ExamReceiptDialog from './ExamReceiptDialog';
@@ -8,27 +8,31 @@ import { loadExamRosterMetadata } from '../lib/examRoster';
 import { gradeSubmittedExam, type TeacherPrintState } from '../lib/teacherExamPrinting';
 import { buildExamReceiptHtml, DEFAULT_EXAM_RECEIPT_SETTINGS, getExamReceiptSettings, getReceiptStudentClassId, receiptReadyToSign, receiptSignTiming, type ExamReceiptSettings } from '../lib/examReceipt';
 import * as XLSX from 'xlsx';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, writeBatch } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
 import ExamManualGradingPanel from './ExamManualGradingPanel';
+import ExamSubmissionReview from './ExamSubmissionReview';
+import type { QuestionDefinition } from '../lib/questionEngine';
 import {
   examHasManualQuestions,
   examPointBreakdown,
   examUsesWeightedScoring,
   formatPoints,
   isManualQuestion,
+  canTeacherGradeQuestion,
+  isShortAnswerQuestion,
+  versionQuestions,
   newRubricItem,
   PRACTICAL_FILE_PRESETS,
   questionMaxPoints,
   stripTeacherOnlyFields,
-  describeManualAnswer,
   summarizeExamScore,
   type ManualGrade,
   type PracticalMode,
   type RubricItem,
 } from '../lib/examManualGrading';
-import { receiptQuestionIsCorrect } from '../lib/examReceipt';
+import { receiptAnswerText, receiptQuestionIsCorrect } from '../lib/examReceipt';
 import { autoCheckOption, autoCheckOptionsFor } from '../lib/practicalFileCheck';
 import { buildStudentExamSchedule, canStudentEnterExam, formatExamScheduleDate, getExamScheduleState } from '../lib/examSchedule';
 import {
@@ -58,7 +62,8 @@ interface Question {
   text: string;
   options: string[];
   correctAnswer: number;
-  type?: 'multiple_choice' | 'short_answer' | 'matching' | 'essay' | 'practical';
+  type?: 'multiple_choice' | 'short_answer' | 'matching' | 'essay' | 'practical' | 'question_engine';
+  engineQuestion?: QuestionDefinition;
   correctTextAnswer?: string;
   matchingPairs?: { id: string; left: string; right: string }[];
   shuffledRight?: { id: string; right: string }[];
@@ -210,6 +215,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const [publicationError, setPublicationError] = useState('');
   const [publicationRetry, setPublicationRetry] = useState(0);
   const [gradingExamId, setGradingExamId] = useState<string | null>(null);
+  const [reviewResultId, setReviewResultId] = useState<string | null>(null);
 
   useEffect(() => {
     if (appMode !== 'teacher') return;
@@ -452,7 +458,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     const data = examResults.map((result, index) => {
       const student = students.find(s => s.id === result.studentId);
       const studentClass = classes.find(c => c.id === getReceiptStudentClassId(examToExport, student || { id: result.studentId }, result));
-      const pendingTeacherGrade = getExamReceiptSettings(examToExport).autoPrint && !result.teacherGradedAt;
+      const pendingTeacherGrade = getExamReceiptSettings(examToExport).autoPrint && !result.teacherGradedAt && !examUsesWeightedScoring(examToExport);
       const weightedSummary = examUsesWeightedScoring(examToExport) ? summarizeExamScore(examToExport, result, receiptQuestionIsCorrect) : null;
       const percentage = Math.round((result.score / result.totalQuestions) * 100);
       const calculatedScore = Math.round((result.score / result.totalQuestions) * 100) / 10;
@@ -470,38 +476,10 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
       }
 
       examToExport.questions.forEach((q, qIndex) => {
-        const answerVal = result.answers?.[q.id];
-        let answerStr = '—';
-        if (isManualQuestion(q)) {
-          const grade = result.manualGrades?.[q.id];
-          rowData[`Q${qIndex + 1}`] = `${describeManualAnswer(q, answerVal)}${grade ? ` [${formatPoints(grade.points)}đ${grade.comment ? ` – ${grade.comment}` : ''}]` : ' [chờ chấm]'}`;
-          return;
-        }
-        if (answerVal !== undefined) {
-          if (q.type === 'short_answer') {
-            answerStr = String(answerVal);
-          } else if (q.type === 'matching') {
-            if (typeof answerVal === 'object' && answerVal !== null) {
-              // Format: 1-A, 2-B, etc.
-              const matches = [];
-              if (q.matchingPairs) {
-                q.matchingPairs.forEach((pair, idx) => {
-                  const selectedLeftId = (answerVal as Record<string, string>)[pair.id];
-                  if (selectedLeftId) {
-                    const leftIdx = q.matchingPairs!.findIndex(p => p.id === selectedLeftId);
-                    if (leftIdx !== -1) {
-                      matches.push(`${leftIdx + 1} -> ${pair.right}`);
-                    }
-                  }
-                });
-              }
-              answerStr = matches.join(', ');
-            }
-          } else if (typeof answerVal === 'number') {
-            answerStr = String.fromCharCode(65 + answerVal);
-          }
-        }
-        rowData[`Q${qIndex + 1}`] = answerStr;
+        const submittedQuestion = versionQuestions(examToExport, result.examVersion).find(item => item.id === q.id) || q;
+        const answer = receiptAnswerText(submittedQuestion, result.answers?.[q.id]);
+        const grade = canTeacherGradeQuestion(q) ? result.manualGrades?.[q.id] : undefined;
+        rowData[`Q${qIndex + 1}`] = `${answer}${grade ? ` [${formatPoints(grade.points)}đ${grade.comment ? ` – ${grade.comment}` : ''}]` : isManualQuestion(q) ? ' [chờ chấm]' : ''}`;
       });
 
       rowData['Thời gian nộp bài'] = new Date(result.submittedAt).toLocaleString('vi-VN');
@@ -2403,13 +2381,13 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                   </select>
                   {(() => {
                     const currentExam = exams.find(e => e.id === (selectedExamIdForResults || exams[0]?.id));
-                    if (!currentExam || !examHasManualQuestions(currentExam)) return null;
+                    if (!currentExam || !currentExam.questions.some(canTeacherGradeQuestion)) return null;
                     const latest = latestExamResults(currentExam.id);
-                    const pending = latest.filter(result => currentExam.questions.some(q => isManualQuestion(q) && !result.manualGrades?.[q.id])).length;
+                    const pending = latest.filter(result => currentExam.questions.some(q => canTeacherGradeQuestion(q) && !result.manualGrades?.[q.id])).length;
                     return (
                       <button type="button" onClick={() => setGradingExamId(currentExam.id)} className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 font-semibold text-white shadow-sm hover:bg-violet-700">
-                        <Edit2 className="h-5 w-5" />Chấm tự luận & thực hành
-                        {pending > 0 && <span className="rounded-full bg-white/25 px-2 py-0.5 text-xs">{pending} bài chờ</span>}
+                        <Edit2 className="h-5 w-5" />Chấm tự luận / Trả lời ngắn
+                        {pending > 0 && <span className="rounded-full bg-white/25 px-2 py-0.5 text-xs">{pending} bài cần xem</span>}
                       </button>
                     );
                   })()}
@@ -2425,6 +2403,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                 </div>
               </div>
               
+              <p className="mb-3 text-sm text-slate-600">Chọn “Xem bài làm” ở từng học sinh để xem đầy đủ câu hỏi, câu trả lời và chấm điểm tự luận, trả lời ngắn hoặc thực hành.</p>
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
                 <table className="w-full text-left whitespace-nowrap border-collapse">
                   <thead className="bg-white border-b border-slate-200">
@@ -2458,7 +2437,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                         return (
                           <th key={idx} className="px-2 py-4 text-sm font-bold text-slate-800 tracking-wider text-center border-r border-slate-200 min-w-[60px]">
                             <div className="flex flex-col items-center gap-1">
-                              <span>Q{idx + 1}{q.type === 'essay' ? ' · TL' : q.type === 'practical' ? ' · TH' : ''}</span>
+                              <span>Q{idx + 1}{q.type === 'essay' ? ' · TL' : q.type === 'practical' ? ' · TH' : isShortAnswerQuestion(q) ? ' · TLN' : ''}</span>
                             </div>
                           </th>
                         );
@@ -2521,11 +2500,11 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                         return (
                           <tr key={result.id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-3 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-200 min-w-[250px] max-w-[250px] w-[250px] truncate">
-                              <div className="font-bold text-slate-800 truncate" title={student?.name || 'Học sinh đã xóa'}>{student?.name || 'Học sinh đã xóa'}</div>
+                              <button type="button" onClick={() => setReviewResultId(result.id)} className="block max-w-full truncate font-bold text-blue-700 hover:underline" title="Xem bài làm học sinh">{student?.name || 'Học sinh đã xóa'}</button>
                               <div className="text-xs text-slate-500 mt-0.5">{exam && (classes.find(item => item.id === getReceiptStudentClassId(exam, student || { id: result.studentId }, result))?.name || exam.classNames?.[getReceiptStudentClassId(exam, student || { id: result.studentId }, result) || '']) || 'Chưa được gán lớp'}</div>
                             </td>
                             <td className="px-4 py-3 sticky left-[250px] bg-white group-hover:bg-slate-50 z-10 border-r border-slate-200 text-center font-medium text-slate-800 min-w-[120px] max-w-[120px] w-[120px]">
-                              {exam && getExamReceiptSettings(exam).autoPrint && !result.teacherGradedAt ? <span className="text-xs text-amber-700">Chờ máy giáo viên chấm</span> : exam && examUsesWeightedScoring(exam) ? (() => {
+                              {exam && getExamReceiptSettings(exam).autoPrint && !result.teacherGradedAt && !examUsesWeightedScoring(exam) ? <span className="text-xs text-amber-700">Chờ máy giáo viên chấm</span> : exam && examUsesWeightedScoring(exam) ? (() => {
                                 const summary = summarizeExamScore(exam, result, receiptQuestionIsCorrect);
                                 return summary.complete
                                   ? <span title={`${formatPoints(summary.earned)}/${formatPoints(summary.max)} điểm`}>{formatPoints(summary.score10)}</span>
@@ -2537,43 +2516,20 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                           </td>
                           {exam ? (
                             exam.questions.map((q, idx) => {
-                              if (isManualQuestion(q)) {
-                                const grade = result.manualGrades?.[q.id];
-                                return (
-                                  <td key={q.id} className={`px-2 py-3 text-center border-r border-slate-200 ${grade ? 'bg-emerald-50/40' : 'bg-amber-50/60'}`}>
-                                    <div title={`Câu ${idx + 1}: ${describeManualAnswer(q, result.answers?.[q.id])}${grade?.comment ? ` – ${grade.comment}` : ''}`}>
-                                      {grade ? <span className="font-bold text-emerald-700">{formatPoints(grade.points)}</span> : <button type="button" onClick={() => setGradingExamId(exam.id)} className="text-xs font-semibold text-amber-700 underline">Chấm</button>}
-                                    </div>
-                                  </td>
-                                );
-                              }
+                              const submittedQuestion = versionQuestions(exam, result.examVersion).find(item => item.id === q.id) || q;
                               const studentAns = result.answers?.[q.id];
-                              const isCorrect = studentAns === q.correctAnswer;
-                              const isUnanswered = studentAns === undefined;
-                              const ansLetter = isUnanswered ? '—' : ['A', 'B', 'C', 'D'][studentAns];
-                              
-                              let bgColor = 'bg-slate-50/50';
-                              let cellContent = <span className="font-bold text-slate-400">—</span>;
-                              
-                              if (!isUnanswered) {
-                                if (isCorrect) {
-                                  bgColor = 'bg-emerald-50/30';
-                                  cellContent = <span className="font-bold text-lg text-emerald-600">{ansLetter}</span>;
-                                } else {
-                                  bgColor = 'bg-red-50/50';
-                                  cellContent = (
-                                    <span className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 text-white font-bold text-sm">
-                                      {ansLetter}
-                                    </span>
-                                  );
-                                }
-                              }
-                              
+                              const grade = canTeacherGradeQuestion(q) ? result.manualGrades?.[q.id] : undefined;
+                              const manual = isManualQuestion(q);
+                              const answerLabel = receiptAnswerText(submittedQuestion, studentAns);
+                              const isCorrect = grade ? grade.points >= questionMaxPoints(q) : receiptQuestionIsCorrect(submittedQuestion, studentAns);
+                              const isUnanswered = studentAns === undefined || studentAns === null || studentAns === '';
+                              const background = manual && !grade ? 'bg-amber-50/60' : isUnanswered && !grade ? 'bg-slate-50/50' : isCorrect ? 'bg-emerald-50/40' : 'bg-red-50/40';
                               return (
-                                <td key={q.id} className={`px-2 py-3 text-center border-r border-slate-200 ${bgColor}`}>
-                                  <div title={`Câu ${idx + 1}: ${isUnanswered ? 'Chưa trả lời' : isCorrect ? 'Đúng' : `Sai (Đáp án đúng: ${['A', 'B', 'C', 'D'][q.correctAnswer]})`}`}>
-                                    {cellContent}
-                                  </div>
+                                <td key={q.id} className={`px-2 py-3 text-center border-r border-slate-200 ${background}`}>
+                                  <button type="button" onClick={() => setReviewResultId(result.id)} className="max-w-[160px] whitespace-normal break-words text-sm hover:underline" title={`Câu ${idx + 1}: ${answerLabel}${grade?.comment ? ` – ${grade.comment}` : ''}`}>
+                                    <span className={`line-clamp-2 ${isUnanswered ? 'text-slate-400' : 'font-semibold text-slate-800'}`}>{manual ? grade ? `${formatPoints(grade.points)}đ` : 'Xem / Chấm' : answerLabel}</span>
+                                    {!manual && grade && <span className="block text-xs font-semibold text-blue-700">GV: {formatPoints(grade.points)}đ</span>}
+                                  </button>
                                 </td>
                               );
                             })
@@ -2612,6 +2568,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                             )}
                           </td>
                           <td className="px-6 py-4 text-center border-l border-slate-200">
+                            <button type="button" disabled={!exam} onClick={() => setReviewResultId(result.id)} className="mb-2 flex items-center gap-2 whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"><Eye className="h-4 w-4" />Xem bài làm</button>
                             {exam && examHasManualQuestions(exam) && (result.receiptPrintedAt || result.teacherPrint?.status === 'sent'
                               ? <span className="mr-1 text-xs font-medium text-emerald-700" title="Học sinh ký phiếu này một lần">Đã in phiếu</span>
                               : receiptReadyToSign(exam, result) ? <span className="mr-1 text-xs font-semibold text-violet-700">Chờ in phiếu</span> : null)}
@@ -2658,6 +2615,38 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
               </div>
             </div>
           )}
+
+          {reviewResultId && (() => {
+            const selectedResult = results.find(result => result.id === reviewResultId);
+            const reviewExam = exams.find(exam => exam.id === selectedResult?.examId);
+            if (!reviewExam) return null;
+            return <ExamSubmissionReview
+              key={reviewExam.id}
+              exam={reviewExam}
+              results={latestExamResults(reviewExam.id).filter(result => selectedClassIdForResults === 'all' || getReceiptStudentClassId(reviewExam, students.find(student => student.id === result.studentId) || { id: result.studentId }, result) === selectedClassIdForResults)}
+              resultId={reviewResultId}
+              studentName={result => students.find(student => student.id === result.studentId)?.name || 'Học sinh đã xóa'}
+              classLabel={result => {
+                const classId = getReceiptStudentClassId(reviewExam, students.find(student => student.id === result.studentId) || { id: result.studentId }, result);
+                return classes.find(item => item.id === classId)?.name || reviewExam.classNames?.[classId || ''] || '';
+              }}
+              onSelect={setReviewResultId}
+              onSaveGrade={async (resultId, questionId, grade) => {
+                await updateDoc(doc(db, 'results', resultId), { [`manualGrades.${questionId}`]: grade, manualGradedAt: grade.gradedAt });
+              }}
+              onPrint={result => {
+                const receiptExam = { ...reviewExam, classNames: { ...reviewExam.classNames, ...Object.fromEntries(classes.map(item => [item.id, item.name])) } };
+                const student = students.find(item => item.id === result.studentId) || { id: result.studentId, name: 'Học sinh đã xóa' };
+                try {
+                  const automatic = gradeSubmittedExam(reviewExam, { ...result, examId: reviewExam.id, teacherId: reviewExam.teacherId || '' });
+                  setReceiptHtml(buildExamReceiptHtml(receiptExam, student, { ...result, ...automatic }, activeSessions.find(item => item.studentId === result.studentId && item.examId === reviewExam.id)?.startTime));
+                  setReviewResultId(null);
+                  setShowReceipt(true);
+                } catch (error) { window.alert(error instanceof Error ? error.message : 'Không thể mở phiếu.'); }
+              }}
+              onClose={() => setReviewResultId(null)}
+            />;
+          })()}
 
           {gradingExamId && (() => {
             const gradingExam = exams.find(exam => exam.id === gradingExamId);
@@ -2846,6 +2835,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                   </div>
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={getExamReceiptSettings(editingExam).autoPrint} onChange={event => setEditingExam({ ...editingExam, receiptSettings: { ...getExamReceiptSettings(editingExam), autoPrint: event.target.checked } })} />Tự động in tại máy giáo viên khi nhận bài nộp</label>
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={getExamReceiptSettings(editingExam).includeCorrectAnswers} onChange={event => setEditingExam({ ...editingExam, receiptSettings: { ...getExamReceiptSettings(editingExam), includeCorrectAnswers: event.target.checked } })} />In đáp án đúng và kết quả từng câu trên phiếu</label>
+                  <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={getExamReceiptSettings(editingExam).includeWrittenQuestions} onChange={event => setEditingExam({ ...editingExam, receiptSettings: { ...getExamReceiptSettings(editingExam), includeWrittenQuestions: event.target.checked } })} />In nội dung câu hỏi tự luận / trả lời ngắn trên phiếu</label>
                   {examHasManualQuestions(editingExam) && (
                     <fieldset className="rounded-lg border border-violet-200 bg-violet-50/60 p-3">
                       <legend className="px-1 text-sm font-semibold text-violet-900">Học sinh chỉ ký phiếu một lần – in phiếu khi nào?</legend>

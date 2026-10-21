@@ -5,6 +5,8 @@
 // grade later by ticking rubric items; their grades live in `manualGrades` on
 // the same result document, which only the owning teacher may update.
 
+import type { QuestionDefinition } from './questionEngine';
+
 export type ManualQuestionType = 'essay' | 'practical';
 export type PracticalMode = 'file' | 'observe';
 
@@ -24,6 +26,8 @@ export interface GradableQuestion {
   sampleAnswer?: string;
   practicalMode?: PracticalMode;
   acceptedFiles?: string;
+  engineQuestion?: QuestionDefinition;
+  correctTextAnswer?: string;
 }
 
 export interface ManualGrade {
@@ -79,6 +83,15 @@ export function isManualQuestion(question: Pick<GradableQuestion, 'type'>): bool
   return question.type === 'essay' || question.type === 'practical';
 }
 
+export function isShortAnswerQuestion(question: GradableQuestion): boolean {
+  return question.type === 'short_answer' || (question.type === 'question_engine' && question.engineQuestion?.payload.type === 'short_answer');
+}
+
+/** Short answers retain automatic marking until a teacher saves an override. */
+export function canTeacherGradeQuestion(question: GradableQuestion): boolean {
+  return isManualQuestion(question) || isShortAnswerQuestion(question);
+}
+
 export function examHasManualQuestions(exam: Pick<ScoredExam, 'questions'>): boolean {
   return exam.questions.some(isManualQuestion);
 }
@@ -99,7 +112,7 @@ export function questionMaxPoints(question: GradableQuestion): number {
 
 /** Old exams (all objective, one point each) keep the original "correct / total" display. */
 export function examUsesWeightedScoring(exam: Pick<ScoredExam, 'questions'>): boolean {
-  return exam.questions.some(question => isManualQuestion(question) || (question.points !== undefined && question.points !== 1));
+  return exam.questions.some(question => canTeacherGradeQuestion(question) || (question.points !== undefined && question.points !== 1));
 }
 
 export function examMaxPoints(exam: Pick<ScoredExam, 'questions'>): number {
@@ -163,9 +176,13 @@ export function summarizeExamScore<Q extends GradableQuestion>(
     } else {
       summary.objectiveCount += 1;
       summary.objectiveMax += max;
-      if (isCorrect(question, result.answers?.[question.id])) {
+      const override = isShortAnswerQuestion(original) ? result.manualGrades?.[question.id] : undefined;
+      const earned = override && Number.isFinite(override.points)
+        ? Math.min(max, Math.max(0, override.points))
+        : isCorrect(question, result.answers?.[question.id]) ? max : 0;
+      summary.objectiveEarned += earned;
+      if (earned === max) {
         summary.objectiveCorrect += 1;
-        summary.objectiveEarned += max;
       }
     }
   }

@@ -8,16 +8,18 @@ import {
   formatPoints,
   gradeFromChecks,
   highlightRuns,
-  isManualQuestion,
+  canTeacherGradeQuestion,
+  isShortAnswerQuestion,
   isSubmittedPracticalFile,
   manualSubmissionCode,
   questionMaxPoints,
   QUICK_COMMENTS,
   rubricKeywords,
-  type GradableQuestion,
   type ManualGrade,
 } from '../lib/examManualGrading';
 import { analyzePracticalFile, evaluateAutoCheck, type AutoCheck, type AutoCheckResult, type PracticalFileFacts } from '../lib/practicalFileCheck';
+import { receiptAnswerText, receiptQuestionIsCorrect, type ReceiptQuestion } from '../lib/examReceipt';
+import { examQuestionHtml } from '../lib/examQuestionContent';
 
 const MACHINE_BADGE: Record<AutoCheckResult['status'], { text: string; className: string }> = {
   pass: { text: '✓ Máy: đạt', className: 'bg-emerald-100 text-emerald-800' },
@@ -26,7 +28,7 @@ const MACHINE_BADGE: Record<AutoCheckResult['status'], { text: string; className
   unknown: { text: '? Không rõ', className: 'bg-slate-100 text-slate-600' },
 };
 
-interface GradingQuestion extends GradableQuestion { text: string }
+interface GradingQuestion extends ReceiptQuestion {}
 
 interface GradingResult {
   id: string;
@@ -34,6 +36,7 @@ interface GradingResult {
   submittedAt: string;
   answers?: Record<string, unknown>;
   manualGrades?: Record<string, ManualGrade>;
+  examVersion?: string;
 }
 
 interface Props {
@@ -46,36 +49,50 @@ interface Props {
   signTiming?: 'after-grading' | 'at-submit';
 }
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+export type ExamGradeSaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 function Highlighted({ text, keywords }: { text: string; keywords: Set<string> }) {
   if (!keywords.size) return <>{text}</>;
   return <>{highlightRuns(text, keywords).map((run, index) => run.mark ? <mark key={index} className="rounded bg-amber-200/80 px-0.5 text-inherit">{run.text}</mark> : <span key={index}>{run.text}</span>)}</>;
 }
 
-function GradeCard({ question, result, label, sublabel, keywords, onSave }: {
+export function ExamGradeCard({ question, result, label, sublabel, keywords, onSave, onStatusChange }: {
   question: GradingQuestion;
   result: GradingResult;
   label: string;
   sublabel: string;
   keywords: Set<string>;
   onSave: (grade: ManualGrade) => Promise<void>;
+  onStatusChange?: (state: ExamGradeSaveState) => void;
 }) {
   const existing = result.manualGrades?.[question.id];
   const max = questionMaxPoints(question);
   const rubric = question.rubric || [];
+  const shortAnswer = isShortAnswerQuestion(question);
+  const automaticPoints = shortAnswer && receiptQuestionIsCorrect(question, result.answers?.[question.id]) ? max : 0;
   const [checks, setChecks] = useState<string[]>(existing?.checks || []);
-  const [directPoints, setDirectPoints] = useState<string>(existing && !rubric.length ? String(existing.points) : '');
+  const [directPoints, setDirectPoints] = useState<string>(existing && !rubric.length ? String(existing.points) : shortAnswer ? String(automaticPoints) : '');
   const [comment, setComment] = useState(existing?.comment || '');
   const [graded, setGraded] = useState(Boolean(existing));
-  const [state, setState] = useState<SaveState>('idle');
+  const [state, setState] = useState<ExamGradeSaveState>('idle');
   const timer = useRef<number | undefined>(undefined);
+  const pendingSave = useRef<(() => void) | null>(null);
+  const saveQueue = useRef(Promise.resolve());
+  const revision = useRef(0);
   const answer = result.answers?.[question.id];
   const file = question.type === 'practical' && isSubmittedPracticalFile(answer) ? answer : null;
   const hasAutoChecks = rubric.some(item => item.auto?.kind);
   const [facts, setFacts] = useState<PracticalFileFacts | null>(null);
+  const statusCallback = useRef(onStatusChange);
+  useEffect(() => { statusCallback.current = onStatusChange; });
+  useEffect(() => { statusCallback.current?.('idle'); }, []);
+  const reportState = (next: ExamGradeSaveState) => { setState(next); statusCallback.current?.(next); };
 
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(timer.current);
+    // Changing question or closing the review must not discard the last edit.
+    pendingSave.current?.();
+  }, []);
 
   // Read the submitted Word / PowerPoint / Scratch file once to suggest which criteria are met.
   useEffect(() => {
@@ -93,16 +110,25 @@ function GradeCard({ question, result, label, sublabel, keywords, onSave }: {
   const points = rubric.length ? gradeFromChecks(question, checks).points : Math.min(max, Math.max(0, Number(directPoints) || 0));
 
   const schedule = (nextChecks: string[], nextComment: string, nextDirect: string) => {
-    setGraded(true);
     window.clearTimeout(timer.current);
-    setState('saving');
-    timer.current = window.setTimeout(async () => {
-      const grade = rubric.length
-        ? gradeFromChecks(question, nextChecks, nextComment)
-        : { points: Math.min(max, Math.max(0, Math.round((Number(nextDirect) || 0) * 100) / 100)), checks: [], ...(nextComment.trim() ? { comment: nextComment.trim().slice(0, 500) } : {}), gradedAt: new Date().toISOString() };
-      try { await onSave(grade); setState('saved'); }
-      catch { setState('error'); }
-    }, 450);
+    pendingSave.current = null;
+    const currentRevision = ++revision.current;
+    if (!rubric.length && (nextDirect.trim() === '' || !Number.isFinite(Number(nextDirect)) || Number(nextDirect) < 0 || Number(nextDirect) > max)) {
+      reportState('error');
+      return;
+    }
+    reportState('saving');
+    pendingSave.current = () => {
+      pendingSave.current = null;
+      saveQueue.current = saveQueue.current.then(async () => {
+        const grade = rubric.length
+          ? gradeFromChecks(question, nextChecks, nextComment)
+          : { points: Math.round(Number(nextDirect) * 100) / 100, checks: [], ...(nextComment.trim() ? { comment: nextComment.trim().slice(0, 500) } : {}), gradedAt: new Date().toISOString() };
+        try { await onSave(grade); if (revision.current === currentRevision) { setGraded(true); reportState('saved'); } }
+        catch { if (revision.current === currentRevision) reportState('error'); }
+      });
+    };
+    timer.current = window.setTimeout(() => pendingSave.current?.(), 450);
   };
 
   const toggle = (id: string) => {
@@ -117,11 +143,11 @@ function GradeCard({ question, result, label, sublabel, keywords, onSave }: {
           <p className="truncate font-bold text-slate-800">{label}</p>
           {sublabel && <p className="text-xs text-slate-500">{sublabel}</p>}
         </div>
-        <span className={`rounded-full px-3 py-1 text-sm font-bold ${graded ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{graded ? `${formatPoints(points)} / ${formatPoints(max)} điểm` : 'Chưa chấm'}</span>
+        <span className={`rounded-full px-3 py-1 text-sm font-bold ${graded ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{graded ? `${formatPoints(points)} / ${formatPoints(max)} điểm` : shortAnswer ? `Tự động: ${formatPoints(automaticPoints)} / ${formatPoints(max)}` : 'Chưa chấm'}</span>
       </header>
 
       <div className="mb-4">
-        {question.type === 'essay' ? (
+        {question.type === 'essay' || shortAnswer ? (
           typeof answer === 'string' && answer.trim()
             ? <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 leading-7 text-slate-800"><Highlighted text={answer} keywords={keywords} /></p>
             : <p className="rounded-xl bg-slate-50 p-3 italic text-slate-500">Học sinh không trả lời.</p>
@@ -168,7 +194,7 @@ function GradeCard({ question, result, label, sublabel, keywords, onSave }: {
         </div>
       ) : (
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700">Điểm câu này
-          <input type="number" min={0} max={max} step={0.25} value={directPoints} onChange={event => { setDirectPoints(event.target.value); schedule(checks, comment, event.target.value); }} className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-right" />
+          <input type="number" min={0} max={max} step={0.01} value={directPoints} onChange={event => { setDirectPoints(event.target.value); schedule(checks, comment, event.target.value); }} className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-right" />
           <span className="text-slate-500">/ {formatPoints(max)}</span>
         </label>
       )}
@@ -179,7 +205,7 @@ function GradeCard({ question, result, label, sublabel, keywords, onSave }: {
         <span className="ml-auto text-xs" aria-live="polite">
           {state === 'saving' && <span className="flex items-center gap-1 text-slate-500"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Đang lưu…</span>}
           {state === 'saved' && <span className="flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />Đã lưu</span>}
-          {state === 'error' && <span className="text-red-600">Chưa lưu được – kiểm tra mạng rồi tích lại</span>}
+          {state === 'error' && <span role="alert" className="text-red-600">Chưa lưu. Nhập điểm từ 0 đến {formatPoints(max)}, kiểm tra mạng rồi thử lại.</span>}
         </span>
       </div>
 
@@ -196,7 +222,7 @@ function GradeCard({ question, result, label, sublabel, keywords, onSave }: {
 
 /** Grade essay and practical questions one question at a time across the whole class. */
 export default function ExamManualGradingPanel({ exam, results, studentName, classLabel, onClose, signTiming }: Props) {
-  const manual = useMemo(() => exam.questions.map((question, index) => ({ question, number: index + 1 })).filter(item => isManualQuestion(item.question)), [exam.questions]);
+  const manual = useMemo(() => exam.questions.map((question, index) => ({ question, number: index + 1 })).filter(item => canTeacherGradeQuestion(item.question)), [exam.questions]);
   const [selectedId, setSelectedId] = useState(manual[0]?.question.id || '');
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('all');
   const [anonymous, setAnonymous] = useState(false);
@@ -218,17 +244,19 @@ export default function ExamManualGradingPanel({ exam, results, studentName, cla
   const keywords = useMemo(() => new Set(selected?.question.type === 'essay' ? rubricKeywords(selected.question) : []), [selected]);
 
   const save = async (result: GradingResult, questionId: string, grade: ManualGrade) => {
-    setLocal(previous => ({ ...previous, [`${result.id}:${questionId}`]: grade }));
-    await updateDoc(doc(db, 'results', result.id), { [`manualGrades.${questionId}`]: grade, manualGradedAt: grade.gradedAt });
+    try {
+      await updateDoc(doc(db, 'results', result.id), { [`manualGrades.${questionId}`]: grade, manualGradedAt: grade.gradedAt });
+      setLocal(previous => ({ ...previous, [`${result.id}:${questionId}`]: grade }));
+    } catch (error) { window.alert('Chưa lưu được điểm. Hãy mở lại bài và thử lại khi có kết nối.'); throw error; }
   };
 
   const visible = selected ? results.filter(result => filter === 'all' || (filter === 'done') === Boolean(gradeOf(result, selected.question.id))) : [];
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-slate-100" role="dialog" aria-modal="true" aria-label="Chấm tự luận và thực hành">
+    <div className="fixed inset-0 z-[70] flex flex-col bg-slate-100" role="dialog" aria-modal="true" aria-label="Chấm tự luận, trả lời ngắn và thực hành">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-4 py-3 md:px-6">
         <div className="min-w-0 basis-full sm:basis-auto sm:flex-1">
-          <h2 className="text-lg font-bold text-slate-900 md:text-xl">Chấm tự luận & thực hành</h2>
+          <h2 className="text-lg font-bold text-slate-900 md:text-xl">Chấm tự luận, trả lời ngắn & thực hành</h2>
           <p className="truncate text-sm text-slate-500">{exam.title}</p>
         </div>
         <div className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-700">
@@ -247,7 +275,7 @@ export default function ExamManualGradingPanel({ exam, results, studentName, cla
         </p>
       )}
       {!manual.length ? (
-        <div className="flex flex-1 items-center justify-center p-6 text-center text-slate-500">Kỳ thi này chưa có câu tự luận hoặc thực hành.</div>
+        <div className="flex flex-1 items-center justify-center p-6 text-center text-slate-500">Kỳ thi này chưa có câu tự luận, trả lời ngắn hoặc thực hành.</div>
       ) : (
         <>
           <nav className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white px-4 py-2 md:px-6" aria-label="Chọn câu cần chấm">
@@ -257,7 +285,7 @@ export default function ExamManualGradingPanel({ exam, results, studentName, cla
               return (
                 <button key={item.question.id} type="button" onClick={() => setSelectedId(item.question.id)} aria-pressed={active} className={`flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>
                   Câu {item.number}
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${item.question.type === 'essay' ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700'}`}>{item.question.type === 'essay' ? 'Tự luận' : 'Thực hành'}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${item.question.type === 'essay' ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700'}`}>{item.question.type === 'essay' ? 'Tự luận' : isShortAnswerQuestion(item.question) ? 'Trả lời ngắn' : 'Thực hành'}</span>
                   <span className={`text-xs ${active ? 'text-slate-300' : 'text-slate-500'}`}>{count}/{results.length}</span>
                 </button>
               );
@@ -269,7 +297,8 @@ export default function ExamManualGradingPanel({ exam, results, studentName, cla
               <aside className="lg:sticky lg:top-0 lg:self-start">
                 <details open={referenceOpen} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <summary className="cursor-pointer font-bold text-slate-800">Câu {selected.number} · {formatPoints(questionMaxPoints(selected.question))} điểm</summary>
-                  <div className="prose prose-sm mt-3 max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: selected.question.text }} />
+                  <div className="prose prose-sm mt-3 max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: examQuestionHtml(selected.question.text) }} />
+                  {isShortAnswerQuestion(selected.question) && <p className="mt-3 rounded-xl bg-blue-50 p-3 text-sm text-blue-900"><b>Đáp án: </b>{receiptAnswerText(selected.question, undefined, true)}. Thầy cô có thể nhập điểm hoặc chọn 0 điểm / Đủ điểm để thay kết quả chấm tự động.</p>}
                   {(selected.question.rubric || []).length > 0 && (
                     <div className="mt-3">
                       <p className="mb-1 text-sm font-semibold text-slate-700">{selected.question.type === 'essay' ? 'Các ý chấm' : 'Tiêu chí chấm'}</p>
@@ -291,7 +320,7 @@ export default function ExamManualGradingPanel({ exam, results, studentName, cla
                 {!results.length && <p className="rounded-2xl bg-white p-6 text-center text-slate-500">Chưa có học sinh nộp bài. Bài nộp sẽ hiện tại đây ngay khi học sinh bấm Nộp bài.</p>}
                 {results.length > 0 && !visible.length && <p className="rounded-2xl bg-white p-6 text-center text-slate-500">{filter === 'pending' ? 'Đã chấm xong câu này. 🎉' : 'Chưa có bài nào được chấm ở câu này.'}</p>}
                 {visible.map(result => (
-                  <GradeCard
+                  <ExamGradeCard
                     key={`${result.id}:${selected.question.id}`}
                     question={selected.question}
                     result={{ ...result, manualGrades: { ...result.manualGrades, ...(local[`${result.id}:${selected.question.id}`] ? { [selected.question.id]: local[`${result.id}:${selected.question.id}`] } : {}) } }}

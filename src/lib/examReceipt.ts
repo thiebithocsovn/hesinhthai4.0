@@ -1,6 +1,7 @@
 import { evaluateQuestion, type QuestionDefinition, type QuestionResponse } from './questionEngine';
 import { getSubmittedExamClassId } from './examStudentClasses';
-import { describeManualAnswer, examHasManualQuestions, examUsesWeightedScoring, formatPoints, isManualQuestion, manualSubmissionCode, questionMaxPoints, summarizeExamScore, type ManualGrade, type RubricItem } from './examManualGrading';
+import { canTeacherGradeQuestion, describeManualAnswer, examHasManualQuestions, examUsesWeightedScoring, formatPoints, isManualQuestion, manualSubmissionCode, questionMaxPoints, summarizeExamScore, type ManualGrade, type RubricItem } from './examManualGrading';
+import { examQuestionHtml } from './examQuestionContent';
 
 export interface ExamReceiptSettings {
   autoPrint: boolean;
@@ -8,6 +9,7 @@ export interface ExamReceiptSettings {
   schoolName: string;
   subject: string;
   invigilatorName: string;
+  includeWrittenQuestions: boolean;
   /** Exams with essay/practical parts: when the single signed receipt is printed. */
   signTiming?: ReceiptSignTiming;
 }
@@ -20,6 +22,7 @@ export const DEFAULT_EXAM_RECEIPT_SETTINGS: ExamReceiptSettings = {
   schoolName: '',
   subject: '',
   invigilatorName: '',
+  includeWrittenQuestions: true,
 };
 
 export interface ReceiptQuestion {
@@ -34,6 +37,7 @@ export interface ReceiptQuestion {
   points?: number;
   rubric?: RubricItem[];
   practicalMode?: 'file' | 'observe';
+  sampleAnswer?: string;
 }
 
 export interface ReceiptExam {
@@ -132,11 +136,10 @@ function selectedOptions(question: ReceiptQuestion, answer: unknown): number[] {
   return typeof answer === 'number' && question.options[answer] !== undefined ? [answer] : [];
 }
 
-function answerText(question: ReceiptQuestion, answer: unknown, correct = false): string {
+export function receiptAnswerText(question: ReceiptQuestion, answer: unknown, correct = false): string {
   if (isManualQuestion(question)) {
     if (correct) return 'Theo hướng dẫn chấm';
-    const text = describeManualAnswer(question, answer);
-    return text.length > 400 ? `${text.slice(0, 400)}…` : text;
+    return describeManualAnswer(question, answer);
   }
   const payload = question.type === 'question_engine' ? question.engineQuestion?.payload : undefined;
   if (payload) {
@@ -171,11 +174,13 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
   const questions = exam.shuffledVersions?.find(version => version.code === result.examVersion)?.questions || exam.questions;
   const entries = questions.map((question, index) => ({ question, number: index + 1, answer: result.answers?.[question.id] }));
   const choices = entries.filter(entry => { const options = questionOptions(entry.question); return options && options.length > 0 && options.length <= 8; });
-  const details = entries.filter(entry => !choices.includes(entry));
+  const written = entries.filter(entry => canTeacherGradeQuestion(entry.question));
+  const details = entries.filter(entry => !choices.includes(entry) && !written.includes(entry));
   const outcome = (question: ReceiptQuestion, answer: unknown) => {
-    if (isManualQuestion(question)) {
+    if (canTeacherGradeQuestion(question)) {
       const grade = result.manualGrades?.[question.id];
-      return grade ? `${formatPoints(grade.points)}/${formatPoints(questionMaxPoints(question))}đ` : 'Chờ chấm';
+      if (grade) return `${formatPoints(Math.min(questionMaxPoints(question), Math.max(0, grade.points)))}/${formatPoints(questionMaxPoints(question))}đ`;
+      if (isManualQuestion(question)) return 'Chờ chấm';
     }
     return receiptQuestionIsCorrect(question, answer) ? 'Đúng' : 'Sai';
   };
@@ -189,10 +194,17 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
     for (let row = 0; row < rows; row++) {
       tables += `<tr>${row === 0 ? `<th rowspan="${rows}" class="row-title">Trả<br>lời</th>` : ''}<th class="option-label">${row + 1}<small>(${label(row)})</small></th>${chunk.map(entry => `<td>${selectedOptions(entry.question, entry.answer).includes(row) ? '×' : ''}</td>`).join('')}</tr>`;
     }
-    if (settings.includeCorrectAnswers) tables += `<tr><th colspan="2" class="row-title">Đáp án đúng</th>${chunk.map(entry => `<td class="answer-key">${escape(answerText(entry.question, entry.answer, true))}</td>`).join('')}</tr><tr><th colspan="2" class="row-title">Kết quả</th>${chunk.map(entry => `<td class="outcome">${outcome(entry.question, entry.answer)}</td>`).join('')}</tr>`;
+    if (settings.includeCorrectAnswers) tables += `<tr><th colspan="2" class="row-title">Đáp án đúng</th>${chunk.map(entry => `<td class="answer-key">${escape(receiptAnswerText(entry.question, entry.answer, true))}</td>`).join('')}</tr><tr><th colspan="2" class="row-title">Kết quả</th>${chunk.map(entry => `<td class="outcome">${outcome(entry.question, entry.answer)}</td>`).join('')}</tr>`;
     tables += '</tbody></table>';
   }
-  if (details.length) tables += `<table class="detail-table"><thead><tr><th>Câu</th><th>Bài làm học sinh</th>${settings.includeCorrectAnswers ? '<th>Đáp án đúng</th><th>Kết quả</th>' : ''}</tr></thead><tbody>${details.map(entry => `<tr><td>${entry.number}</td><td>${escape(plain(answerText(entry.question, entry.answer)))}</td>${settings.includeCorrectAnswers ? `<td>${escape(plain(answerText(entry.question, entry.answer, true)))}</td><td>${outcome(entry.question, entry.answer)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
+  if (details.length) tables += `<table class="detail-table"><thead><tr><th>Câu</th><th>Bài làm học sinh</th>${settings.includeCorrectAnswers ? '<th>Đáp án đúng</th><th>Kết quả</th>' : ''}</tr></thead><tbody>${details.map(entry => `<tr><td>${entry.number}</td><td>${escape(receiptAnswerText(entry.question, entry.answer))}</td>${settings.includeCorrectAnswers ? `<td>${escape(receiptAnswerText(entry.question, entry.answer, true))}</td><td>${outcome(entry.question, entry.answer)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
+  if (written.length) tables += `<section class="written-section"><h2>BÀI LÀM TỰ LUẬN / TRẢ LỜI NGẮN / THỰC HÀNH</h2>${written.map(entry => {
+    const original = exam.questions.find(question => question.id === entry.question.id) || entry.question;
+    const max = questionMaxPoints(original);
+    const grade = result.manualGrades?.[entry.question.id];
+    const kind = entry.question.type === 'essay' ? 'Tự luận' : entry.question.type === 'practical' ? 'Thực hành' : 'Trả lời ngắn';
+    return `<article class="written-answer"><h3>Câu ${entry.number}. ${kind} (${formatPoints(max)} điểm)</h3>${settings.includeWrittenQuestions ? `<div class="question-prompt">${examQuestionHtml(entry.question.text || entry.question.engineQuestion?.prompt || '')}</div>` : ''}<p class="field-label">Bài làm học sinh:</p><div class="student-answer">${escape(receiptAnswerText(entry.question, entry.answer))}</div>${settings.includeCorrectAnswers ? `<div class="marking-guide"><b>Đáp án đúng / Hướng dẫn chấm:</b> ${escape(isManualQuestion(original) ? original.sampleAnswer || (original.rubric || []).map(item => `${item.text} (${formatPoints(item.points)}đ)`).join('; ') || 'Theo hướng dẫn chấm' : receiptAnswerText(entry.question, entry.answer, true))}</div>` : ''}<div class="teacher-mark"><b>Điểm giáo viên: ${grade ? `${formatPoints(Math.min(max, Math.max(0, grade.points)))} / ${formatPoints(max)}` : `……… / ${formatPoints(max)}${isManualQuestion(entry.question) ? ' · Chờ chấm' : ''}`}</b>${!grade && !isManualQuestion(entry.question) && settings.includeCorrectAnswers ? ` · Chấm tự động: ${receiptQuestionIsCorrect(entry.question, entry.answer) ? 'Đúng' : 'Sai'} (${receiptQuestionIsCorrect(entry.question, entry.answer) ? formatPoints(max) : '0'} / ${formatPoints(max)})` : ''}<p>Nhận xét: ${grade?.comment ? escape(grade.comment) : '……………………………………………………………………………………'}</p></div></article>`;
+  }).join('')}</section>`;
   const date = (value?: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '……………………';
   const grade = result.totalQuestions > 0 ? Math.round(result.score / result.totalQuestions * 100) / 10 : 0;
   const weighted = examUsesWeightedScoring(exam) ? summarizeExamScore(exam, result, receiptQuestionIsCorrect) : null;
@@ -212,6 +224,7 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
     table { width: 100%; border-collapse: collapse; margin-bottom: 16px; table-layout: fixed; break-inside: avoid; } th, td { border: 1px solid; padding: 5px 3px; text-align: center; overflow-wrap: anywhere; }
     .answer-grid .row-title { width: 24mm; } .answer-grid th.row-title { font-size: 12px; } .answer-grid th, .answer-grid td { padding: 3px; } .answer-grid tbody td { height: 7mm; font-weight: bold; font-size: 18px; line-height: 1; } .option-label { width: 10mm; } small { display: inline; margin-left: 2px; font-weight: normal; font-size: 10px; }
     .answer-grid td.answer-key { font-size: 12px; } .answer-grid td.outcome { font-size: 11px; } .detail-table { break-inside: auto; } .detail-table th:first-child { width: 12mm; } .detail-table td { text-align: left; font-size: 12px; } .detail-table tr { break-inside: avoid; }
+    .written-section h2 { font-size: 15px; margin: 18px 0 12px; } .written-answer { border-top: 1px solid #777; margin: 0 0 16px; padding-top: 8px; overflow-wrap: anywhere; } .written-answer h3 { font-size: 14px; margin: 0 0 6px; break-after: avoid; } .question-prompt { white-space: pre-wrap; break-after: avoid; } .question-prompt p { margin: 4px 0; } .question-prompt img { max-width: 100%; height: auto; } .question-prompt table { break-inside: auto; } .field-label { font-weight: bold; margin: 8px 0 4px; break-after: avoid; } .student-answer { white-space: pre-wrap; min-height: 12mm; orphans: 3; widows: 3; } .marking-guide { margin-top: 8px; white-space: pre-wrap; font-size: 12px; } .teacher-mark { border: 1px solid #888; margin-top: 8px; padding: 8px; break-inside: avoid; } .teacher-mark p { margin: 6px 0 0; white-space: pre-wrap; }
     .summary { border: 1px solid; padding: 10px 12px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 15px; font-weight: bold; break-inside: avoid; }
     .confirmation { margin: 16px 0 8px; } .signatures { display: grid; grid-template-columns: 1fr 1fr; text-align: center; break-inside: avoid; } .signature-space { height: 25mm; } .record { font-size: 11px; margin-top: 4px; margin-bottom: 0; overflow-wrap: anywhere; } .legend { font-size: 12px; margin: 6px 0 12px; }
     @media screen { body { padding: 16px; background: #e5e7eb; } .sheet { background: white; padding: 12mm; max-width: 210mm; box-shadow: 0 2px 8px #0002; } }

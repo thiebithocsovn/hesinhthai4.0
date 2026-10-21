@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   examHasManualQuestions,
+  canTeacherGradeQuestion,
   examMaxPoints,
   examPointBreakdown,
   examUsesWeightedScoring,
@@ -16,6 +17,8 @@ import {
 import { buildExamReceiptHtml, receiptQuestionIsCorrect, receiptReadyToSign, receiptSignTiming, type ReceiptQuestion } from '../src/lib/examReceipt';
 import { manualSubmissionCode } from '../src/lib/examManualGrading';
 import { pendingTeacherPrintResults, type TeacherPrintResult } from '../src/lib/teacherExamPrinting';
+import { toExamQuestion } from '../src/lib/questionExamBridge';
+import { examQuestionHtml } from '../src/lib/examQuestionContent';
 
 const mc = (id: string, correctAnswer: number, points?: number): ReceiptQuestion & GradableQuestion => ({ id, text: id, options: ['A', 'B', 'C', 'D'], correctAnswer, type: 'multiple_choice', ...(points ? { points } : {}) });
 const essay: ReceiptQuestion & GradableQuestion = { id: 'essay', text: 'Nêu 2 cách giữ an toàn mật khẩu', options: [], correctAnswer: -1, type: 'essay', sampleAnswer: 'Không chia sẻ mật khẩu', rubric: [{ id: 'e1', text: 'Không chia sẻ mật khẩu', points: 1 }, { id: 'e2', text: 'Đặt mật khẩu khó đoán', points: 1 }] };
@@ -122,3 +125,38 @@ assert.ok(atSubmitReceipt.includes(code) && atSubmitReceipt.includes('không c�
 assert.ok(finalReceipt.includes('Phiếu có điểm cuối cùng; học sinh ký một lần.'));
 
 console.log('Exam essay/practical grading checks passed.');
+
+// Short answers may be overridden without making every older submission wait for grading.
+const shortAnswer: ReceiptQuestion = { id: 'short', text: '<p>Nêu tác dụng của bàn phím.</p>', options: [], correctAnswer: -1, type: 'short_answer', correctTextAnswer: 'Nhập dữ liệu', points: 2 };
+const shortExam = { ...exam, questions: [mc('choice', 0), shortAnswer] };
+const shortResult = { id: 'short-result', score: 1, totalQuestions: 2, submittedAt: since, answers: { choice: 0, short: 'Dùng để gõ chữ' } };
+assert.ok(canTeacherGradeQuestion(shortAnswer));
+assert.equal(canTeacherGradeQuestion(mc('choice', 0)), false);
+assert.equal(summarizeExamScore(shortExam, shortResult, receiptQuestionIsCorrect).complete, true);
+assert.equal(summarizeExamScore(shortExam, shortResult, receiptQuestionIsCorrect).earned, 1);
+const overridden = { ...shortResult, manualGrades: { short: { points: 1.5, checks: [], comment: 'Đúng ý, cần nói rõ nhập dữ liệu.', gradedAt: since } } };
+const shortSummary = summarizeExamScore(shortExam, overridden, receiptQuestionIsCorrect);
+assert.equal(shortSummary.earned, 2.5);
+assert.equal(shortSummary.score10, 8.3);
+assert.equal(shortSummary.objectiveCorrect, 1, 'Partial teacher credit is included in points, not counted as a fully correct answer.');
+assert.equal(summarizeExamScore(shortExam, { ...overridden, manualGrades: { short: { ...overridden.manualGrades.short, points: 99 } } }, receiptQuestionIsCorrect).earned, 3);
+const shortReceipt = buildExamReceiptHtml(shortExam, { id: 's1', name: 'Học sinh A' }, overridden);
+assert.ok(shortReceipt.includes('Nêu tác dụng của bàn phím.') && shortReceipt.includes('Dùng để gõ chữ'));
+assert.ok(shortReceipt.includes('1,5 / 2') && shortReceipt.includes('8,3 / 10') && shortReceipt.includes(overridden.manualGrades.short.comment));
+const privateKeyReceipt = buildExamReceiptHtml({ ...shortExam, receiptSettings: { includeCorrectAnswers: false } }, { id: 's1', name: 'Học sinh A' }, overridden);
+assert.ok(!privateKeyReceipt.includes('Nhập dữ liệu') && privateKeyReceipt.includes('Nêu tác dụng của bàn phím.') && privateKeyReceipt.includes('Dùng để gõ chữ'));
+const withoutPrompt = buildExamReceiptHtml({ ...shortExam, receiptSettings: { includeWrittenQuestions: false } }, { id: 's1', name: 'Học sinh A' }, overridden);
+assert.ok(!withoutPrompt.includes('Nêu tác dụng của bàn phím.') && withoutPrompt.includes('Dùng để gõ chữ'));
+const longEssay = 'Dòng bài làm học sinh.\n'.repeat(120) + '<script>giữ nguyên như văn bản</script> KẾT THÚC BÀI';
+const longReceipt = buildExamReceiptHtml({ ...exam, questions: [essay] }, { id: 's1', name: 'Học sinh A' }, { ...shortResult, answers: { essay: longEssay } });
+assert.ok(longReceipt.includes('KẾT THÚC BÀI') && longReceipt.includes('&lt;script&gt;giữ nguyên như văn bản&lt;/script&gt;'));
+assert.ok(!longReceipt.includes('<script>'), 'The complete written answer is escaped, never interpreted as HTML.');
+const shuffledShortExam = { ...shortExam, shuffledVersions: [{ code: 'S1', questions: [shortAnswer, mc('choice', 1)] }] };
+assert.ok(buildExamReceiptHtml(shuffledShortExam, { id: 's1', name: 'Học sinh A' }, { ...overridden, examVersion: 'S1', answers: { ...overridden.answers, choice: 1 } }).includes('Câu 1. Trả lời ngắn'));
+const bankShort = toExamQuestion({ id: 'short', prompt: 'Giải thích ngắn gọn.', points: 1, payload: { type: 'short_answer', acceptedAnswers: ['Đáp án mẫu'] } });
+assert.ok(canTeacherGradeQuestion(bankShort), 'Short answers from the question bank support the same teacher review.');
+assert.equal(summarizeExamScore({ questions: [bankShort] }, { ...shortResult, manualGrades: { short: { ...overridden.manualGrades.short, points: 0.75 } } }, receiptQuestionIsCorrect).score10, 7.5);
+const questionMarkup = examQuestionHtml('<p>H<sub>2</sub>O <img src="https://example.com/question.png" onerror="alert(1)"></p><table><tr><td>Ô dữ liệu</td></tr></table><script>alert(1)</script><img src="data:text/html;base64,abcd">');
+assert.ok(questionMarkup.includes('<sub>2</sub>') && questionMarkup.includes('https://example.com/question.png') && questionMarkup.includes('<table>'));
+assert.ok(!questionMarkup.includes('onerror') && !questionMarkup.includes('<script') && !questionMarkup.includes('data:text/html'));
+console.log('Short-answer teacher overrides, partial points, full written receipts, question text, shuffled numbering and hidden answer keys passed.');
