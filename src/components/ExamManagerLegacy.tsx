@@ -13,6 +13,8 @@ import { auth, db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
 import ExamManualGradingPanel from './ExamManualGradingPanel';
 import ExamSubmissionReview from './ExamSubmissionReview';
+import ExamResultsDeleteDialog from './ExamResultsDeleteDialog';
+import { deleteExamResultBatches } from '../lib/examResultDeletion';
 import type { QuestionDefinition } from '../lib/questionEngine';
 import { choiceQuestionEntries, synchronizeExamVersions } from '../lib/examQuestionLayout';
 import {
@@ -211,6 +213,10 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const [students, setStudents] = useState<StudentAccount[]>([]);
   const [classes, setClasses] = useState<StudentClass[]>([]);
   const [results, setResults] = useState<ExamResult[]>([]);
+  const [resultsReady, setResultsReady] = useState(false);
+  const [resultsError, setResultsError] = useState('');
+  const [resultsNotice, setResultsNotice] = useState('');
+  const [isResultsDeleteOpen, setIsResultsDeleteOpen] = useState(false);
   const [activeSessions, setActiveSessions] = useState<ExamSession[]>([]);
   const restoredPublishedExamIds = useRef(new Set<string>());
   const [publicationError, setPublicationError] = useState('');
@@ -225,6 +231,10 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     setStudents([]);
     setClasses([]);
     setResults([]);
+    setResultsReady(false);
+    setResultsError('');
+    setResultsNotice('');
+    setIsResultsDeleteOpen(false);
     setActiveSessions([]);
     if (accessScope.role === 'guest') {
       return;
@@ -263,10 +273,16 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     }
 
     if (teacherTab === 'results') {
-      subscriptions.push(onSnapshot(resultsQuery, (snapshot: any) => {
+      subscriptions.push(onSnapshot(resultsQuery, { includeMetadataChanges: true }, (snapshot: any) => {
         setResults(filterTeacherOwnedRecords(accessScope,
-          snapshot.docs.map((item: any) => ({ id: item.id, ...item.data() } as ExamResult))));
-      }, () => setResults([])));
+          snapshot.docs.map((item: any) => ({ ...item.data(), id: item.id } as ExamResult))));
+        setResultsReady(!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites);
+        setResultsError('');
+      }, () => {
+        setResults([]);
+        setResultsReady(false);
+        setResultsError('Không thể tải kết quả thi. Hãy kiểm tra kết nối và quyền tài khoản giáo viên.');
+      }));
     }
 
     let pendingSessions: ExamSession[] | null = null;
@@ -526,6 +542,27 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
 
   const handleDeleteResult = (resultId: string) => {
     setResultToDelete(resultId);
+  };
+
+  const handleDeleteResults = async (ids: string[], onProgress: (deleted: number, total: number) => void) => {
+    const access = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
+    const allowedIds = new Set(filterTeacherOwnedRecords(access, results).map(result => result.id));
+    if (!resultsReady || access.role === 'guest' || !ids.length || ids.some(id => !allowedIds.has(id))) {
+      throw new Error('Danh sách kết quả hoặc tài khoản đã thay đổi. Vui lòng tải lại danh sách trước khi xoá.');
+    }
+    setResultsNotice('');
+    const deleted = await deleteExamResultBatches(ids, async batchIds => {
+      const currentAccess = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
+      if (currentAccess.role !== access.role || currentAccess.ownerUid !== access.ownerUid) {
+        throw new Error('Tài khoản đã thay đổi. Vui lòng đăng nhập lại.');
+      }
+      const batch = writeBatch(db);
+      for (const id of batchIds) batch.delete(doc(db, 'results', id));
+      await batch.commit();
+    }, onProgress);
+    setReviewResultId(null);
+    setGradingExamId(null);
+    setResultsNotice(`Đã xoá ${deleted} lượt nộp trong phạm vi đã xác nhận.`);
   };
 
   const handleClearMonitoringHistory = async () => {
@@ -2401,8 +2438,18 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                       Xuất Excel
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => { setResultsNotice(''); setIsResultsDeleteOpen(true); }}
+                    disabled={!resultsReady || results.length === 0}
+                    className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Trash2 className="h-5 w-5" />Xoá kết quả
+                  </button>
                 </div>
               </div>
+              {resultsError && <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{resultsError}</p>}
+              {resultsNotice && <p role="status" className="mb-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{resultsNotice}</p>}
               
               <p className="mb-3 text-sm text-slate-600">Chọn “Xem bài làm” ở từng học sinh để xem đầy đủ câu hỏi, câu trả lời và chấm điểm tự luận, trả lời ngắn hoặc thực hành.</p>
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
@@ -3169,6 +3216,19 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
           </div>
         </div>
       )}
+
+      {isResultsDeleteOpen && <ExamResultsDeleteDialog
+        exams={exams}
+        classes={classes}
+        students={students}
+        results={results}
+        access={resolveTeacherAccessScope(currentUser, auth.currentUser?.uid)}
+        initialExamId={selectedExamIdForResults || exams[0]?.id || ''}
+        initialClassId={selectedClassIdForResults}
+        dataReady={resultsReady}
+        onClose={() => setIsResultsDeleteOpen(false)}
+        onDelete={handleDeleteResults}
+      />}
 
       {/* Delete Result Confirmation Modal */}
       {resultToDelete && (

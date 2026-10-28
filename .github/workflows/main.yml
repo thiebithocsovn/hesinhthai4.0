@@ -80,6 +80,7 @@ jobs:
 
       - name: Verify exam answers, manual grading and printed receipts
         run: |
+          npm run test:exam-result-deletion
           npm run test:exam-manual-grading
           npm run test:exam-receipt
           npm run test:teacher-printing
