@@ -8,12 +8,13 @@ import { loadExamRosterMetadata } from '../lib/examRoster';
 import { gradeSubmittedExam, type TeacherPrintState } from '../lib/teacherExamPrinting';
 import { buildExamReceiptHtml, DEFAULT_EXAM_RECEIPT_SETTINGS, getExamReceiptSettings, getReceiptStudentClassId, receiptReadyToSign, receiptSignTiming, type ExamReceiptSettings } from '../lib/examReceipt';
 import * as XLSX from 'xlsx';
-import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, getDocsFromServer, writeBatch } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
 import ExamManualGradingPanel from './ExamManualGradingPanel';
 import ExamSubmissionReview from './ExamSubmissionReview';
 import ExamResultsDeleteDialog from './ExamResultsDeleteDialog';
+import ExamClassReceiptsDialog from './ExamClassReceiptsDialog';
 import { deleteExamResultBatches } from '../lib/examResultDeletion';
 import type { QuestionDefinition } from '../lib/questionEngine';
 import { choiceQuestionEntries, synchronizeExamVersions } from '../lib/examQuestionLayout';
@@ -217,6 +218,10 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const [resultsError, setResultsError] = useState('');
   const [resultsNotice, setResultsNotice] = useState('');
   const [isResultsDeleteOpen, setIsResultsDeleteOpen] = useState(false);
+  const [classReceiptExamId, setClassReceiptExamId] = useState<string | null>(null);
+  const [classReceiptSessions, setClassReceiptSessions] = useState<ExamSession[]>([]);
+  const [classReceiptSessionsLoading, setClassReceiptSessionsLoading] = useState(false);
+  const [classReceiptSessionsError, setClassReceiptSessionsError] = useState('');
   const [activeSessions, setActiveSessions] = useState<ExamSession[]>([]);
   const restoredPublishedExamIds = useRef(new Set<string>());
   const [publicationError, setPublicationError] = useState('');
@@ -235,6 +240,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     setResultsError('');
     setResultsNotice('');
     setIsResultsDeleteOpen(false);
+    setClassReceiptExamId(null);
     setActiveSessions([]);
     if (accessScope.role === 'guest') {
       return;
@@ -308,6 +314,30 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
       if (sessionUpdateTimer) clearTimeout(sessionUpdateTimer);
     };
   }, [currentUser, appMode, teacherTab]);
+
+  const classReceiptExam = exams.find(exam => exam.id === classReceiptExamId);
+  useEffect(() => {
+    setClassReceiptSessions([]);
+    setClassReceiptSessionsError('');
+    if (!classReceiptExamId) { setClassReceiptSessionsLoading(false); return; }
+    const access = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
+    if (!classReceiptExam || !canAccessTeacherOwnedRecord(access, classReceiptExam)) return;
+    if (!isValidTeacherUid(classReceiptExam.teacherId)) {
+      setClassReceiptSessionsLoading(false);
+      setClassReceiptSessionsError('Kỳ thi chưa có thông tin giáo viên để tra cứu giờ bắt đầu. Các ô thiếu thông tin sẽ để trống.');
+      return;
+    }
+    let cancelled = false;
+    setClassReceiptSessionsLoading(true);
+    const sessionsQuery = query(collection(db, 'exam_sessions'), where('teacherId', '==', classReceiptExam.teacherId), where('examId', '==', classReceiptExamId));
+    void getDocsFromServer(sessionsQuery).then(snapshot => {
+      if (!cancelled) setClassReceiptSessions(filterTeacherOwnedRecords(access,
+        snapshot.docs.map(item => ({ ...item.data(), id: item.id } as ExamSession))));
+    }).catch(() => {
+      if (!cancelled) setClassReceiptSessionsError('Chưa tải được giờ bắt đầu làm bài. Các ô thiếu thông tin sẽ để trống trong biên bản.');
+    }).finally(() => { if (!cancelled) setClassReceiptSessionsLoading(false); });
+    return () => { cancelled = true; };
+  }, [classReceiptExamId, classReceiptExam?.teacherId, currentUser]);
 
   useEffect(() => {
     if (appMode !== 'teacher') return;
@@ -2440,6 +2470,14 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                   )}
                   <button
                     type="button"
+                    onClick={() => setClassReceiptExamId(selectedExamIdForResults || exams[0]?.id || null)}
+                    disabled={!resultsReady || !exams.some(exam => exam.id === (selectedExamIdForResults || exams[0]?.id))}
+                    className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Printer className="h-5 w-5" />Xuất biên bản cả lớp
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => { setResultsNotice(''); setIsResultsDeleteOpen(true); }}
                     disabled={!resultsReady || results.length === 0}
                     className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
@@ -2814,6 +2852,20 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
       </div>
 
       {showReceipt && receiptHtml && <ExamReceiptDialog html={receiptHtml} onClose={() => setShowReceipt(false)} />}
+      {classReceiptExam && <ExamClassReceiptsDialog
+        key={classReceiptExam.id}
+        exam={classReceiptExam}
+        classes={classes}
+        students={students}
+        results={results}
+        sessions={classReceiptSessions}
+        access={resolveTeacherAccessScope(currentUser, auth.currentUser?.uid)}
+        initialClassId={selectedClassIdForResults}
+        dataReady={resultsReady}
+        sessionsLoading={classReceiptSessionsLoading}
+        sessionsError={classReceiptSessionsError}
+        onClose={() => setClassReceiptExamId(null)}
+      />}
       {/* Exam Editor Modal */}
       {isExamModalOpen && editingExam && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">

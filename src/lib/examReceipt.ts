@@ -160,6 +160,10 @@ export function receiptAnswerText(question: ReceiptQuestion, answer: unknown, co
 }
 
 export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent, result: ReceiptResult, startedAt?: string): string {
+  return receiptDocument(`Phiếu nộp bài - ${student.name}`, buildExamReceiptSheet(exam, student, result, startedAt));
+}
+
+function buildExamReceiptSheet(exam: ReceiptExam, student: ReceiptStudent, result: ReceiptResult, startedAt?: string): string {
   const settings = getExamReceiptSettings(exam);
   const questions = exam.shuffledVersions?.find(version => version.code === result.examVersion)?.questions || exam.questions;
   const entries = questions.map((question, index) => ({ question, number: index + 1, answer: result.answers?.[question.id] }));
@@ -205,7 +209,32 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
   const summaryHtml = weighted
     ? `<span>Trắc nghiệm: ${formatPoints(weighted.objectiveEarned)}/${formatPoints(weighted.objectiveMax)} điểm</span>${examHasManualQuestions(exam) ? `<span>Tự luận / thực hành: ${weighted.complete ? `${formatPoints(weighted.manualEarned)}/${formatPoints(weighted.manualMax)} điểm` : 'chờ giáo viên chấm'}</span>` : ''}<span>Điểm: ${weighted.complete ? `${formatPoints(weighted.score10)} / 10` : '……… / 10'}</span>`
     : `<span>Số câu đúng: ${result.score}/${result.totalQuestions}</span><span>Số câu chưa đúng: ${Math.max(0, result.totalQuestions - result.score)}</span><span>Điểm: ${grade.toLocaleString('vi-VN')} / 10</span>`;
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu nộp bài - ${escape(student.name)}</title><style>
+  return `<main class="sheet"><div class="sample">Mẫu số 01</div>
+  <div class="heading"><div><p>${escape(settings.schoolName || 'TRƯỜNG ………………………')}</p><p><b>HỘI ĐỒNG KIỂM TRA</b></p><span class="rule">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div><div><p><b>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</b></p><p><b class="rule">Độc lập – Tự do – Hạnh phúc</b></p></div></div>
+  <h1>BIÊN BẢN LÀM BÀI KIỂM TRA</h1>
+  <div class="metadata"><div><p>Họ và tên: <b>${escape(student.name)}</b></p><p>Lớp: ${escape(exam.classNames?.[getReceiptStudentClassId(exam, student, result) || ''] || 'Chưa được gán lớp')}</p><p>Mã học sinh / SBD: ${escape(student.id)}</p><p>Môn: ${escape(settings.subject || '……………………')}</p></div><div><p>Kỳ thi: ${escape(exam.title)}</p><p>Mã đề: ${escape(result.examVersion || 'Gốc')}</p><p>Thời gian làm bài: ${exam.durationMinutes} phút</p><p>Bắt đầu: ${escape(date(startedAt))}</p><p>Kết thúc: ${escape(date(result.submittedAt))}</p></div></div>
+  ${tables}<p class="legend">Dấu ×: phương án học sinh đã chọn. Ô trống / dấu —: chưa trả lời. Câu đúng được tính theo cách chấm của kỳ thi.</p>
+  <div class="summary">${summaryHtml}</div>
+  <p class="confirmation">Tôi xác nhận các câu trả lời trên là bài làm của tôi và đã nộp bài.</p>
+  <div class="signatures"><div><b>HỌC SINH</b><div><i>(Ký và ghi rõ họ tên)</i></div><div class="signature-space"></div><b>${escape(student.name)}</b></div><div><b>GIÁO VIÊN / GIÁM THỊ</b><div><i>(Ký và ghi rõ họ tên)</i></div><div class="signature-space"></div>${settings.invigilatorName.trim() ? `<b>${escape(settings.invigilatorName.trim())}</b>` : '………………………………'}</div></div>
+  <p class="record">Mã bài nộp: ${escape(result.id)} · Trạng thái: ĐÃ NỘP BÀI · Thời gian trên phiếu: giờ Việt Nam.</p>${signNote}</main>`;
+}
+
+export interface ExamReceiptEntry {
+  student: ReceiptStudent;
+  result: ReceiptResult;
+  startedAt?: string;
+}
+
+/** A single A4 document: every student's receipt starts on a new page. */
+export function buildExamClassReceiptsHtml(exam: ReceiptExam, entries: readonly ExamReceiptEntry[], className: string): string {
+  if (!entries.length) throw new Error('Lớp đã chọn chưa có bài nộp để xuất biên bản.');
+  return receiptDocument(`Biên bản thi - ${className} - ${exam.title}`,
+    entries.map(entry => buildExamReceiptSheet(exam, entry.student, entry.result, entry.startedAt)).join('\n'));
+}
+
+function receiptDocument(title: string, sheets: string): string {
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${escape(title)}</title><style>
     @page { size: A4 portrait; margin: 15mm; }
     * { box-sizing: border-box; } body { margin: 0; color: #000; background: #fff; font: 14px 'Times New Roman', serif; line-height: 1.35; }
     .sheet { max-width: 180mm; margin: 0 auto; padding: 6mm 0; } .sample { text-align: right; font-weight: bold; }
@@ -219,15 +248,10 @@ export function buildExamReceiptHtml(exam: ReceiptExam, student: ReceiptStudent,
     .confirmation { margin: 16px 0 8px; } .signatures { display: grid; grid-template-columns: 1fr 1fr; text-align: center; break-inside: avoid; } .signature-space { height: 25mm; } .record { font-size: 11px; margin-top: 4px; margin-bottom: 0; overflow-wrap: anywhere; } .legend { font-size: 12px; margin: 6px 0 12px; }
     @media screen { body { padding: 16px; background: #e5e7eb; } .sheet { background: white; padding: 12mm; max-width: 210mm; box-shadow: 0 2px 8px #0002; } }
     @media print { .sheet { padding: 0; } }
-  </style></head><body><main class="sheet"><div class="sample">Mẫu số 01</div>
-  <div class="heading"><div><p>${escape(settings.schoolName || 'TRƯỜNG ………………………')}</p><p><b>HỘI ĐỒNG KIỂM TRA</b></p><span class="rule">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div><div><p><b>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</b></p><p><b class="rule">Độc lập – Tự do – Hạnh phúc</b></p></div></div>
-  <h1>BIÊN BẢN LÀM BÀI KIỂM TRA</h1>
-  <div class="metadata"><div><p>Họ và tên: <b>${escape(student.name)}</b></p><p>Lớp: ${escape(exam.classNames?.[getReceiptStudentClassId(exam, student, result) || ''] || 'Chưa được gán lớp')}</p><p>Mã học sinh / SBD: ${escape(student.id)}</p><p>Môn: ${escape(settings.subject || '……………………')}</p></div><div><p>Kỳ thi: ${escape(exam.title)}</p><p>Mã đề: ${escape(result.examVersion || 'Gốc')}</p><p>Thời gian làm bài: ${exam.durationMinutes} phút</p><p>Bắt đầu: ${escape(date(startedAt))}</p><p>Kết thúc: ${escape(date(result.submittedAt))}</p></div></div>
-  ${tables}<p class="legend">Dấu ×: phương án học sinh đã chọn. Ô trống / dấu —: chưa trả lời. Câu đúng được tính theo cách chấm của kỳ thi.</p>
-  <div class="summary">${summaryHtml}</div>
-  <p class="confirmation">Tôi xác nhận các câu trả lời trên là bài làm của tôi và đã nộp bài.</p>
-  <div class="signatures"><div><b>HỌC SINH</b><div><i>(Ký và ghi rõ họ tên)</i></div><div class="signature-space"></div><b>${escape(student.name)}</b></div><div><b>GIÁO VIÊN / GIÁM THỊ</b><div><i>(Ký và ghi rõ họ tên)</i></div><div class="signature-space"></div>${settings.invigilatorName.trim() ? `<b>${escape(settings.invigilatorName.trim())}</b>` : '………………………………'}</div></div>
-  <p class="record">Mã bài nộp: ${escape(result.id)} · Trạng thái: ĐÃ NỘP BÀI · Thời gian trên phiếu: giờ Việt Nam.</p>${signNote}</main></body></html>`;
+
+    @media screen { .sheet + .sheet { margin-top: 24px; } }
+    @media print { .sheet + .sheet { break-before: page; page-break-before: always; } }
+  </style></head><body>${sheets}</body></html>`;
 }
 
 /** Resolves after the browser finishes its print/preview cycle so jobs never overlap. */

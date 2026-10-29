@@ -60,6 +60,7 @@
     "test:exam-receipt": "node --import tsx scripts/test-exam-receipt.ts",
     "test:exam-manual-grading": "node --import tsx scripts/test-exam-manual-grading.ts",
     "test:exam-result-deletion": "node --import tsx scripts/test-exam-result-deletion.ts",
+    "test:exam-class-receipts": "node --import tsx scripts/test-exam-class-receipts.ts",
     "test:practical-file-check": "node --import tsx scripts/test-practical-file-check.ts",
     "test:teacher-printing": "node --import tsx scripts/test-teacher-exam-printing.ts"
   },
