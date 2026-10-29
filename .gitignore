@@ -10,3 +10,4 @@ wall-ai-ui-results/
 *.log
 .env*
 !.env.example
+teacher-password-ui-results/

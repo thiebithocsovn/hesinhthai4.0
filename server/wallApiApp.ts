@@ -1,10 +1,11 @@
 import express from 'express';
 import { createWallOpenAiRouter, createWallAiQuota, type WallOpenAiConfig, type WallOpenAiDependencies } from './wallOpenAi';
 
-export function createWallApiApp(config: WallOpenAiConfig, dependencies: WallOpenAiDependencies) {
+export function createWallApiApp(config: WallOpenAiConfig, dependencies: WallOpenAiDependencies, teacherAdminRouter?: express.Router) {
   const app = express();
   const shared = { ...dependencies, quota: dependencies.quota || createWallAiQuota() };
   app.disable('x-powered-by');
+  if (teacherAdminRouter) app.use('/api/admin', teacherAdminRouter);
   app.get('/healthz', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     // Configuration readiness is not proof of a successful AI request or available credit.

@@ -9,6 +9,8 @@ import { LibraryCard, useLibraryFont } from './library/LibraryCard';
 import { EcosystemLogo } from './library/LibraryArt';
 import { LIBRARY_CATEGORIES, LIBRARY_COUNTS, setLibraryFilter, useLibraryFilter, visibleLibraryCount } from './library/libraryCatalog';
 import { describeTeacherAccountError, MINIMUM_TEACHER_PASSWORD_LENGTH, provisionTeacherAccount, validateTeacherCredentials } from '../lib/teacherAccounts';
+import { changeTeacherPassword } from '../lib/teacherPassword';
+import TeacherPasswordDialog from './TeacherPasswordDialog';
 import { assignPlickerCardIds, filterPlickerStudentsByClasses, removePlickerStudent, renamePlickerStudent } from '../lib/plickerStudents';
 import { isPlickerSystemCategory, mergePlickerCloudRosters, type PlickerLiveQuestionSet } from '../lib/plickerLive';
 import type { PlickerClassroomReport } from '../lib/plickerReports';
@@ -174,6 +176,7 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
   const [teacherAccountError, setTeacherAccountError] = useState('');
   const [isCreatingTeacher, setIsCreatingTeacher] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  const [passwordTeacher, setPasswordTeacher] = useState<Teacher | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -582,27 +585,14 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
   };
 
   const handleResetPassword = (id: string) => {
+    if (currentUser !== 'admin') return;
     const teacher = teachers.find(item => item.id === id);
     if (!teacher?.email) {
       alert('Chưa có email hợp lệ để gửi hướng dẫn đặt lại mật khẩu.');
       return;
     }
 
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Khôi phục mật khẩu',
-      message: `Gửi email đặt lại mật khẩu an toàn đến ${teacher.email}?`,
-      onConfirm: async () => {
-        try {
-          await sendPasswordResetEmail(auth, teacher.email);
-          alert('Đã gửi hướng dẫn đặt lại mật khẩu đến email của giáo viên.');
-          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-        } catch (error) {
-          console.error("Error resetting password:", error);
-          alert('Có lỗi xảy ra khi đặt lại mật khẩu.');
-        }
-      }
-    });
+    setPasswordTeacher(teacher);
   };
 
   const handleToggleStatus = (id: string, currentStatus: 'active' | 'inactive') => {
@@ -821,7 +811,8 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
                             <button 
                               onClick={() => handleResetPassword(teacher.id)}
                               className="p-2 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
-                              title="Reset mật khẩu"
+                              title="Đặt mật khẩu mới / gửi email khôi phục"
+                              aria-label={`Đặt lại mật khẩu cho ${teacher.name}`}
                             >
                               <Key className="w-5 h-5" />
                             </button>
@@ -1885,6 +1876,19 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
         </div>
       )}
       {/* Confirm Dialog Modal */}
+      {currentUser === 'admin' && passwordTeacher && (
+        <TeacherPasswordDialog key={passwordTeacher.id} teacher={passwordTeacher}
+          onClose={() => setPasswordTeacher(null)}
+          onChangePassword={(password, confirmation) => changeTeacherPassword({
+            server: import.meta.env.VITE_TEACHER_ADMIN_API_URL || import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_WALL_OPENAI_API_URL || '',
+            pageUrl: window.location.href,
+            getUser: () => auth.currentUser,
+          }, { teacherId: passwordTeacher.id, email: passwordTeacher.email, password, confirmation })}
+          onSendResetEmail={async () => {
+            if (currentUser !== 'admin' || !auth.currentUser) throw new Error('Vui lòng đăng nhập lại tài khoản quản trị.');
+            await sendPasswordResetEmail(auth, passwordTeacher.email);
+          }} />
+      )}
       {confirmDialog.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">

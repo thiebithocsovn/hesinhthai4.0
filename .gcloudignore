@@ -9,6 +9,8 @@
 !server/wallOpenAi.ts
 !server/wallApiApp.ts
 !server/wallApiServer.ts
+!server/teacherAdmin.ts
+!server/teacherAdminFirebase.ts
 **/.env*
 **/*service-account*
 **/*private-key*

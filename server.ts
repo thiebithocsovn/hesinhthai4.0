@@ -7,6 +7,7 @@ import { getAuth } from 'firebase-admin/auth';
 import firebaseConfig from './firebase-applet-config.json';
 import { createWallOpenAiRouter, createWallAiQuota } from './server/wallOpenAi';
 import { buildOmrResponseSchema } from './src/lib/examOmr';
+import { createFirebaseTeacherAdminRouter } from './server/teacherAdminFirebase';
 
 dotenv.config();
 
@@ -65,6 +66,7 @@ app.use('/api/wall-claude', createWallOpenAiRouter({ ...wallConfig, provider: 'a
   apiKey: process.env.ANTHROPIC_API_KEY?.trim() || '', model: process.env.ANTHROPIC_MODEL?.trim() || 'claude-sonnet-5-5',
 }, wallDependencies));
 
+app.use('/api/admin', createFirebaseTeacherAdminRouter(allowedOrigins));
 app.use(express.json({ limit: '50mb' }));
 
 app.get('/api/health', (_req, res) => {

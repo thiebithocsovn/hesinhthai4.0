@@ -15,7 +15,65 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  teacher-password-api:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # A missing backend credential must not prevent publishing unrelated website updates.
+    continue-on-error: true
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+
+      - name: Check private API deployment credentials
+        id: credentials
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [[ -n "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo '::warning::Teacher password API could not be deployed: FIREBASE_SERVICE_ACCOUNT_JSON is not configured.'
+            echo 'Teacher password management: backend deployment needs FIREBASE_SERVICE_ACCOUNT_JSON. The email recovery option remains available.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Authenticate private API deployment
+        if: steps.credentials.outputs.configured == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+
+      - name: Set up Google Cloud CLI
+        if: steps.credentials.outputs.configured == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Verify password API before deployment
+        if: steps.credentials.outputs.configured == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Test and build password API
+        if: steps.credentials.outputs.configured == 'true'
+        run: |
+          npm ci --legacy-peer-deps --ignore-scripts
+          npm run test:teacher-password
+          npm run build:wall-api
+
+      - name: Update existing private API and check authentication
+        id: deploy
+        if: steps.credentials.outputs.configured == 'true'
+        env:
+          TEACHER_ADMIN_EMAIL: ${{ vars.VITE_ADMIN_EMAIL || 'tuyenthcskimhy@gmail.com' }}
+        run: python3 scripts/deploy-teacher-password-api.py --apply --admin-email "$TEACHER_ADMIN_EMAIL" --github-output "$GITHUB_OUTPUT"
+
   build:
+    needs: teacher-password-api
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     env:
       VITE_APP_BASE_PATH: /hesinhthai4.0/
@@ -24,6 +82,7 @@ jobs:
       VITE_WALL_OPENAI_API_URL: ${{ vars.VITE_WALL_OPENAI_API_URL }}
       VITE_WALL_ANTHROPIC_API_URL: ${{ vars.VITE_WALL_ANTHROPIC_API_URL }}
       VITE_ADMIN_EMAIL: ${{ vars.VITE_ADMIN_EMAIL }}
+      VITE_TEACHER_ADMIN_API_URL: ${{ needs.teacher-password-api.outputs.url || vars.VITE_TEACHER_ADMIN_API_URL }}
       VITE_FIREBASE_APP_CHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APP_CHECK_SITE_KEY }}
       VITE_FIRESTORE_CACHE_MODE: ${{ vars.VITE_FIRESTORE_CACHE_MODE || 'memory' }}
       VITE_GOOGLE_AI_MODEL: ${{ vars.VITE_GOOGLE_AI_MODEL || 'gemini-3.1-flash-lite' }}
@@ -99,6 +158,7 @@ jobs:
           npm run test:firebase-ai-diagnostics
           npm run test:platform
           npm run test:auth-flow
+          npm run test:teacher-password
           npm run test:smart-timetable
           npm run test:question-engine
           npm run test:question-pptx
@@ -122,12 +182,17 @@ jobs:
       - name: Verify teacher AI workflow on desktop and mobile
         run: npm run test:wall-assessment-ui
 
+      - name: Verify teacher password dialog on desktop and mobile
+        run: npm run test:teacher-password-ui
+
       - name: Save UI verification screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wall-ai-ui-results
-          path: wall-ai-ui-results/
+          path: |
+            wall-ai-ui-results/
+            teacher-password-ui-results/
           if-no-files-found: ignore
           retention-days: 7
 

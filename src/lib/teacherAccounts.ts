@@ -9,8 +9,8 @@ import {
   type User,
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
-
-export const MINIMUM_TEACHER_PASSWORD_LENGTH = 8;
+import { MINIMUM_TEACHER_PASSWORD_LENGTH } from './teacherPassword';
+export { MINIMUM_TEACHER_PASSWORD_LENGTH } from './teacherPassword';
 
 export function validateTeacherCredentials(
   email: string,
