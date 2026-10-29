@@ -26,6 +26,12 @@ export default function TeacherPasswordDialog({ teacher, onClose, onChangePasswo
     return () => { if (previous instanceof HTMLElement) previous.focus(); };
   }, []);
 
+  useEffect(() => {
+    if (!busy && (notice || error)) {
+      dialog.current?.querySelector<HTMLElement>('[role="alert"], [role="status"]')?.focus();
+    }
+  }, [busy, notice, error]);
+
   async function perform(action: 'password' | 'email') {
     if (inFlight.current || changed) return;
     setError('');
@@ -109,8 +115,8 @@ export default function TeacherPasswordDialog({ teacher, onClose, onChangePasswo
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500" />
             </div>
           </>}
-          {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-          {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
+          {error && <p role="alert" tabIndex={-1} className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          {notice && <p role="status" tabIndex={-1} className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} disabled={!!busy}
               className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">{changed ? 'Đóng' : 'Hủy'}</button>
