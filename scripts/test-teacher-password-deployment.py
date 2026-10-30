@@ -52,5 +52,11 @@ for name in ['.dockerignore', '.gcloudignore']:
     content = (ROOT / name).read_text()
     assert '!server/teacherAdmin.ts' in content
     assert '!server/teacherAdminFirebase.ts' in content
+    assert '!server/teacherAdminCredentials.ts' in content
     assert '**/.env*' in content
+vercel = json.loads((ROOT / 'vercel.json').read_text())
+assert vercel['framework'] == 'vite'
+assert vercel['buildCommand'] == 'npm run build:static'
+assert vercel['functions']['api/admin/teachers/password.ts']['maxDuration'] == 30
+assert '**/.env*' in (ROOT / '.vercelignore').read_text()
 print('Teacher password deployment passed: existing-service preflight, limited IAM role, retained provider secrets/configuration and private-source packaging.')

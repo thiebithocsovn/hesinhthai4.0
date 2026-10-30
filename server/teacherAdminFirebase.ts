@@ -3,10 +3,11 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { createTeacherAdminRouter } from './teacherAdmin';
+import { teacherAdminAppOptions } from './teacherAdminCredentials';
 
 export function createFirebaseTeacherAdminRouter(origins: Set<string>) {
   const app = () => getApps().find(item => item.name === 'teacher-account-admin') ||
-    initializeApp({ projectId: firebaseConfig.projectId }, 'teacher-account-admin');
+    initializeApp(teacherAdminAppOptions(), 'teacher-account-admin');
   const accountAuth = () => getAuth(app());
   const database = () => getFirestore(app(), firebaseConfig.firestoreDatabaseId);
   // The default identity is the same verified administrator allowed by firestore.rules.

@@ -26,7 +26,7 @@
     "test:question-exam-bridge": "node --import tsx scripts/test-question-exam-bridge.ts",
     "test:platform": "node --import tsx scripts/test-platform.ts",
     "test:auth-flow": "node --import tsx scripts/test-auth-flow.ts",
-    "test:teacher-password": "node --import tsx scripts/test-teacher-password.ts && python3 scripts/test-teacher-password-deployment.py",
+    "test:teacher-password": "node --import tsx scripts/test-teacher-password.ts && node --import tsx scripts/test-teacher-password-serverless.ts && python3 scripts/test-teacher-password-deployment.py",
     "test:teacher-password-ui": "node scripts/test-teacher-password-ui.cjs",
     "test:head-shake": "node --import tsx scripts/test-head-shake-questions.ts",
     "test:student-portal": "node --import tsx scripts/test-exam-student-portal.ts && npm run test:teacher-printing",

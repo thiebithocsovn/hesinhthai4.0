@@ -45,7 +45,12 @@ export function createTeacherAdminRouter(config: TeacherAdminConfig, dependencie
     if (!match) { res.status(401).json({ error: 'Vui lòng đăng nhập tài khoản quản trị.' }); return; }
     let administrator: TeacherAdminIdentity;
     try { administrator = await dependencies.verifyAdministrator(match[1]); }
-    catch { res.status(401).json({ error: 'Phiên quản trị không còn hợp lệ. Vui lòng đăng nhập lại.' }); return; }
+    catch (failure) {
+      if (typeof failure === 'object' && failure && 'code' in failure && failure.code === 'teacher-admin/not-configured') {
+        res.status(503).json({ error: 'Máy chủ đặt mật khẩu chưa được cấu hình quyền Firebase. Vui lòng liên hệ quản trị hệ thống.' }); return;
+      }
+      res.status(401).json({ error: 'Phiên quản trị không còn hợp lệ. Vui lòng đăng nhập lại.' }); return;
+    }
     if (!administrator.uid || administrator.anonymous || !administrator.emailVerified) {
       res.status(403).json({ error: 'Chỉ quản trị viên đã xác minh tài khoản được thay mật khẩu giáo viên.' }); return;
     }

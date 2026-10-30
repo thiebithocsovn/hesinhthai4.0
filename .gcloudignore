@@ -11,6 +11,7 @@
 !server/wallApiServer.ts
 !server/teacherAdmin.ts
 !server/teacherAdminFirebase.ts
+!server/teacherAdminCredentials.ts
 **/.env*
 **/*service-account*
 **/*private-key*
