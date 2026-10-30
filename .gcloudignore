@@ -12,6 +12,8 @@
 !server/teacherAdmin.ts
 !server/teacherAdminFirebase.ts
 !server/teacherAdminCredentials.ts
+!server/teacherAdminFederation.ts
+!server/teacherAdminDocuments.ts
 **/.env*
 **/*service-account*
 **/*private-key*

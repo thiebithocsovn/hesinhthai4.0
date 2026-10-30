@@ -46,7 +46,9 @@ export function createTeacherAdminRouter(config: TeacherAdminConfig, dependencie
     let administrator: TeacherAdminIdentity;
     try { administrator = await dependencies.verifyAdministrator(match[1]); }
     catch (failure) {
-      if (typeof failure === 'object' && failure && 'code' in failure && failure.code === 'teacher-admin/not-configured') {
+      const code = typeof failure === 'object' && failure && 'code' in failure ? String(failure.code) : '';
+      if (['teacher-admin/not-configured', 'app/invalid-credential', 'auth/insufficient-permission', 'auth/internal-error'].includes(code)) {
+        console.warn('Teacher password authentication backend unavailable.', { code });
         res.status(503).json({ error: 'Máy chủ đặt mật khẩu chưa được cấu hình quyền Firebase. Vui lòng liên hệ quản trị hệ thống.' }); return;
       }
       res.status(401).json({ error: 'Phiên quản trị không còn hợp lệ. Vui lòng đăng nhập lại.' }); return;

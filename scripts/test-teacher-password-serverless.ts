@@ -7,6 +7,9 @@ import { createTeacherAdminRouter } from '../server/teacherAdmin';
 import { createTeacherPasswordApp } from '../server/teacherAdminApp';
 import { teacherAdminAppOptions, TeacherAdminConfigurationError } from '../server/teacherAdminCredentials';
 import vercelApp from '../api/admin/teachers/password';
+import { federatedCredential } from '../server/teacherAdminFederation';
+import { readTeacherAdminDocument } from '../server/teacherAdminDocuments';
+import { createRequire } from 'node:module';
 
 const origin = 'https://thiebithocsovn.github.io';
 const payload = { teacherId: 'qa-teacher', email: 'teacher@example.edu', newPassword: 'QA-only-2026-pass!' };
@@ -50,6 +53,42 @@ assert.deepEqual(writes, [0, 1].map(() => ({ uid: payload.teacherId, password: p
 
 assert.deepEqual(teacherAdminAppOptions({}), { projectId: firebaseConfig.projectId });
 assert.throws(() => teacherAdminAppOptions({ VERCEL: '1' }), TeacherAdminConfigurationError);
+const federation = { VERCEL: '1', VERCEL_ENV: 'production',
+  TEACHER_ADMIN_WIF_PROVIDER: 'projects/154715124810/locations/global/workloadIdentityPools/hesinhthai-teacher-password/providers/vercel-production',
+  TEACHER_ADMIN_SERVICE_ACCOUNT: 'teacher-password-api@' + firebaseConfig.projectId + '.iam.gserviceaccount.com' };
+assert.ok(teacherAdminAppOptions(federation).credential);
+for (const overrides of [{ VERCEL_ENV: 'preview' }, { VERCEL: '' }, { TEACHER_ADMIN_SERVICE_ACCOUNT: 'outside@other-project.iam.gserviceaccount.com' },
+  { TEACHER_ADMIN_WIF_PROVIDER: 'projects/other/locations/global/workloadIdentityPools/untrusted/providers/other' }]) {
+  assert.throws(() => teacherAdminAppOptions({ ...federation, ...overrides }), TeacherAdminConfigurationError);
+}
+const credential = federatedCredential({ credentials: { expiry_date: Date.now() + 60_000 }, async getAccessToken() { return { token: 'qa-only-oauth-token' }; } });
+assert.ok((await credential.getAccessToken()).expires_in > 0);
+await assert.rejects(federatedCredential({ credentials: {}, async getAccessToken() { return { token: null }; } }).getAccessToken(), /unavailable/);
+const documentUrl = 'https://firestore.googleapis.com/v1/projects/' + firebaseConfig.projectId + '/databases/' + firebaseConfig.firestoreDatabaseId + '/documents/teachers/qa-teacher';
+const fetchDocument = (async (url, options) => {
+  assert.equal(String(url), documentUrl + '?mask.fieldPaths=id&mask.fieldPaths=email');
+  assert.equal((options?.headers as Record<string, string>).Authorization, 'Bearer qa-only-oauth-token');
+  assert.equal(options?.redirect, 'error');
+  assert.equal(options?.cache, 'no-store');
+  return Response.json({ name: documentUrl.replace('https://firestore.googleapis.com/v1/', ''),
+    fields: { id: { stringValue: payload.teacherId }, email: { stringValue: payload.email } } });
+}) as typeof fetch;
+assert.deepEqual(await readTeacherAdminDocument(credential, 'teachers', payload.teacherId, fetchDocument), { id: payload.teacherId, email: payload.email });
+assert.equal(await readTeacherAdminDocument(credential, 'teachers', payload.teacherId, async () => new Response('', { status: 404 })), null);
+await assert.rejects(readTeacherAdminDocument(credential, 'teachers', payload.teacherId, async () => Response.json({ name: 'projects/wrong/documents/teachers/qa-teacher' })), /Invalid/);
+await assert.rejects(readTeacherAdminDocument(credential, 'teachers', '../outside', fetchDocument), /Invalid/);
+await assert.rejects(readTeacherAdminDocument(credential, 'teachers', payload.teacherId, async () => new Response('sensitive-provider-failure', { status: 403 })), /database is unavailable/);
+const setup = createRequire(import.meta.url)('./configure-teacher-password-federation.cjs');
+const oldPolicy = { version: 3, etag: 'qa-etag', bindings: [{ role: 'roles/viewer', members: ['user:owner@example.edu'], condition: { expression: 'true' } }] };
+const newPolicy = setup.mergeBinding(oldPolicy, 'roles/iam.workloadIdentityUser', setup.MEMBER);
+assert.deepEqual(newPolicy.bindings[0], oldPolicy.bindings[0]);
+assert.equal(newPolicy.etag, oldPolicy.etag);
+assert.equal(oldPolicy.bindings.length, 1, 'Policy updates preserve the input and all unrelated grants.');
+assert.deepEqual(setup.mergeBinding(newPolicy, 'roles/iam.workloadIdentityUser', setup.MEMBER), newPolicy);
+setup.validateRole({ includedPermissions: setup.PERMISSIONS, stage: 'GA' });
+assert.throws(() => setup.validateRole({ includedPermissions: [...setup.PERMISSIONS, 'firebaseauth.users.delete'], stage: 'GA' }));
+setup.validateProvider(setup.PROVIDER_CONFIG);
+assert.throws(() => setup.validateProvider({ ...setup.PROVIDER_CONFIG, attributeCondition: 'true' }));
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048,
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
 const account = { type: 'service_account', project_id: firebaseConfig.projectId,

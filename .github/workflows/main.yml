@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   teacher-password-api:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.TEACHER_PASSWORD_API_HOST == 'cloud-run'
     runs-on: ubuntu-latest
     # A missing backend credential must not prevent publishing unrelated website updates.
     continue-on-error: true
@@ -54,7 +54,7 @@ jobs:
         if: steps.credentials.outputs.configured == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - name: Test and build password API
@@ -117,7 +117,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies

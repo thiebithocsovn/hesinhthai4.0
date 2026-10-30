@@ -1,15 +1,15 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
 import { createTeacherAdminRouter } from './teacherAdmin';
 import { teacherAdminAppOptions } from './teacherAdminCredentials';
+import { readTeacherAdminDocument } from './teacherAdminDocuments';
 
 export function createFirebaseTeacherAdminRouter(origins: Set<string>) {
   const app = () => getApps().find(item => item.name === 'teacher-account-admin') ||
     initializeApp(teacherAdminAppOptions(), 'teacher-account-admin');
   const accountAuth = () => getAuth(app());
-  const database = () => getFirestore(app(), firebaseConfig.firestoreDatabaseId);
+  const document = (collection: 'admins' | 'teachers', uid: string) =>
+    readTeacherAdminDocument(app().options.credential!, collection, uid);
   // The default identity is the same verified administrator allowed by firestore.rules.
   const administratorEmails = new Set((process.env.TEACHER_ADMIN_EMAILS || 'tuyenthcskimhy@gmail.com')
     .split(',').map(email => email.trim().toLowerCase()).filter(Boolean));
@@ -20,13 +20,8 @@ export function createFirebaseTeacherAdminRouter(origins: Set<string>) {
         anonymous: identity.firebase?.sign_in_provider === 'anonymous', admin: identity.admin === true,
         role: typeof identity.role === 'string' ? identity.role : undefined };
     },
-    async isStoredAdministrator(uid) { return (await database().collection('admins').doc(uid).get()).exists; },
-    async getTeacher(uid) {
-      const profile = await database().collection('teachers').doc(uid).get();
-      if (!profile.exists) return null;
-      const data = profile.data()!;
-      return { id: data.id, email: data.email };
-    },
+    async isStoredAdministrator(uid) { return (await document('admins', uid)) !== null; },
+    async getTeacher(uid) { return document('teachers', uid); },
     async getAccount(uid) {
       const account = await accountAuth().getUser(uid);
       return { email: account.email, customClaims: account.customClaims };

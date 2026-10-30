@@ -1,5 +1,6 @@
 import { cert, type AppOptions } from 'firebase-admin/app';
 import firebaseConfig from '../firebase-applet-config.json';
+import { createTeacherAdminFederation } from './teacherAdminFederation';
 
 export class TeacherAdminConfigurationError extends Error {
   readonly code = 'teacher-admin/not-configured';
@@ -9,6 +10,10 @@ export class TeacherAdminConfigurationError extends Error {
 // Server-only configuration. Never import this module into the browser application.
 export function teacherAdminAppOptions(environment: NodeJS.ProcessEnv = process.env): AppOptions {
   const options: AppOptions = { projectId: firebaseConfig.projectId };
+  try {
+    const federation = createTeacherAdminFederation(environment);
+    if (federation) return { ...options, credential: federation };
+  } catch { throw new TeacherAdminConfigurationError(); }
   const value = environment.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
   if (value) {
     try {

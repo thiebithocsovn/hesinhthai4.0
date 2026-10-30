@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --legacy-peer-deps --ignore-scripts
@@ -6,7 +6,7 @@ COPY server/ server/
 COPY firebase-applet-config.json ./
 RUN npm run build:wall-api && npm prune --omit=dev --legacy-peer-deps --ignore-scripts
 
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 ENV NODE_ENV=production PORT=8080
 WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules node_modules
