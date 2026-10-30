@@ -12,7 +12,7 @@ const TRIAL_ACTIVE_APPLICATION_KEY = 'smartclass_trial_active_application_v1';
 const GUEST_PLICKER_CLASSES_KEY = 'smartclass_trial_plicker_classes_v1';
 const GUEST_PLICKER_STUDENTS_KEY = 'smartclass_trial_plicker_students_v1';
 
-type TrialApplicationId = Exclude<EcosystemApplicationId, 'exam-manager'>;
+type TrialApplicationId = Exclude<EcosystemApplicationId, 'exam-manager' | 'kpi-manager'>;
 
 interface GuestPlickerClass {
   id: string;
@@ -34,13 +34,13 @@ const PRODUCT_NAME_TO_ID = new Map(
 function readStoredApplication(): TrialApplicationId | null {
   try {
     const explicitTrial = sessionStorage.getItem(TRIAL_ACTIVE_APPLICATION_KEY) as EcosystemApplicationId | null;
-    if (explicitTrial && explicitTrial !== 'exam-manager' && ECOSYSTEM_APPLICATIONS.some(item => item.id === explicitTrial)) {
+    if (explicitTrial && explicitTrial !== 'exam-manager' && explicitTrial !== 'kpi-manager' && ECOSYSTEM_APPLICATIONS.some(item => item.id === explicitTrial)) {
       return explicitTrial;
     }
 
     const savedView = sessionStorage.getItem('currentView');
     const parsed = savedView ? JSON.parse(savedView) as EcosystemApplicationId : null;
-    if (parsed && parsed !== 'exam-manager' && ECOSYSTEM_APPLICATIONS.some(item => item.id === parsed)) return parsed;
+    if (parsed && parsed !== 'exam-manager' && parsed !== 'kpi-manager' && ECOSYSTEM_APPLICATIONS.some(item => item.id === parsed)) return parsed;
   } catch {
     return null;
   }
@@ -212,6 +212,14 @@ export default function ProductTrialController() {
       if (signedIn) return;
       const applicationId = findProductId(event.target);
       if (!applicationId) return;
+
+      if (applicationId === 'kpi-manager') {
+        event.preventDefault();
+        event.stopPropagation();
+        sessionStorage.setItem('edukpi.pending', '1');
+        goToAuth('login');
+        return;
+      }
 
       if (applicationId === 'exam-manager') {
         event.preventDefault();
