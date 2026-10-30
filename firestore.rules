@@ -475,5 +475,199 @@ service cloud.firestore {
       allow create, update: if isAdmin() && publicPlatformStatsAreSafe(statId, incoming());
       allow delete: if isAdmin();
     }
+    // EduKPI AI: isolated school workspaces. A school identifier is not a credential.
+    function kpiSchoolPath(schoolId) {
+      return /databases/$(database)/documents/kpiSchools/$(schoolId);
+    }
+    function kpiMemberPath(schoolId, uid) {
+      return /databases/$(database)/documents/kpiSchools/$(schoolId)/members/$(uid);
+    }
+    function kpiPeriodPath(schoolId, month) {
+      return /databases/$(database)/documents/kpiSchools/$(schoolId)/periods/$(month);
+    }
+    function kpiOwner(schoolId) {
+      return isSignedIn() && exists(kpiSchoolPath(schoolId)) &&
+        get(kpiSchoolPath(schoolId)).data.ownerUid == request.auth.uid;
+    }
+    function kpiActiveMember(schoolId) {
+      return isSignedIn() && exists(kpiMemberPath(schoolId, request.auth.uid)) &&
+        get(kpiMemberPath(schoolId, request.auth.uid)).data.status == 'active';
+    }
+    function kpiCanAccess(schoolId) {
+      return kpiOwner(schoolId) || kpiActiveMember(schoolId);
+    }
+    function kpiReviewer(schoolId) {
+      return kpiOwner(schoolId) || (
+        kpiActiveMember(schoolId) &&
+        get(kpiMemberPath(schoolId, request.auth.uid)).data.role == 'reviewer'
+      );
+    }
+    function kpiCriteriaSafe(criteria) {
+      return criteria is list && criteria.size() == 6 &&
+        criteria[0].keys().hasOnly(['key','label','max','group']) &&
+        criteria[1].keys().hasOnly(['key','label','max','group']) &&
+        criteria[2].keys().hasOnly(['key','label','max','group']) &&
+        criteria[3].keys().hasOnly(['key','label','max','group']) &&
+        criteria[4].keys().hasOnly(['key','label','max','group']) &&
+        criteria[5].keys().hasOnly(['key','label','max','group']) &&
+        criteria[0].key == 'ethics' && criteria[0].group == 'general' &&
+        criteria[1].key == 'skills' && criteria[1].group == 'general' &&
+        criteria[2].key == 'innovation' && criteria[2].group == 'general' &&
+        criteria[3].key == 'quantity' && criteria[3].group == 'results' &&
+        criteria[4].key == 'quality' && criteria[4].group == 'results' &&
+        criteria[5].key == 'timeliness' && criteria[5].group == 'results' &&
+        criteria[0].label is string && criteria[0].label.size() > 0 && criteria[0].label.size() <= 200 &&
+        criteria[1].label is string && criteria[1].label.size() > 0 && criteria[1].label.size() <= 200 &&
+        criteria[2].label is string && criteria[2].label.size() > 0 && criteria[2].label.size() <= 200 &&
+        criteria[3].label is string && criteria[3].label.size() > 0 && criteria[3].label.size() <= 200 &&
+        criteria[4].label is string && criteria[4].label.size() > 0 && criteria[4].label.size() <= 200 &&
+        criteria[5].label is string && criteria[5].label.size() > 0 && criteria[5].label.size() <= 200 &&
+        criteria[0].max is number && criteria[0].max >= 0 && criteria[0].max <= 100 &&
+        criteria[1].max is number && criteria[1].max >= 0 && criteria[1].max <= 100 &&
+        criteria[2].max is number && criteria[2].max >= 0 && criteria[2].max <= 100 &&
+        criteria[3].max is number && criteria[3].max >= 0 && criteria[3].max <= 100 &&
+        criteria[4].max is number && criteria[4].max >= 0 && criteria[4].max <= 100 &&
+        criteria[5].max is number && criteria[5].max >= 0 && criteria[5].max <= 100 &&
+        criteria[0].max + criteria[1].max + criteria[2].max +
+        criteria[3].max + criteria[4].max + criteria[5].max == 100;
+    }
+    function kpiScoresSafe(scores, criteria) {
+      return scores is map &&
+        scores.keys().hasAll(['ethics','skills','innovation','quantity','quality','timeliness']) &&
+        scores.keys().hasOnly(['ethics','skills','innovation','quantity','quality','timeliness']) &&
+        scores.ethics is number && scores.ethics >= 0 && scores.ethics <= criteria[0].max &&
+        scores.skills is number && scores.skills >= 0 && scores.skills <= criteria[1].max &&
+        scores.innovation is number && scores.innovation >= 0 && scores.innovation <= criteria[2].max &&
+        scores.quantity is number && scores.quantity >= 0 && scores.quantity <= criteria[3].max &&
+        scores.quality is number && scores.quality >= 0 && scores.quality <= criteria[4].max &&
+        scores.timeliness is number && scores.timeliness >= 0 && scores.timeliness <= criteria[5].max;
+    }
+    function kpiTotal(scores) {
+      return scores.ethics + scores.skills + scores.innovation +
+        scores.quantity + scores.quality + scores.timeliness;
+    }
+    function kpiEntryShape(uid, criteria) {
+      let data = incoming();
+      return data.keys().hasAll(['uid','name','team','selfScores','selfTotal','status',
+          'reviewScores','reviewTotal','note','reviewedBy','approvedBy','createdAt','updatedAt']) &&
+        data.keys().hasOnly(['uid','name','team','selfScores','selfTotal','status',
+          'reviewScores','reviewTotal','note','reviewedBy','approvedBy','createdAt','updatedAt']) &&
+        data.uid == uid &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 160 &&
+        data.team is string && data.team.size() <= 120 &&
+        data.note is string && data.note.size() <= 1500 &&
+        data.reviewedBy is string && data.reviewedBy.size() <= 128 &&
+        data.approvedBy is string && data.approvedBy.size() <= 128 &&
+        data.createdAt is timestamp && data.updatedAt is timestamp &&
+        data.status in ['draft','submitted','returned','reviewed','approved'] &&
+        kpiScoresSafe(data.selfScores, criteria) &&
+        data.selfTotal == kpiTotal(data.selfScores) &&
+        ((data.reviewScores == null && data.reviewTotal == null) ||
+         (kpiScoresSafe(data.reviewScores, criteria) &&
+          data.reviewTotal == kpiTotal(data.reviewScores)));
+    }
+    function kpiPeriodOpen(schoolId, month) {
+      return exists(kpiPeriodPath(schoolId, month)) &&
+        get(kpiPeriodPath(schoolId, month)).data.status == 'open';
+    }
+
+    match /kpiSchools/{schoolId} {
+      allow get: if kpiCanAccess(schoolId);
+      allow list: if false;
+      allow create: if (isActiveTeacher() || isAdmin()) &&
+        incoming().keys().hasAll(['name','ownerUid','criteria','createdAt']) &&
+        incoming().keys().hasOnly(['name','ownerUid','criteria','createdAt']) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 160 &&
+        incoming().createdAt == request.time &&
+        kpiCriteriaSafe(incoming().criteria);
+      allow update: if kpiOwner(schoolId) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().keys().hasOnly(['name','ownerUid','criteria','createdAt']) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name','criteria']) &&
+        incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 160 &&
+        kpiCriteriaSafe(incoming().criteria);
+      allow delete: if false;
+
+      match /members/{memberUid} {
+        allow get: if isOwner(memberUid) || kpiReviewer(schoolId);
+        allow list: if kpiReviewer(schoolId);
+        allow create, update: if kpiOwner(schoolId) &&
+          isValidId(memberUid) &&
+          incoming().keys().hasAll(['uid','name','team','role','status']) &&
+          incoming().keys().hasOnly(['uid','name','team','role','status']) &&
+          incoming().uid == memberUid &&
+          incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 160 &&
+          incoming().team is string && incoming().team.size() <= 120 &&
+          incoming().role in ['teacher','reviewer'] &&
+          incoming().status == 'active' &&
+          exists(/databases/$(database)/documents/teachers/$(memberUid)) &&
+          get(/databases/$(database)/documents/teachers/$(memberUid)).data.status == 'active';
+        allow delete: if kpiOwner(schoolId);
+      }
+      match /periods/{month} {
+        allow read: if kpiCanAccess(schoolId);
+        allow create: if kpiOwner(schoolId) &&
+          month.matches('^20[0-9]{2}-(0[1-9]|1[0-2])$') &&
+          incoming().keys().hasAll(['month','status','criteria','createdAt','updatedAt']) &&
+          incoming().keys().hasOnly(['month','status','criteria','createdAt','updatedAt']) &&
+          incoming().month == month && incoming().status == 'open' &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          kpiCriteriaSafe(incoming().criteria) &&
+          incoming().criteria == get(kpiSchoolPath(schoolId)).data.criteria;
+        allow update: if kpiOwner(schoolId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['status','updatedAt']) &&
+          incoming().month == existing().month &&
+          incoming().criteria == existing().criteria &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().status in ['open','closed'] &&
+          incoming().status != existing().status &&
+          incoming().updatedAt == request.time;
+        allow delete: if false;
+
+        match /entries/{employeeUid} {
+          allow get: if (isOwner(employeeUid) && kpiCanAccess(schoolId)) || kpiReviewer(schoolId);
+          allow list: if kpiReviewer(schoolId);
+          allow create: if isOwner(employeeUid) && kpiActiveMember(schoolId) &&
+            kpiPeriodOpen(schoolId, month) &&
+            kpiEntryShape(employeeUid, get(kpiPeriodPath(schoolId, month)).data.criteria) &&
+            incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+            incoming().status in ['draft','submitted'] &&
+            incoming().reviewScores == null && incoming().reviewTotal == null &&
+            incoming().note == '' && incoming().reviewedBy == '' && incoming().approvedBy == '';
+          allow update: if kpiPeriodOpen(schoolId, month) &&
+            kpiEntryShape(employeeUid, get(kpiPeriodPath(schoolId, month)).data.criteria) &&
+            incoming().uid == existing().uid &&
+            incoming().name == existing().name &&
+            incoming().team == existing().team &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            (
+              (isOwner(employeeUid) && kpiActiveMember(schoolId) &&
+                existing().status in ['draft','returned'] &&
+                incoming().status in ['draft','submitted'] &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['selfScores','selfTotal','status','updatedAt']))
+              ||
+              (kpiReviewer(schoolId) && !isOwner(employeeUid) &&
+                existing().status in ['submitted','reviewed'] &&
+                incoming().status in ['reviewed','returned'] &&
+                incoming().reviewScores != null &&
+                incoming().reviewTotal == kpiTotal(incoming().reviewScores) &&
+                incoming().reviewedBy == request.auth.uid &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'reviewScores','reviewTotal','note','reviewedBy','status','updatedAt'
+                ]))
+              ||
+              (kpiOwner(schoolId) && !isOwner(employeeUid) &&
+                existing().status == 'reviewed' && incoming().status == 'approved' &&
+                incoming().approvedBy == request.auth.uid &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['status','approvedBy','updatedAt']))
+            );
+          allow delete: if false;
+        }
+      }
+    }
+
   }
 }
