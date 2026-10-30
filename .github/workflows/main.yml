@@ -174,7 +174,7 @@ jobs:
           java-version: '21'
 
       - name: Validate Firebase data access using Firestore emulator
-        run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:learning-wall-rules && LEARNING_WALL_RULES_FILE=firestore.learning-wall.rules npm run test:learning-wall-rules && npm run test:exam-access-rules && EXAM_RULES_FILE=firestore.learning-wall.rules npm run test:exam-access-rules"
+        run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:learning-wall-rules && npm run test:kpi-rules && LEARNING_WALL_RULES_FILE=firestore.learning-wall.rules npm run test:learning-wall-rules && npm run test:exam-access-rules && EXAM_RULES_FILE=firestore.learning-wall.rules npm run test:exam-access-rules"
 
       - name: Install Chromium for UI verification
         run: npx playwright install --with-deps chromium
