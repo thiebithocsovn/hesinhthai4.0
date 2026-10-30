@@ -1,0 +1,396 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Building2, CheckCircle2, ClipboardCheck, Download, LockKeyhole, Plus, Save, ShieldCheck, Users } from 'lucide-react';
+import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import type { Teacher } from '../types';
+import {
+  DEFAULT_KPI_CRITERIA, KPI_KEYS, emptyKpiInputs, validateKpiCriteria, validateKpiScores,
+  provisionalKpiRating, kpiCsvSafe,
+  type KpiCriterion, type KpiEntry, type KpiEntryStatus, type KpiMember, type KpiPeriod,
+  type KpiRole, type KpiSchool, type KpiKey,
+} from '../lib/kpi';
+
+type Props = { currentUser: Teacher | 'admin'; onBack: () => void };
+const STATUS:Record<KpiEntryStatus,string> = {
+  draft:'Bản nháp', submitted:'Chờ tổ duyệt', returned:'Cần chấm lại',
+  reviewed:'Tổ đã duyệt', approved:'Đã phê duyệt',
+};
+const box = 'rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm';
+const inputClass = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
+const primary = 'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50';
+const secondary = 'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50';
+
+function messageOf(error:unknown):string {
+  const code = (error as {code?:string})?.code;
+  if (code === 'permission-denied') return 'Không có quyền truy cập hoặc quy tắc Firestore KPI chưa được triển khai. Liên hệ quản trị hệ thống.';
+  return error instanceof Error ? error.message : 'Có lỗi khi kết nối dữ liệu.';
+}
+function fromScores(scores:Record<KpiKey,number>|null|undefined):Record<KpiKey,string> {
+  const blank=emptyKpiInputs();
+  if (scores) KPI_KEYS.forEach(key=>{ blank[key] = String(scores[key] ?? ''); });
+  return blank;
+}
+function currentMonth():string {
+  const date=new Date();
+  return String(date.getFullYear())+'-'+String(date.getMonth()+1).padStart(2,'0');
+}
+
+export default function KpiManager({ currentUser, onBack }:Props) {
+  const uid=auth.currentUser?.uid || '';
+  const userName=currentUser === 'admin' ? (auth.currentUser?.displayName || 'Quản trị hệ thống') : currentUser.name;
+  const [lookupCode,setLookupCode]=useState('');
+  const [schoolCode,setSchoolCode]=useState('');
+  const [school,setSchool]=useState<KpiSchool|null>(null);
+  const [member,setMember]=useState<KpiMember|null>(null);
+  const [members,setMembers]=useState<KpiMember[]>([]);
+  const [schoolName,setSchoolName]=useState('');
+  const [month,setMonth]=useState(currentMonth);
+  const [period,setPeriod]=useState<KpiPeriod|null>(null);
+  const [entries,setEntries]=useState<KpiEntry[]>([]);
+  const [myEntry,setMyEntry]=useState<KpiEntry|null>(null);
+  const [scores,setScores]=useState<Record<KpiKey,string>>(emptyKpiInputs);
+  const [criteriaDraft,setCriteriaDraft]=useState<KpiCriterion[]>(DEFAULT_KPI_CRITERIA.map(c=>({...c})));
+  const [uidToAdd,setUidToAdd]=useState('');
+  const [nameToAdd,setNameToAdd]=useState('');
+  const [teamToAdd,setTeamToAdd]=useState('');
+  const [roleToAdd,setRoleToAdd]=useState<KpiRole>('teacher');
+  const [reviewTarget,setReviewTarget]=useState<KpiEntry|null>(null);
+  const [reviewScores,setReviewScores]=useState<Record<KpiKey,string>>(emptyKpiInputs);
+  const [reviewNote,setReviewNote]=useState('');
+  const [notice,setNotice]=useState('');
+  const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [editingCriteria,setEditingCriteria]=useState(false);
+  const [membersOpen,setMembersOpen]=useState(false);
+
+  const isOwner=!!school && school.ownerUid===uid;
+  const isReviewer=isOwner || (member?.role==='reviewer' && member.status==='active');
+  const isMember=!!school && (isOwner || member?.status==='active');
+  const criteria=period?.criteria || school?.criteria || DEFAULT_KPI_CRITERIA;
+  const canEnter=period?.status==='open' && isMember && (!myEntry || myEntry.status==='draft' || myEntry.status==='returned');
+  const preview=useMemo(()=>validateKpiScores(scores,criteria),[scores,criteria]);
+
+  function success(text:string) { setNotice(text); setError(''); }
+  function fail(err:unknown) { setError(messageOf(err)); setNotice(''); }
+  async function safely(action:()=>Promise<void>) {
+    if (busy) return;
+    setBusy(true);setError('');setNotice('');
+    try { await action(); } catch(err) { fail(err); } finally { setBusy(false); }
+  }
+
+  useEffect(()=>{
+    if(!uid) return;
+    const code=sessionStorage.getItem('edukpi.school.'+uid);
+    if(code && /^[A-Za-z0-9_-]{8,128}$/.test(code)) {
+      setSchoolCode(code);setLookupCode(code);
+    }
+  },[uid]);
+
+  useEffect(()=>{
+    setSchool(null);setMember(null);setMembers([]);setPeriod(null);
+    setEntries([]);setMyEntry(null);setScores(emptyKpiInputs());
+    if(!uid || !schoolCode) return;
+    let cancelled=false;
+    const schoolRef=doc(db,'kpiSchools',schoolCode);
+    const unsub=onSnapshot(schoolRef,snapshot=>{
+      if(cancelled)return;
+      if(!snapshot.exists()) { setSchool(null);setError('Không tìm thấy trường với mã này.');return; }
+      setSchool(snapshot.data() as KpiSchool);
+      setCriteriaDraft((snapshot.data() as KpiSchool).criteria.map(item=>({...item})));
+      setError('');
+    },err=>{if(!cancelled){setSchool(null);fail(err);}});
+    const memberRef=doc(db,'kpiSchools',schoolCode,'members',uid);
+    const unsubMember=onSnapshot(memberRef,snapshot=>{
+      if(!cancelled)setMember(snapshot.exists()?snapshot.data() as KpiMember:null);
+    },err=>{if(!cancelled && (err as {code?:string}).code!=='permission-denied')fail(err);});
+    return ()=>{cancelled=true;unsub();unsubMember();};
+  },[uid,schoolCode]);
+
+  useEffect(()=>{
+    if(!isMember || !schoolCode)return;
+    return onSnapshot(doc(db,'kpiSchools',schoolCode,'periods',month),
+      snapshot=>setPeriod(snapshot.exists()?snapshot.data() as KpiPeriod:null),
+      err=>fail(err));
+  },[isMember,schoolCode,month]);
+
+  useEffect(()=>{
+    if(!isMember || !schoolCode || !period)return;
+    const ref=doc(db,'kpiSchools',schoolCode,'periods',month,'entries',uid);
+    return onSnapshot(ref,snapshot=>{
+      const item=snapshot.exists()?snapshot.data() as KpiEntry:null;
+      setMyEntry(item);setScores(fromScores(item?.selfScores));
+    },err=>fail(err));
+  },[isMember,schoolCode,month,period?.status,uid]);
+
+  useEffect(()=>{
+    if(!isReviewer || !schoolCode || !period)return;
+    return onSnapshot(collection(db,'kpiSchools',schoolCode,'periods',month,'entries'),
+      snapshot=>setEntries(snapshot.docs.map(item=>item.data() as KpiEntry)),
+      err=>fail(err));
+  },[isReviewer,schoolCode,month,period?.status]);
+
+  useEffect(()=>{
+    if(!isReviewer || !schoolCode)return;
+    return onSnapshot(collection(db,'kpiSchools',schoolCode,'members'),
+      snapshot=>setMembers(snapshot.docs.map(item=>item.data() as KpiMember)),
+      err=>fail(err));
+  },[isReviewer,schoolCode]);
+
+  function connect() {
+    const code=lookupCode.trim();
+    if(!/^[A-Za-z0-9_-]{8,128}$/.test(code)){setError('Mã trường không hợp lệ.');return;}
+    setSchoolCode(code);
+    sessionStorage.setItem('edukpi.school.'+uid,code);
+  }
+  function leaveSchool() {
+    setSchoolCode('');setLookupCode('');setNotice('');setError('');
+    sessionStorage.removeItem('edukpi.school.'+uid);
+  }
+  async function createSchool() {
+    if(!schoolName.trim() || schoolName.trim().length>160){setError('Tên trường phải từ 1 đến 160 ký tự.');return;}
+    await safely(async()=>{
+      const ref=doc(collection(db,'kpiSchools'));
+      await setDoc(ref,{name:schoolName.trim(),ownerUid:uid,criteria:DEFAULT_KPI_CRITERIA,createdAt:serverTimestamp()});
+      setLookupCode(ref.id);setSchoolCode(ref.id);
+      sessionStorage.setItem('edukpi.school.'+uid,ref.id);
+      success('Đã tạo trường. Hãy thêm giáo viên bằng mã UID và mở tháng đánh giá.');
+    });
+  }
+  async function openPeriod() {
+    if(!school || !isOwner)return;
+    await safely(async()=>{
+      const ref=doc(db,'kpiSchools',schoolCode,'periods',month);
+      if(period) {
+        await updateDoc(ref,{status:period.status==='open'?'closed':'open',updatedAt:serverTimestamp()});
+        success(period.status==='open'?'Đã khóa tháng đánh giá.':'Đã mở lại tháng đánh giá.');
+      } else {
+        await setDoc(ref,{month,status:'open',criteria:school.criteria,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+        success('Đã mở tháng đánh giá '+month+'.');
+      }
+    });
+  }
+  async function saveCriteria() {
+    if(!isOwner)return;
+    const validation=validateKpiCriteria(criteriaDraft);
+    if(validation){setError(validation);return;}
+    await safely(async()=>{
+      await updateDoc(doc(db,'kpiSchools',schoolCode),{criteria:criteriaDraft});
+      setEditingCriteria(false);
+      success('Đã lưu mẫu tiêu chí cho các tháng tạo mới; các tháng cũ không bị thay đổi.');
+    });
+  }
+  async function addMember() {
+    const newUid=uidToAdd.trim(), name=nameToAdd.trim(),team=teamToAdd.trim();
+    if(!/^[A-Za-z0-9_-]{10,128}$/.test(newUid) || !name || name.length>160 || team.length>120 || newUid===uid) {
+      setError('Kiểm tra UID, họ tên (tối đa 160 ký tự), tổ chuyên môn và không thêm chính mình.');return;
+    }
+    await safely(async()=>{
+      const profile=await getDoc(doc(db,'teachers',newUid)).catch(()=>null);
+      // The server-side rule checks active registration. Administrators may
+      // read profiles; school owners without that right rely on the rule.
+      if(profile && profile.exists() && profile.data().status!=='active')throw new Error('Giáo viên chưa được kích hoạt.');
+      await setDoc(doc(db,'kpiSchools',schoolCode,'members',newUid),{
+        uid:newUid,name,team,role:roleToAdd,status:'active',
+      });
+      setUidToAdd('');setNameToAdd('');setTeamToAdd('');
+      success('Đã phân quyền. Giáo viên nhập mã trường để bắt đầu chấm KPI.');
+    });
+  }
+  async function submitScores(status:'draft'|'submitted') {
+    if(!canEnter)return;
+    if('error' in preview){setError(preview.error);return;}
+    await safely(async()=>{
+      const ref=doc(db,'kpiSchools',schoolCode,'periods',month,'entries',uid);
+      if(myEntry) {
+        await updateDoc(ref,{selfScores:preview.scores,selfTotal:preview.total,status,updatedAt:serverTimestamp()});
+      } else {
+        await setDoc(ref,{
+          uid,name:userName.slice(0,160),team:member?.team||'Ban giám hiệu',
+          selfScores:preview.scores,selfTotal:preview.total,status,
+          reviewScores:null,reviewTotal:null,note:'',reviewedBy:'',approvedBy:'',
+          createdAt:serverTimestamp(),updatedAt:serverTimestamp(),
+        });
+      }
+      success(status==='submitted'?'Đã gửi phiếu cho tổ chuyên môn.':'Đã lưu bản nháp.');
+    });
+  }
+  async function review(status:'reviewed'|'returned') {
+    if(!isReviewer || !reviewTarget || reviewTarget.uid===uid || !period || period.status!=='open')return;
+    const parsed=validateKpiScores(reviewScores,period.criteria);
+    if('error' in parsed){setError(parsed.error);return;}
+    await safely(async()=>{
+      await updateDoc(doc(db,'kpiSchools',schoolCode,'periods',month,'entries',reviewTarget.uid),{
+        reviewScores:parsed.scores,reviewTotal:parsed.total,note:reviewNote.trim().slice(0,1500),
+        reviewedBy:uid,status,updatedAt:serverTimestamp(),
+      });
+      setReviewTarget(null);success('Đã cập nhật kết quả tổ chuyên môn.');
+    });
+  }
+  async function approve(entry:KpiEntry) {
+    if(!isOwner || entry.uid===uid || entry.status!=='reviewed')return;
+    await safely(async()=>{
+      await updateDoc(doc(db,'kpiSchools',schoolCode,'periods',month,'entries',entry.uid),
+        {status:'approved',approvedBy:uid,updatedAt:serverTimestamp()});
+      success('Đã phê duyệt phiếu của '+entry.name+'.');
+    });
+  }
+  async function exportExcel() {
+    if(!isReviewer || !period)return;
+    await safely(async()=>{
+      const XLSX=await import('xlsx');
+      const headings=['STT','Họ và tên','Tổ','Trạng thái',...criteria.map(item=>item.label),'Tổng tự chấm','Điểm tổ/đơn vị','Người duyệt','Nhận xét'];
+      const values=entries.slice().sort((a,b)=>a.name.localeCompare(b.name,'vi')).map((entry,i)=>[
+        i+1,kpiCsvSafe(entry.name),kpiCsvSafe(entry.team),STATUS[entry.status],
+        ...criteria.map(item=>entry.selfScores[item.key]),entry.selfTotal,entry.reviewTotal??'',
+        entry.reviewedBy,kpiCsvSafe(entry.note),
+      ]);
+      const ws=XLSX.utils.aoa_to_sheet([headings,...values]);
+      ws['!cols']=headings.map((header,i)=>({wch:i===1?28:i===2?22:i===3?20:i===headings.length-1?35:18}));
+      const book=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book,ws,'KPI '+month);
+      XLSX.writeFile(book,'Tong_hop_KPI_'+month+'_'+schoolCode+'.xlsx');
+      success('Đã xuất bảng tổng hợp KPI theo tháng.');
+    });
+  }
+
+  const kpiTotals=useMemo(()=>({
+    submitted:entries.filter(e=>e.status!=='draft').length,
+    approved:entries.filter(e=>e.status==='approved').length,
+  }),[entries]);
+
+  return <main className="min-h-screen flex-1 overflow-auto bg-slate-50 text-slate-900">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={onBack} aria-label="Quay lại thư viện" className={secondary}><ArrowLeft size={18}/></button>
+          <div><div className="flex items-center gap-2"><ClipboardCheck className="text-indigo-600"/><h1 className="text-2xl font-black">EduKPI <span className="text-indigo-600">AI</span></h1></div><p className="text-sm text-slate-500">Đánh giá KPI viên chức — trường học đa đơn vị</p></div>
+        </div>
+        {school && <button type="button" onClick={leaveSchool} className={secondary}>Đổi trường</button>}
+      </header>
+      {notice && <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</p>}
+      {error && <p role="alert" className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>}
+      {!uid && <div className={box}>Cần đăng nhập tài khoản giáo viên hợp lệ để truy cập KPI.</div>}
+      {uid && !school && <div className="grid gap-4 lg:grid-cols-2">
+        <section className={box}><h2 className="mb-2 flex items-center gap-2 text-lg font-bold"><Building2 size={20}/> Vào trường đã có</h2>
+          <p className="mb-4 text-sm text-slate-600">Nhà trường thêm UID của giáo viên vào danh sách trước. Mã trường không thay thế quyền đăng nhập.</p>
+          <label className="mb-2 block text-sm font-medium" htmlFor="kpi-school-code">Mã trường</label>
+          <input id="kpi-school-code" className={inputClass} value={lookupCode} onChange={event=>setLookupCode(event.target.value)} placeholder="Dán mã do nhà trường cung cấp"/>
+          <button type="button" className={primary+' mt-3'} onClick={connect}>Truy cập trường</button>
+          <div className="mt-5 rounded-xl bg-slate-100 p-3 text-xs text-slate-700"><strong>UID tài khoản của bạn</strong><p className="mt-1 break-all font-mono select-all">{uid}</p><p className="mt-1">Gửi UID này cho quản trị trường để được thêm vào danh sách.</p></div>
+        </section>
+        <section className={box}><h2 className="mb-2 flex items-center gap-2 text-lg font-bold"><Plus size={20}/> Thiết lập trường mới</h2>
+          <p className="mb-4 text-sm text-slate-600">Mỗi trường có mã riêng, bộ tiêu chí riêng và dữ liệu độc lập.</p>
+          <label className="mb-2 block text-sm font-medium" htmlFor="kpi-school-name">Tên trường học</label>
+          <input id="kpi-school-name" className={inputClass} value={schoolName} onChange={event=>setSchoolName(event.target.value)} placeholder="Ví dụ: Trường TH&THCS ..."/>
+          <button type="button" disabled={busy} className={primary+' mt-3'} onClick={()=>void createSchool()}>Tạo trường và làm quản trị KPI</button>
+        </section>
+      </div>}
+      {uid && school && !isMember && <section className={box}>
+        <h2 className="text-xl font-semibold">Tài khoản chưa có quyền vào trường</h2>
+        <p className="mt-2 text-slate-600">Nhà trường cần thêm UID <strong className="break-all">{uid}</strong> vào danh sách giáo viên của {school.name}.</p>
+        <button type="button" onClick={leaveSchool} className={secondary+' mt-4'}>Nhập mã khác</button>
+      </section>}
+      {uid && school && isMember && <>
+        <section className={box+' mb-4'}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">{isOwner?'Quản trị trường':isReviewer?'Tổ chuyên môn':'Giáo viên'}</p>
+              <h2 className="mt-1 text-xl font-bold">{school.name}</h2>
+              <p className="mt-1 text-xs text-slate-500">Mã trường: <span className="select-all font-mono">{schoolCode}</span></p>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-xs font-medium text-slate-600">Tháng đánh giá
+                <input type="month" className={inputClass+' mt-1'} value={month} onChange={event=>setMonth(event.target.value)}/>
+              </label>
+              {isOwner && <button type="button" disabled={busy} className={primary} onClick={()=>void openPeriod()}>
+                {period?(period.status==='open'?<LockKeyhole size={17}/>:<Plus size={17}/>):<Plus size={17}/>}
+                {!period?'Mở kỳ đánh giá':period.status==='open'?'Khóa kỳ':'Mở lại'}
+              </button>}
+            </div>
+          </div>
+          {period ? <p className="mt-4 text-sm text-slate-600">Trạng thái kỳ: <strong>{period.status==='open'?'Đang nhận điểm':'Đã khóa'}</strong> • Bộ tiêu chí được giữ cố định cho kỳ này.</p> :
+            <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Tháng {month} chưa được nhà trường mở kỳ đánh giá.</p>}
+        </section>
+
+        {isOwner && <section className={box+' mb-4'}>
+          <div className="flex flex-wrap justify-between gap-3"><h3 className="font-bold">Thiết lập trường</h3>
+            <div className="flex flex-wrap gap-2"><button className={secondary} onClick={()=>setMembersOpen(v=>!v)}><Users size={16}/> Danh sách và phân quyền</button>
+              <button className={secondary} onClick={()=>setEditingCriteria(v=>!v)}>Cấu hình tiêu chí</button></div></div>
+          {membersOpen && <div className="mt-4 border-t border-slate-200 pt-4">
+            <p className="mb-3 text-sm text-slate-600">Thêm giáo viên hoặc tổ trưởng bằng UID tài khoản đã đăng ký trong hệ sinh thái. Chỉ quản trị trường có thể phân quyền.</p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <input className={inputClass} aria-label="UID giáo viên" placeholder="UID giáo viên" value={uidToAdd} onChange={e=>setUidToAdd(e.target.value)}/>
+              <input className={inputClass} aria-label="Họ tên" placeholder="Họ và tên" value={nameToAdd} onChange={e=>setNameToAdd(e.target.value)}/>
+              <input className={inputClass} aria-label="Tổ chuyên môn" placeholder="Tổ chuyên môn" value={teamToAdd} onChange={e=>setTeamToAdd(e.target.value)}/>
+              <select className={inputClass} value={roleToAdd} onChange={e=>setRoleToAdd(e.target.value as KpiRole)}><option value="teacher">Giáo viên</option><option value="reviewer">Tổ trưởng / người duyệt</option></select>
+            </div>
+            <button className={primary+' mt-3'} disabled={busy} onClick={()=>void addMember()}><Plus size={16}/> Thêm / cập nhật</button>
+            <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="py-2">Họ tên</th><th>Tổ</th><th>Vai trò</th><th>UID</th></tr></thead>
+              <tbody>{members.map(item=><tr key={item.uid} className="border-b border-slate-100"><td className="py-2 font-medium">{item.name}</td><td>{item.team}</td><td>{item.role==='reviewer'?'Tổ trưởng':'Giáo viên'}</td><td className="max-w-36 truncate font-mono text-xs" title={item.uid}>{item.uid}</td></tr>)}</tbody>
+            </table></div>
+          </div>}
+          {editingCriteria && <div className="mt-4 border-t border-slate-200 pt-4">
+            <p className="mb-3 text-sm text-slate-600">Thay đổi tên và trọng số của 6 nhóm tiêu chí; tổng điểm phải đúng 100. Chỉ áp dụng cho kỳ đánh giá được tạo sau này.</p>
+            {criteriaDraft.map((item,index)=><div key={item.key} className="mb-2 flex gap-2">
+              <input className={inputClass} aria-label={'Tên tiêu chí '+(index+1)} value={item.label} onChange={e=>setCriteriaDraft(old=>old.map((v,i)=>i===index?{...v,label:e.target.value}:v))}/>
+              <input className={inputClass+' max-w-24'} aria-label={'Điểm tối đa '+(index+1)} type="number" min="0" max="100" step="0.5" value={item.max} onChange={e=>setCriteriaDraft(old=>old.map((v,i)=>i===index?{...v,max:Number(e.target.value)}:v))}/>
+            </div>)}
+            <p className="my-3 text-sm">Tổng điểm: <strong>{criteriaDraft.reduce((s,c)=>s+c.max,0)}/100</strong></p>
+            <button type="button" className={primary} disabled={busy} onClick={()=>void saveCriteria()}>Lưu bộ tiêu chí</button>
+          </div>}
+        </section>}
+
+        {period && <section className={box+' mb-4'}>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+            <div><h3 className="text-lg font-bold">Phiếu tự chấm KPI tháng {month}</h3><p className="text-sm text-slate-500">Chỉ cần nhập điểm vào 6 ô và gửi, không bắt buộc tải minh chứng.</p></div>
+            {myEntry && <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-700">{STATUS[myEntry.status]}</span>}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {criteria.map((item,index)=><label key={item.key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="min-w-0 flex-1"><span className="text-xs font-semibold text-slate-500">{item.group==='general'?'Tiêu chí chung':'Kết quả nhiệm vụ'} · {index+1}</span><p className="font-medium">{item.label}</p><span className="text-xs text-slate-500">Tối đa {item.max} điểm</span></div>
+              <input type="number" step="0.5" min={0} max={item.max} disabled={!canEnter} aria-label={'Điểm '+item.label}
+                className="w-20 rounded-xl border border-slate-300 bg-white p-2 text-center text-lg font-bold disabled:bg-slate-100"
+                value={scores[item.key]} onChange={e=>setScores(old=>({...old,[item.key]:e.target.value}))}/>
+            </label>)}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-indigo-50 p-4">
+            <div><p className="text-xs font-semibold text-indigo-700">Tổng điểm tự chấm</p>
+              <p className="text-3xl font-black text-indigo-900">{'error' in preview?'—':preview.total}<span className="text-base font-normal"> / 100</span></p>
+              {'error' in preview?<p className="text-xs text-rose-600">{preview.error}</p>:<p className="text-xs text-slate-600">{provisionalKpiRating(preview.total)} · Chỉ mang tính tham khảo</p>}
+            </div>
+            {canEnter && <div className="flex flex-wrap gap-2">
+              <button className={secondary} disabled={busy || 'error' in preview} onClick={()=>void submitScores('draft')}><Save size={16}/> Lưu nháp</button>
+              <button className={primary} disabled={busy || 'error' in preview} onClick={()=>void submitScores('submitted')}><CheckCircle2 size={16}/> Gửi tổ chuyên môn</button>
+            </div>}
+          </div>
+          {myEntry?.note && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><strong>Nhận xét của tổ:</strong> {myEntry.note}</p>}
+          {myEntry?.reviewTotal!==null && myEntry?.reviewTotal!==undefined && <p className="mt-3 text-sm">Điểm tổ chuyên môn: <strong>{myEntry.reviewTotal}/100</strong></p>}
+          <p className="mt-4 text-xs text-slate-500">Điểm dự kiến không tự động trở thành kết quả xếp loại viên chức chính thức. Quyết định cuối cùng thuộc người có thẩm quyền.</p>
+        </section>}
+
+        {isReviewer && period && <section className={box}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div><h3 className="text-lg font-bold">Bảng tổng hợp và xét duyệt</h3><p className="text-sm text-slate-500">Đã gửi: {kpiTotals.submitted} · Đã phê duyệt: {kpiTotals.approved} · Tổng số phiếu: {entries.length}</p></div>
+            <button type="button" onClick={()=>void exportExcel()} className={secondary}><Download size={16}/> Xuất Excel</button>
+          </div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm">
+            <thead className="border-b border-slate-200 bg-slate-50 text-slate-600"><tr><th className="p-3">Giáo viên</th><th className="p-3">Tổ</th><th className="p-3">Tự chấm</th><th className="p-3">Tổ duyệt</th><th className="p-3">Trạng thái</th><th className="p-3">Thao tác</th></tr></thead>
+            <tbody>{entries.map(entry=><tr className="border-b border-slate-100" key={entry.uid}>
+              <td className="p-3 font-semibold">{entry.name}</td><td className="p-3">{entry.team}</td><td className="p-3">{entry.selfTotal}</td><td className="p-3">{entry.reviewTotal??'—'}</td>
+              <td className="p-3">{STATUS[entry.status]}</td><td className="p-3">
+                {entry.uid!==uid && period.status==='open' && (entry.status==='submitted' || entry.status==='reviewed') &&
+                  <button type="button" className="font-semibold text-indigo-700 hover:underline" onClick={()=>{setReviewTarget(entry);setReviewScores(fromScores(entry.reviewScores||entry.selfScores));setReviewNote(entry.note);}}>Tổ xét duyệt</button>}
+                {isOwner && entry.uid!==uid && entry.status==='reviewed' && <button type="button" className="ml-3 font-semibold text-emerald-700 hover:underline" disabled={busy} onClick={()=>void approve(entry)}>Phê duyệt</button>}
+              </td></tr>)}</tbody>
+          </table>{!entries.length&&<p className="p-4 text-sm text-slate-500">Chưa có phiếu KPI nào trong tháng này.</p>}</div>
+        </section>}
+        {reviewTarget && period && <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/40 p-4"><div className="mx-auto my-6 max-w-xl rounded-3xl bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-label="Tổ chấm KPI">
+          <div className="flex justify-between gap-3"><h3 className="text-xl font-bold">Tổ chấm: {reviewTarget.name}</h3><button className={secondary} onClick={()=>setReviewTarget(null)}>Đóng</button></div>
+          <p className="my-3 text-sm text-slate-500">Điểm tự chấm: {reviewTarget.selfTotal}. Người duyệt có thể điều chỉnh nhưng phải ghi lý do khi trả lại.</p>
+          <div className="grid gap-2">{period.criteria.map(item=><label className="flex items-center gap-2" key={item.key}><span className="flex-1 text-sm">{item.label} (/{item.max})</span><input type="number" min="0" max={item.max} step="0.5" className={inputClass+' max-w-24'} value={reviewScores[item.key]} onChange={e=>setReviewScores(old=>({...old,[item.key]:e.target.value}))}/></label>)}</div>
+          <label className="mt-4 block text-sm font-medium">Nhận xét / yêu cầu làm rõ<textarea className={inputClass+' mt-2'} rows={3} value={reviewNote} onChange={e=>setReviewNote(e.target.value)} maxLength={1500}/></label>
+          <div className="mt-4 flex flex-wrap justify-end gap-2"><button className={secondary} disabled={busy || !reviewNote.trim() || reviewTarget.status!=='submitted'} onClick={()=>void review('returned')}>Trả lại bổ sung</button><button className={primary} disabled={busy} onClick={()=>void review('reviewed')}><ShieldCheck size={17}/> Xác nhận điểm tổ</button></div>
+        </div></div>}
+      </>}
+    </div>
+  </main>;
+}
