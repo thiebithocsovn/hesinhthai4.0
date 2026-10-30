@@ -10,6 +10,7 @@ export type EcosystemApplicationId =
   | 'head-shake-game'
   | 'chatbot'
   | 'exam-manager'
+  | 'kpi-manager'
   | 'secret-box'
   | 'drag-drop-game'
   | 'excel-merger'
@@ -79,6 +80,13 @@ export const ECOSYSTEM_APPLICATIONS: EcosystemApplication[] = [
     description: 'Phân tích KHGD/PPCT/giáo án DOCX để tích hợp Năng lực số, Năng lực AI, giáo dục hòa nhập và nội dung tổng hợp; giáo viên duyệt trước khi xuất lại Word.',
     dependency: 'ai-cloud',
     category: 'AI giáo dục',
+  },
+  {
+    id: 'kpi-manager',
+    name: 'EduKPI AI',
+    description: 'Chấm KPI viên chức hằng tháng: giáo viên chỉ nhập điểm, tổ chuyên môn xét duyệt, quản trị nhiều trường và xuất Excel.',
+    dependency: 'firebase',
+    category: 'Đánh giá',
   },
   {
     id: 'exam-manager',
