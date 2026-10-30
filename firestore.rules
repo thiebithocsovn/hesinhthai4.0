@@ -629,7 +629,7 @@ service cloud.firestore {
         match /entries/{employeeUid} {
           allow get: if (isOwner(employeeUid) && kpiCanAccess(schoolId)) || kpiReviewer(schoolId);
           allow list: if kpiReviewer(schoolId);
-          allow create: if isOwner(employeeUid) && kpiActiveMember(schoolId) &&
+          allow create: if isOwner(employeeUid) && (kpiActiveMember(schoolId) || kpiOwner(schoolId)) &&
             kpiPeriodOpen(schoolId, month) &&
             kpiEntryShape(employeeUid, get(kpiPeriodPath(schoolId, month)).data.criteria) &&
             incoming().createdAt == request.time && incoming().updatedAt == request.time &&
@@ -644,7 +644,7 @@ service cloud.firestore {
             incoming().createdAt == existing().createdAt &&
             incoming().updatedAt == request.time &&
             (
-              (isOwner(employeeUid) && kpiActiveMember(schoolId) &&
+              (isOwner(employeeUid) && (kpiActiveMember(schoolId) || kpiOwner(schoolId)) &&
                 existing().status in ['draft','returned'] &&
                 incoming().status in ['draft','submitted'] &&
                 incoming().diff(existing()).affectedKeys().hasOnly(['selfScores','selfTotal','status','updatedAt']))
