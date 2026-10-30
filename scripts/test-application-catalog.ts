@@ -74,7 +74,7 @@ verify(questionStudioApp.includes('<QuestionStudio />'), 'The standalone applica
 verify(questionStudio.includes('onAuthStateChanged'), 'Question Studio follows the authenticated teacher after a library-page reload.');
 verify(questionStudio.includes('question_studio_v1:'), 'Question Studio keeps browser data namespaced per account.');
 verify(footer.includes("onOpenProduct('gesture-class')"), 'The footer promotes the supported GestureClass application.');
-verify(readme.includes('Danh mục 13 ứng dụng'), 'Project documentation reports thirteen available applications.');
+verify(readme.includes('Danh mục 14 ứng dụng'), 'Project documentation reports fourteen available applications.');
 verify(!readme.includes('GestureCore Edu'), 'Project documentation does not advertise the removed application.');
 verify(serviceWorker.includes('${CACHE_PREFIX}v26'), 'Existing installations refresh the application assets, including the connected teacher password API.');
 verify(!existsSync(new URL('../src/components/GestureCoreEdu.tsx', import.meta.url)), 'The removed application source is no longer distributed.');
