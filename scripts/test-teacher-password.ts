@@ -51,7 +51,16 @@ try {
   assert.match(validateTeacherPassword(secret, 'different'), /chưa trùng/);
   assert.match(validateTeacherPassword('x'.repeat(129), 'x'.repeat(129)), /128/);
   assert.equal(validateTeacherPassword('a'.repeat(128), 'a'.repeat(128)), '');
-  assert.throws(() => teacherPasswordEndpoint('', origin + '/hesinhthai4.0/'), /chưa được kết nối/);
+  const productionEndpoint = 'https://hesinhthai4-0-thietbihocso.vercel.app/api/admin/teachers/password';
+  for (const path of ['/hesinhthai4.0', '/hesinhthai4.0/', '/hesinhthai4.0/?source=installed']) {
+    assert.equal(teacherPasswordEndpoint('', origin + path), productionEndpoint);
+    assert.equal(teacherPasswordEndpoint('  ', origin + path), productionEndpoint);
+  }
+  for (const page of [origin + '/other-project/', origin + '/hesinhthai4.0-other/',
+    'https://thiebithocsovn.github.io.example.com/hesinhthai4.0/', 'https://example.edu/hesinhthai4.0/']) {
+    assert.throws(() => teacherPasswordEndpoint('', page), /chưa được kết nối/);
+  }
+  assert.equal(teacherPasswordEndpoint('', 'http://localhost:3000/hesinhthai4.0/'), 'http://localhost:3000/api/admin/teachers/password');
   assert.throws(() => teacherPasswordEndpoint('http://localhost:3000', origin), /chưa hợp lệ/);
   assert.throws(() => teacherPasswordEndpoint('https://user:pass@example.edu', origin));
   assert.equal(teacherPasswordEndpoint('https://api.example.edu/', origin), 'https://api.example.edu/api/admin/teachers/password');
@@ -101,6 +110,12 @@ try {
     fetchImpl: ((url, init) => fetch(url, { ...init, headers: { ...init?.headers, Origin: origin } })) as typeof fetch };
   await changeTeacherPassword(options, { teacherId: body.teacherId, email: body.email, password: secret, confirmation: secret });
   assert.equal(tokenRefresh, true);
+  await changeTeacherPassword({ ...options, server: '', pageUrl: origin + '/hesinhthai4.0/',
+    fetchImpl: (async (url, init) => {
+      assert.equal(url, productionEndpoint, 'The published site can submit a reset without a build-time API setting.');
+      return options.fetchImpl(base + '/api/admin/teachers/password', init);
+    }) as typeof fetch,
+  }, { teacherId: body.teacherId, email: body.email, password: secret, confirmation: secret });
   let session: typeof user | null = user;
   const changedSession = { uid: 'admin', async getIdToken() { session = null; return 'admin'; } };
   session = changedSession;
