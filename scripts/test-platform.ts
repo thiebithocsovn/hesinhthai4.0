@@ -5,8 +5,8 @@ import { normalizeApiServer } from '../src/lib/api';
 import { isAdministratorAlias, resolveAdministratorLoginEmail } from '../src/lib/adminAuth';
 import { describeTeacherAccountError, validateTeacherCredentials } from '../src/lib/teacherAccounts';
 
-assert.equal(ECOSYSTEM_APPLICATIONS.length, 13, 'The catalog exposes exactly 13 applications.');
-assert.equal(new Set(ECOSYSTEM_APPLICATIONS.map(app => app.id)).size, 13, 'Application IDs remain unique.');
+assert.equal(ECOSYSTEM_APPLICATIONS.length, 14, 'The catalog exposes exactly 14 applications.');
+assert.equal(new Set(ECOSYSTEM_APPLICATIONS.map(app => app.id)).size, 14, 'Application IDs remain unique.');
 assert.equal(ECOSYSTEM_APPLICATIONS.some(app => app.name === 'GestureCore Edu'), false, 'The removed application never appears in the ecosystem catalog.');
 assert.ok(ECOSYSTEM_APPLICATIONS.some(app => app.id === 'gesture-class'), 'GestureClass remains available.');
 assert.ok(ECOSYSTEM_APPLICATIONS.some(app => app.id === 'question-studio'), 'Question Studio remains available.');
