@@ -591,8 +591,11 @@ service cloud.firestore {
       allow delete: if false;
 
       match /members/{memberUid} {
-        allow get: if isOwner(memberUid) || kpiReviewer(schoolId);
-        allow list: if kpiReviewer(schoolId);
+        allow get: if isOwner(memberUid) || (kpiReviewer(schoolId) && (
+          kpiOwner(schoolId) || existing().team == get(kpiMemberPath(schoolId, request.auth.uid)).data.team
+        ));
+        allow list: if kpiReviewer(schoolId) && (kpiOwner(schoolId) ||
+          existing().team == get(kpiMemberPath(schoolId, request.auth.uid)).data.team);
         allow create, update: if kpiOwner(schoolId) &&
           isValidId(memberUid) &&
           incoming().keys().hasAll(['uid','name','team','role','status']) &&
@@ -627,8 +630,11 @@ service cloud.firestore {
         allow delete: if false;
 
         match /entries/{employeeUid} {
-          allow get: if (isOwner(employeeUid) && kpiCanAccess(schoolId)) || kpiReviewer(schoolId);
-          allow list: if kpiReviewer(schoolId);
+          allow get: if (isOwner(employeeUid) && kpiCanAccess(schoolId)) ||
+            (kpiReviewer(schoolId) && (kpiOwner(schoolId) ||
+              existing().team == get(kpiMemberPath(schoolId, request.auth.uid)).data.team));
+          allow list: if kpiReviewer(schoolId) && (kpiOwner(schoolId) ||
+            existing().team == get(kpiMemberPath(schoolId, request.auth.uid)).data.team);
           allow create: if isOwner(employeeUid) && (kpiActiveMember(schoolId) || kpiOwner(schoolId)) &&
             kpiPeriodOpen(schoolId, month) &&
             kpiEntryShape(employeeUid, get(kpiPeriodPath(schoolId, month)).data.criteria) &&
@@ -647,10 +653,17 @@ service cloud.firestore {
               (isOwner(employeeUid) && (kpiActiveMember(schoolId) || kpiOwner(schoolId)) &&
                 existing().status in ['draft','returned'] &&
                 incoming().status in ['draft','submitted'] &&
-                incoming().diff(existing()).affectedKeys().hasOnly(['selfScores','selfTotal','status','updatedAt']))
+                incoming().diff(existing()).affectedKeys().hasOnly(['selfScores','selfTotal','status','updatedAt',
+                  'reviewScores','reviewTotal','note','reviewedBy']) &&
+                (existing().status == 'returned' ?
+                  (incoming().reviewScores == null && incoming().reviewTotal == null &&
+                    incoming().note == '' && incoming().reviewedBy == '') :
+                  incoming().diff(existing()).affectedKeys().hasOnly(['selfScores','selfTotal','status','updatedAt'])))
               ||
               (kpiReviewer(schoolId) && !isOwner(employeeUid) &&
+                (kpiOwner(schoolId) || existing().team == get(kpiMemberPath(schoolId, request.auth.uid)).data.team) &&
                 existing().status in ['submitted','reviewed'] &&
+                (incoming().status != 'returned' || incoming().note.size() > 0) &&
                 incoming().status in ['reviewed','returned'] &&
                 incoming().reviewScores != null &&
                 incoming().reviewTotal == kpiTotal(incoming().reviewScores) &&
