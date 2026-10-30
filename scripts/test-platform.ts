@@ -21,7 +21,7 @@ assert.doesNotMatch(application, /GestureCoreEdu|gesture-core/, 'The homepage ha
 assert.doesNotMatch(dashboard, /GestureCoreEdu|gesture-core/, 'The teacher library has no routes, cards, or lazy imports for the removed application.');
 assert.doesNotMatch(footer, /gesture-core/, 'Footer links cannot launch a removed application.');
 assert.match(footer, /onOpenProduct\('gesture-class'\)/, 'The footer points to the supported GestureClass application.');
-assert.match(readme, /Danh mục 13 ứng dụng/, 'Documentation displays the current application count.');
+assert.match(readme, /Danh mục 14 ứng dụng/, 'Documentation displays the current application count.');
 assert.ok(!existsSync(new URL('../src/components/GestureCoreEdu.tsx', import.meta.url)), 'The removed application component is not shipped in the source tree.');
 
 const gestureClassIndex = readFileSync(new URL('../public/gestureclass/index.html', import.meta.url), 'utf8');
