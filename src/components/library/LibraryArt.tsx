@@ -151,6 +151,21 @@ const arts: Record<LibraryArtKey, () => React.ReactNode> = {
     <Sparkle x={124} y={22} s={1.2} color="#ffcf4d" />
     <Sparkle x={24} y={40} s={0.9} color="#fff" />
   </>,
+  kpi: () => <>
+    <Shadow w={47} />
+    <g transform="rotate(-4 70 59)">
+      <rect x={34} y={9} width={81} height={100} rx={10} fill="#fefeff" stroke="#a6b8f8" strokeWidth={2}/>
+      <rect x={53} y={4} width={43} height={14} rx={6} fill="#6479db"/>
+      <text x={74} y={36} fontSize={13} fontWeight={900} textAnchor="middle" fontFamily="Nunito, sans-serif" fill="#4f46e5">KPI</text>
+      <rect x={45} y={47} width={11} height={47} rx={3} fill="#9aa5fa"/>
+      <rect x={61} y={63} width={11} height={31} rx={3} fill="#79d2c6"/>
+      <rect x={77} y={41} width={11} height={53} rx={3} fill="#6f72e8"/>
+      <rect x={93} y={57} width={11} height={37} rx={3} fill="#eea5c9"/>
+    </g>
+    <circle cx={113} cy={92} r={20} fill="#2fc39e" stroke="white" strokeWidth={4}/>
+    <path d="M102 91 L110 99 L124 85" stroke="white" strokeWidth={5} fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+    <Sparkle x={28} y={25} s={1.1} color="#fff"/>
+  </>,
   exam: () => <>
     <Shadow />
     <g transform="rotate(-5 70 60)">
