@@ -8,7 +8,7 @@ export type LibraryCategory = 'games' | 'ai' | 'assessment' | 'tools';
 export type LibraryFilter = 'all' | LibraryCategory;
 export type LibraryArtKey =
   | 'gesture' | 'wheel' | 'cards' | 'plicker' | 'wall' | 'head-shake' | 'robot'
-  | 'exam' | 'chest' | 'drag-drop' | 'excel' | 'pdf' | 'quiz' | 'timetable';
+  | 'exam' | 'kpi' | 'chest' | 'drag-drop' | 'excel' | 'pdf' | 'quiz' | 'timetable';
 
 export interface LibraryEntry {
   id: string;
@@ -43,7 +43,7 @@ export const LIBRARY_ENTRIES: Record<string, LibraryEntry> = {
   'learning-wall': { id: 'learning-wall', title: 'Tường học tập Ai', category: 'ai', art: 'wall', badge: '✨ AI phân tích bài làm', footer: CLOUD, from: '#ffe0dc', to: '#ffb9b0', search: 'tường học tập lớp học học sinh chấm điểm thư mục padlet bảng' },
   'head-shake-game': { id: 'head-shake-game', title: 'Trò chơi lắc đầu chọn đáp án', category: 'games', art: 'head-shake', badge: '🙆 Chơi bằng camera', footer: BROWSER, from: '#fff4cc', to: '#ffe08a', search: 'gật đầu lắc đầu chọn đáp án camera trò chơi' },
   chatbot: { id: 'chatbot', title: 'AI Giáo viên', category: 'ai', art: 'robot', badge: '🤖 Trợ lý AI', footer: 'AI Google Gemini', from: '#dcecff', to: '#b5d4ff', search: 'chatbot ai giáo viên giáo án năng lực số tâm lý học đường phụ huynh' },
-  'kpi-manager': { id: 'kpi-manager', title: 'EduKPI AI', category: 'assessment', art: 'exam', badge: '📊 KPI viên chức', footer: CLOUD, from: '#e2e8ff', to: '#bac8ff', search: 'kpi viên chức tự chấm điểm giáo viên hàng tháng tổ chuyên môn xếp loại trường học' },
+  'kpi-manager': { id: 'kpi-manager', title: 'EduKPI AI', category: 'assessment', art: 'kpi', badge: '📊 KPI viên chức', footer: CLOUD, from: '#e2e8ff', to: '#bac8ff', search: 'kpi viên chức tự chấm điểm giáo viên hàng tháng tổ chuyên môn xếp loại trường học' },
   'create-exam': { id: 'create-exam', title: 'Tạo kì thi', category: 'assessment', art: 'exam', badge: '⏱️ Thi trực tuyến', footer: CLOUD, from: '#d9f6ef', to: '#a8e8d8', search: 'tạo kì thi kiểm tra trực tuyến đề thi quản lý' },
   'secret-box': { id: 'secret-box', title: 'Mở ô bí mật', category: 'games', art: 'chest', badge: '🎁 Chơi theo đội', footer: BROWSER, from: '#fff0d6', to: '#ffd59e', search: 'ô bí mật phần thưởng câu hỏi trò chơi đội' },
   'drag-drop-game': { id: 'drag-drop-game', title: 'Kéo thả đúng chỗ', category: 'games', art: 'drag-drop', badge: '🧩 Kéo thả trực quan', footer: BROWSER, from: '#dff6fb', to: '#aee6f2', search: 'kéo thả đáp án vị trí hình ảnh văn bản bản đồ' },
