@@ -23,6 +23,7 @@ const expectedIds = [
   'learning-wall',
   'head-shake-game',
   'chatbot',
+  'kpi-manager',
   'exam-manager',
   'secret-box',
   'drag-drop-game',
@@ -30,9 +31,9 @@ const expectedIds = [
   'pdf-merger',
 ];
 
-equal(ECOSYSTEM_APPLICATIONS.length, 13, 'The ecosystem displays exactly thirteen applications.');
+equal(ECOSYSTEM_APPLICATIONS.length, 14, 'The ecosystem displays exactly fourteen applications.');
 equal(ECOSYSTEM_APPLICATIONS.map(application => application.id), expectedIds, 'The supported applications remain available in their expected order.');
-equal(new Set(ECOSYSTEM_APPLICATIONS.map(application => application.id)).size, 13, 'Application identifiers remain unique.');
+equal(new Set(ECOSYSTEM_APPLICATIONS.map(application => application.id)).size, 14, 'Application identifiers remain unique.');
 verify(ECOSYSTEM_APPLICATIONS.every(application => application.name !== 'GestureCore Edu'), 'The removed application cannot appear in the public catalog.');
 
 const application = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
@@ -81,6 +82,7 @@ verify(!packageManifest.scripts['test:gesture'], 'Package scripts no longer poin
 verify(packageManifest.scripts['test:catalog'] === 'node --import tsx scripts/test-application-catalog.ts', 'The application catalog has a dedicated regression suite.');
 verify(ECOSYSTEM_APPLICATIONS.some(application => application.name === 'Trắc nghiệm 10 dạng'), 'The standalone Question Studio application is registered.');
 verify(ECOSYSTEM_APPLICATIONS.some(application => application.name === 'Tách, gộp file PDF'), 'The existing PDF split-and-merge tool remains available.');
+verify(ECOSYSTEM_APPLICATIONS.some(application => application.name === 'EduKPI AI'), 'EduKPI AI is available in the public ecosystem.');
 verify(ECOSYSTEM_APPLICATIONS.some(application => application.name === 'Tương tác thẻ Plicker'), 'Plicker remains available.');
 
-console.info(`Thirteen-application catalog with fast bootstrap: ${checks} checks passed.`);
+console.info(`Fourteen-application catalog with fast bootstrap: ${checks} checks passed.`);
