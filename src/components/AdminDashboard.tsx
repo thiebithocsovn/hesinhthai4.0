@@ -1,5 +1,5 @@
 import React, { lazy, useState, useRef, useEffect, useMemo } from 'react';
-import { Users, Plus, Trash2, Key, LogOut, Search, Edit2, ShieldCheck, BookOpen, CheckCircle, Lock, Unlock, Library, Gift, Target, QrCode, Camera, X, LayoutDashboard, FolderPlus, UserPlus, Star, ArrowLeft, MoreVertical, Clock, Bookmark, Globe, Filter, MessageCircle, CheckSquare, ChevronUp, ChevronDown, Settings, ClipboardCheck, MonitorPlay, MessageSquare, Hand, FileSpreadsheet, FileText, Eye, EyeOff } from 'lucide-react';
+import { Users, Plus, Trash2, Key, LogOut, Search, Edit2, ShieldCheck, BookOpen, CheckCircle, Lock, Unlock, Library, Gift, Target, QrCode, Camera, X, LayoutDashboard, FolderPlus, UserPlus, Star, ArrowLeft, MoreVertical, Clock, Bookmark, Globe, Filter, MessageCircle, CheckSquare, ChevronUp, ChevronDown, Settings, ClipboardCheck, ChartColumnIncreasing, MonitorPlay, MessageSquare, Hand, FileSpreadsheet, FileText, Eye, EyeOff } from 'lucide-react';
 import { Teacher } from '../types';
 import { doc, setDoc, deleteDoc, updateDoc, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, arrayUnion, where } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
@@ -917,7 +917,7 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
                   <h3>AI Giáo viên</h3>
                   <p>Chatbot AI hỗ trợ phân tích tâm lý học đường, tư vấn giải pháp cho giáo viên và phụ huynh.</p>
                 </LibraryCard>
-                <LibraryCard id="kpi-manager" icon={<ClipboardCheck />} onOpen={() => setActiveLibraryView('kpi-manager')}>
+                <LibraryCard id="kpi-manager" icon={<ChartColumnIncreasing />} onOpen={() => setActiveLibraryView('kpi-manager')}>
                   <h3>EduKPI AI</h3>
                   <p>Giáo viên nhập điểm KPI hằng tháng; tổ duyệt, trường phê duyệt và xuất bảng tổng hợp.</p>
                 </LibraryCard>
