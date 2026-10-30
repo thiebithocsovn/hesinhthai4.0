@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'smartclass-platform-';
 const LEGACY_CACHE_PREFIX = 'smartclass-plicker-';
-const CACHE_NAME = `${CACHE_PREFIX}v24`;
+const CACHE_NAME = `${CACHE_PREFIX}v25`;
 const APP_ROOT = new URL('./', self.registration.scope).pathname;
 const OFFLINE_PAGE = `${APP_ROOT}offline.html`;
 const PUBLIC_METRICS = `${APP_ROOT}platform-stats.json`;

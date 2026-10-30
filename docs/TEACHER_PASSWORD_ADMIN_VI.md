@@ -22,11 +22,11 @@ Provider chỉ tin issuer `https://oidc.vercel.com/thietbihocso`, audience `http
 
 Vẫn hỗ trợ secret server **FIREBASE_SERVICE_ACCOUNT_JSON** cho nền tảng khác hoặc cấu hình cũ. Tài khoản dịch vụ phải thuộc đúng dự án trong `firebase-applet-config.json` và chỉ có ba quyền nói trên. Không dùng khóa Owner/Editor, không đặt giá trị vào `VITE_*`, mã nguồn hay hội thoại. Nếu nền tảng cung cấp ADC hợp lệ thì có thể dùng `GOOGLE_APPLICATION_CREDENTIALS` thay thế. Giao diện không đọc được credential này.
 
-Node được cố định ở **24.x** để Vercel không tự chọn Node 26 và làm hỏng bước cài thư viện native. API Production cần nhận request từ GitHub Pages mà không yêu cầu cookie đăng nhập Vercel; mỗi POST được xác thực bằng Firebase ID token. Standard Protection vẫn có thể bảo vệ URL deployment và Preview khi domain Production chính được mở.
+Node được cố định ở **24.x** để Vercel không tự chọn Node 26 và làm hỏng bước cài thư viện native. `vercel.json` bật `NODE_OPTIONS=--experimental-require-module` theo cấu hình Node của Vercel, cần cho Firebase Admin 14/JWKS nạp thư viện ESM. Các import nội bộ dùng đuôi `.js`; import JSON dùng `with { type: 'json' }`. Kiểm tra native Node không qua tsx giúp phát hiện lỗi khởi động này trước khi triển khai. API Production cần nhận request từ GitHub Pages mà không yêu cầu cookie đăng nhập Vercel; mỗi POST được xác thực bằng Firebase ID token. Standard Protection vẫn có thể bảo vệ URL deployment và Preview khi domain Production chính được mở.
 
-Triển khai commit đã kiểm tra lên Production. Kiểm tra `OPTIONS /api/admin/teachers/password` từ origin `https://thiebithocsovn.github.io` trả 204; `POST` cùng origin nhưng không có token phải trả 401. Chỉ sau khi kiểm tra API thật, đặt Actions variable **VITE_TEACHER_ADMIN_API_URL** bằng origin Production đã xác minh và build lại GitHub Pages. Không đoán alias Vercel và không trỏ vào URL Preview được bảo vệ đăng nhập.
+API Production của repository là `https://hesinhthai4-0-thietbihocso.vercel.app`, đã xác minh thuộc đúng dự án Vercel. Workflow dùng origin này làm mặc định cho **VITE_TEACHER_ADMIN_API_URL**; khi chuyển máy chủ, có thể ghi đè bằng Actions variable cùng tên rồi build lại GitHub Pages. Kiểm tra `OPTIONS /api/admin/teachers/password` từ origin `https://thiebithocsovn.github.io` phải trả 204; `POST` không có token phải trả 401. Sau đó chạy kiểm tra đổi mật khẩu thật bằng tài khoản QA trước khi phát hành. Không dùng URL Preview được bảo vệ đăng nhập.
 
-Nếu thiếu quyền truy cập Vercel (403), thiếu secret hoặc chưa có URL API được kiểm tra thì phần triển khai vẫn chưa hoàn tất. Việc commit code, kiểm thử tự động hoặc GitHub Pages hiển thị hộp thoại không xác nhận mật khẩu giáo viên đã đổi được. API trả 503 rõ ràng khi Vercel chưa có cấu hình Firebase, thay vì báo sai rằng phiên quản trị hết hạn.
+Nếu thiếu quyền truy cập Vercel, chưa cấp Workload Identity/credential Firebase hoặc chưa kiểm tra URL API thì phần triển khai vẫn chưa hoàn tất. Việc commit code, kiểm thử tự động hoặc GitHub Pages hiển thị hộp thoại không xác nhận mật khẩu giáo viên đã đổi được. API trả 503 rõ ràng khi Vercel chưa có cấu hình Firebase, thay vì báo sai rằng phiên quản trị hết hạn.
 
 Giới hạn 20 yêu cầu/10 phút hiện áp dụng theo từng tiến trình máy chủ. Với nhiều instance serverless, giới hạn này không thay thế giới hạn tập trung trên nền tảng; mọi yêu cầu vẫn phải qua xác minh quản trị và bảo vệ tài khoản đích.
 
@@ -36,7 +36,7 @@ Workflow GitHub có job `teacher-password-api`, chỉ chạy khi Actions variabl
 
 Sau khi triển khai và kiểm tra yêu cầu không đăng nhập bị chặn, URL máy chủ được chuyển vào bước build giao diện. Khi tự triển khai máy chủ khác, đặt Actions variable **VITE_TEACHER_ADMIN_API_URL** bằng origin HTTPS của máy chủ và cấu hình **TEACHER_ADMIN_EMAILS** tại máy chủ. Frontend cũng hỗ trợ máy chủ đã khai báo bằng `VITE_API_BASE_URL` hoặc `VITE_WALL_OPENAI_API_URL`; không sử dụng địa chỉ lưu tùy ý trong localStorage.
 
-Nếu chưa có secret hoặc chưa đủ quyền triển khai, workflow ghi rõ lý do ở Job Summary. Giao diện vẫn được xuất bản và vẫn gửi được email khôi phục; **không được coi việc đặt mật khẩu trực tiếp đã hoạt động** trước khi backend được triển khai thành công. Sau khi bổ sung cấu hình, chạy lại workflow. Không gửi khóa tài khoản dịch vụ qua hội thoại; cấu hình trực tiếp trong GitHub Actions Secrets.
+Với lựa chọn Cloud Run, nếu chưa có secret hoặc chưa đủ quyền triển khai, workflow ghi lý do ở Job Summary. Giao diện vẫn được xuất bản và vẫn gửi được email khôi phục; **không được coi việc đặt mật khẩu trực tiếp đã hoạt động** trước khi backend được triển khai và kiểm tra thành công. Vercel dùng Workload Identity nêu trên không cần secret Google trong GitHub Actions.
 
 ## Kiểm tra
 
@@ -46,3 +46,5 @@ Nếu chưa có secret hoặc chưa đủ quyền triển khai, workflow ghi rõ
 - `npm run build:static` và `npm run build:wall-api`: đóng gói riêng frontend và máy chủ.
 
 Kiểm thử tự động không thay mật khẩu giáo viên đang dùng. Muốn xác minh thật sau triển khai, dùng tài khoản giáo viên kiểm thử riêng: đặt mật khẩu mới, đăng nhập bằng mật khẩu mới và xác nhận mật khẩu cũ không còn dùng được.
+
+Script thủ công `scripts/test-teacher-password-production.cjs --run --firebase-tools-lib /path/to/firebase-tools/lib` thực hiện kiểm tra này trên đúng API Production. Cần Firebase CLI đã đăng nhập tài khoản có quyền tạo/xóa các danh tính QA và hồ sơ QA. Script tạo hai tài khoản có tiền tố `qa-password-` và email `example.invalid`, chỉ cấp quyền admin cho danh tính QA tạm thời, kiểm tra giáo viên thường bị từ chối, quản trị đổi được mật khẩu, mật khẩu cũ bị từ chối và mật khẩu mới đăng nhập đúng UID. Mật khẩu/token không in ra và không được lưu vào mã nguồn. Khối finally xóa cả hai tài khoản và hồ sơ QA, báo lỗi nếu dọn dẹp chưa hoàn tất. Script không nằm trong bộ kiểm thử tự động mặc định.

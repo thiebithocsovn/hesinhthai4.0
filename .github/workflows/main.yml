@@ -82,7 +82,7 @@ jobs:
       VITE_WALL_OPENAI_API_URL: ${{ vars.VITE_WALL_OPENAI_API_URL }}
       VITE_WALL_ANTHROPIC_API_URL: ${{ vars.VITE_WALL_ANTHROPIC_API_URL }}
       VITE_ADMIN_EMAIL: ${{ vars.VITE_ADMIN_EMAIL }}
-      VITE_TEACHER_ADMIN_API_URL: ${{ needs.teacher-password-api.outputs.url || vars.VITE_TEACHER_ADMIN_API_URL }}
+      VITE_TEACHER_ADMIN_API_URL: ${{ needs.teacher-password-api.outputs.url || vars.VITE_TEACHER_ADMIN_API_URL || 'https://hesinhthai4-0-thietbihocso.vercel.app' }}
       VITE_FIREBASE_APP_CHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APP_CHECK_SITE_KEY }}
       VITE_FIRESTORE_CACHE_MODE: ${{ vars.VITE_FIRESTORE_CACHE_MODE || 'memory' }}
       VITE_GOOGLE_AI_MODEL: ${{ vars.VITE_GOOGLE_AI_MODEL || 'gemini-3.1-flash-lite' }}

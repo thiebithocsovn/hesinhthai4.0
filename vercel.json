@@ -4,6 +4,9 @@
   "buildCommand": "npm run build:static",
   "installCommand": "npm ci --legacy-peer-deps",
   "outputDirectory": "dist",
+  "env": {
+    "NODE_OPTIONS": "--experimental-require-module"
+  },
   "functions": {
     "api/admin/teachers/password.ts": { "maxDuration": 30 }
   }

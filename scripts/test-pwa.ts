@@ -97,7 +97,7 @@ assert.match(worker, /offline\.html/);
 assert.match(worker, /smartclass\.webmanifest/);
 assert.match(worker, /platform-stats\.json/);
 assert.match(worker, /gestureclass\/styles\.css/);
-assert.match(worker, /\$\{CACHE_PREFIX\}v24/);
+assert.match(worker, /\$\{CACHE_PREFIX\}v25/);
 assert.match(worker, /projector-readable-v1/);
 assert.match(worker, /fetch\(request, \{ cache: 'no-store' \}\)/);
 

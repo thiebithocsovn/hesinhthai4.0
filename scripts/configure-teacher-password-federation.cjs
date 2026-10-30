@@ -12,7 +12,7 @@ const PERMISSIONS = ['datastore.entities.get', 'firebaseauth.users.get', 'fireba
 const SUBJECT = 'owner:thietbihocso:project:hesinhthai4-0:environment:production';
 const MEMBER = `principal://iam.googleapis.com/projects/${NUMBER}/locations/global/workloadIdentityPools/${POOL}/subject/${SUBJECT}`;
 const PROVIDER_CONFIG = {
-  displayName: 'Hesinhthai teacher password Production',
+  displayName: 'Teacher password Production',
   oidc: { issuerUri: 'https://oidc.vercel.com/thietbihocso', allowedAudiences: ['https://vercel.com/thietbihocso'] },
   attributeMapping: { 'google.subject': 'assertion.sub' },
   attributeCondition: "assertion.owner_id == 'team_Wj2PlJf7oclNGPVrOnzoNssi' && assertion.project_id == 'prj_5bfktYdbgtBlF49H2RwVN6u8QYu5' && assertion.environment == 'production'",
@@ -121,15 +121,21 @@ async function main() {
 
   const poolResource = `projects/${NUMBER}/locations/global/workloadIdentityPools/${POOL}`;
   let pool = await getIfExists(iam, poolResource);
-  if (!pool) pool = await waitOperation(iam, (await iam.post(`/projects/${NUMBER}/locations/global/workloadIdentityPools`,
-    { displayName: 'Hesinhthai teacher passwords', description: 'Only this application Production runtime.', disabled: false },
-    { queryParams: { workloadIdentityPoolId: POOL } })).body);
+  if (!pool) {
+    await waitOperation(iam, (await iam.post(`/projects/${NUMBER}/locations/global/workloadIdentityPools`,
+      { displayName: 'Hesinhthai teacher passwords', description: 'Only this application Production runtime.', disabled: false },
+      { queryParams: { workloadIdentityPoolId: POOL } })).body);
+    pool = await getIfExists(iam, poolResource);
+  }
   assert.equal(pool.state, 'ACTIVE');
   const providers = (await iam.get('/' + poolResource + '/providers')).body.workloadIdentityPoolProviders || [];
   assert.ok(providers.every(provider => provider.name === PROVIDER), 'The pool contains an unexpected provider.');
   let provider = await getIfExists(iam, PROVIDER);
-  if (!provider) provider = await waitOperation(iam, (await iam.post('/' + poolResource + '/providers', PROVIDER_CONFIG,
-    { queryParams: { workloadIdentityPoolProviderId: 'vercel-production' } })).body);
+  if (!provider) {
+    await waitOperation(iam, (await iam.post('/' + poolResource + '/providers', PROVIDER_CONFIG,
+      { queryParams: { workloadIdentityPoolProviderId: 'vercel-production' } })).body);
+    provider = await getIfExists(iam, PROVIDER);
+  }
   validateProvider(provider);
   const policy = (await iam.post('/' + accountResource + ':getIamPolicy', {}, { queryParams: { 'options.requestedPolicyVersion': 3 } })).body;
   assert.ok((policy.bindings || []).every(binding => binding.role === 'roles/iam.workloadIdentityUser' &&
