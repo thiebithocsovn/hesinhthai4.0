@@ -37,6 +37,7 @@ const PRODUCT_ICONS: Record<EcosystemApplicationId, LucideIcon> = {
   'head-shake-game': Smile,
   chatbot: Brain,
   'exam-manager': ClipboardCheck,
+  'kpi-manager': ClipboardCheck,
   'secret-box': Layers,
   'drag-drop-game': Gamepad2,
   'excel-merger': FileSpreadsheet,
