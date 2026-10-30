@@ -1,5 +1,5 @@
 import React, { lazy, useState, useEffect, useRef } from 'react';
-import { BookOpen, MonitorPlay, Users, Zap, CheckCircle2, ArrowRight, X, User, Lock, Eye, EyeOff, Plus, Trash2, Key, LogOut, Search, Edit2, MoreVertical, ShieldCheck, Gamepad2, Library, Layers, Layout, Smile, Brain, FileEdit, Sparkles, ArrowLeft, MessageSquare, Gift, Target, QrCode, ClipboardCheck, FileSpreadsheet, FileText, ListChecks, type LucideIcon } from 'lucide-react';
+import { BookOpen, MonitorPlay, Users, Zap, CheckCircle2, ArrowRight, X, User, Lock, Eye, EyeOff, Plus, Trash2, Key, LogOut, Search, Edit2, MoreVertical, ShieldCheck, Gamepad2, Library, Layers, Layout, Smile, Brain, FileEdit, Sparkles, ArrowLeft, MessageSquare, Gift, Target, QrCode, ClipboardCheck, ChartColumnIncreasing, FileSpreadsheet, FileText, ListChecks, type LucideIcon } from 'lucide-react';
 import { Teacher } from './types';
 import { collection, onSnapshot, doc, setDoc, getDocFromServer } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithCredential, signInWithEmailAndPassword, signOut, type User as FirebaseUser } from 'firebase/auth';
@@ -38,7 +38,7 @@ const PRODUCT_ICONS: Record<EcosystemApplicationId, LucideIcon> = {
   'head-shake-game': Smile,
   chatbot: Brain,
   'exam-manager': ClipboardCheck,
-  'kpi-manager': ClipboardCheck,
+  'kpi-manager': ChartColumnIncreasing,
   'secret-box': Gift,
   'drag-drop-game': Gamepad2,
   'excel-merger': FileSpreadsheet,
