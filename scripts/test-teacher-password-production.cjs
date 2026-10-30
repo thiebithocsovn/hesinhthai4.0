@@ -51,19 +51,32 @@ async function main() {
     });
     return { status: response.status, cors: response.headers.get('access-control-allow-origin'), data: await response.json() };
   };
+  const readOwnProfile = async token => {
+    const response = await fetch('https://firestore.googleapis.com/v1' + profile, {
+      headers: { Authorization: 'Bearer ' + token, Origin: 'https://thiebithocsovn.github.io' },
+      redirect: 'error', signal: AbortSignal.timeout(30_000), ...(dispatcher ? { dispatcher } : {}),
+    });
+    assert.equal(response.status, 200, 'The signed-in teacher cannot read their own profile.');
+    const result = await response.json();
+    assert.equal(result.fields?.id?.stringValue, teacherUid);
+    assert.equal(result.fields?.status?.stringValue, 'active');
+  };
   try {
     for (const [localId, email] of [[adminUid, adminEmail], [teacherUid, teacherEmail]]) {
       created.push(localId);
-      const response = await identity.post(authPath + '/accounts', { localId, email, password: initial, emailVerified: true,
+      const response = await identity.post(authPath + '/accounts', { localId, email, password: initial, emailVerified: localId === adminUid,
         displayName: 'QA temporary teacher password check' }, quiet());
       assert.equal(response.body.localId, localId);
     }
     await identity.post(authPath + '/accounts:update', { localId: adminUid, customAttributes: JSON.stringify({ admin: true }) }, quiet());
     profileAttempted = true;
     await database.patch(profile, { fields: { id: { stringValue: teacherUid }, email: { stringValue: teacherEmail },
-      username: { stringValue: teacherEmail }, name: { stringValue: 'QA temporary teacher' }, status: { stringValue: 'active' } } }, quiet());
+      username: { stringValue: teacherEmail }, name: { stringValue: 'QA temporary teacher' }, school: { stringValue: 'QA temporary school' },
+      level: { stringValue: 'THCS' }, status: { stringValue: 'active' } } }, quiet());
     const admin = await signIn(adminEmail, initial);
     const teacher = await signIn(teacherEmail, initial);
+    stage = 'read teacher profile through live Firestore security rules';
+    await readOwnProfile(teacher.body.idToken);
     stage = 'deny teacher password administration';
     assert.equal((await passwordRequest(teacher.body.idToken)).status, 403);
     stage = 'change QA teacher password through Production API';
@@ -75,7 +88,9 @@ async function main() {
     const oldLogin = await signIn(teacherEmail, initial, true);
     assert.equal(oldLogin.status, 400);
     assert.match(oldLogin.body.error?.message || '', /INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD/);
-    assert.equal((await signIn(teacherEmail, replacement)).body.localId, teacherUid);
+    const signedInAgain = await signIn(teacherEmail, replacement);
+    assert.equal(signedInAgain.body.localId, teacherUid);
+    await readOwnProfile(signedInAgain.body.idToken);
     passed = true;
   } catch (error) {
     console.error('Production teacher password check failed at ' + stage + ': ' + error.message);
