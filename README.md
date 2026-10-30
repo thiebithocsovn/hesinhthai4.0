@@ -10,6 +10,13 @@ Website: <https://trungtuyen.github.io/4.0/>
 
 ## Danh mục 14 ứng dụng
 
+**EduKPI AI** là ứng dụng số hóa phiếu chấm KPI viên chức theo tháng. Giáo viên chỉ nhập 6 nhóm điểm (tổng tối đa 100), tổ trưởng xét duyệt, người quản trị trường phê duyệt và xuất bảng tổng hợp Excel. Từng trường có mã riêng và bộ tiêu chí riêng; phải mở kỳ đánh giá trước khi giáo viên gửi điểm. Dữ liệu nằm trong Firestore theo `kpiSchools/{schoolId}` và được phân quyền ở cấp quy tắc bảo mật, không phải chỉ ẩn giao diện.
+
+**Triển khai backend KPI:** Phải triển khai [firestore.rules](./firestore.rules) tới đúng Firestore database mà website đang sử dụng, trước khi tạo trường hoặc lưu KPI. Workflow GitHub Pages chỉ tự động xuất bản giao diện; triển khai quy tắc Firestore là bước độc lập có điều kiện `ENABLE_FIRESTORE_RULES_DEPLOY=true` và tài khoản dịch vụ hợp lệ. Lệnh chuẩn theo repo: `npm run deploy:firestore`. Khi chưa triển khai quy tắc, tính năng sẽ báo không có quyền thay vì lưu dữ liệu không an toàn.
+
+**Hướng dẫn sử dụng:** Đăng nhập Hệ sinh thái GD 4.0 → chọn EduKPI AI. Quản trị trường tạo trường → gửi mã UID/tạo danh sách phân quyền → mở tháng. Giáo viên gửi UID để trường cấp quyền, nhập mã trường, chấm 6 ô điểm và gửi tổ. Tổ trưởng xét duyệt, quản trị phê duyệt, sau đó xuất Excel. Hệ thống chỉ hiển thị xếp loại tham khảo theo ngưỡng của mẫu, không thay thế việc đánh giá và quyết định viên chức theo quy định.
+
+
 | Ứng dụng | Mục đích | Điều kiện hoạt động |
 | --- | --- | --- |
 | GestureClass | Quản lý lớp, ngân hàng câu hỏi, trắc nghiệm cử chỉ, lật thẻ và gọi tên | Trình duyệt, camera |
