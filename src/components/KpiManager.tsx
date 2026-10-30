@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Building2, CheckCircle2, ClipboardCheck, Download, LockKeyhole, Plus, Save, ShieldCheck, Users } from 'lucide-react';
-import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type { Teacher } from '../types';
 import {
@@ -124,17 +124,21 @@ export default function KpiManager({ currentUser, onBack }:Props) {
 
   useEffect(()=>{
     if(!isReviewer || !schoolCode || !period)return;
-    return onSnapshot(collection(db,'kpiSchools',schoolCode,'periods',month,'entries'),
+    const entriesRef=collection(db,'kpiSchools',schoolCode,'periods',month,'entries');
+    const scopedEntries=isOwner?entriesRef:query(entriesRef,where('team','==',member?.team||''));
+    return onSnapshot(scopedEntries,
       snapshot=>setEntries(snapshot.docs.map(item=>item.data() as KpiEntry)),
       err=>fail(err));
-  },[isReviewer,schoolCode,month,period?.status]);
+  },[isReviewer,isOwner,member?.team,schoolCode,month,period?.status]);
 
   useEffect(()=>{
     if(!isReviewer || !schoolCode)return;
-    return onSnapshot(collection(db,'kpiSchools',schoolCode,'members'),
+    const membersRef=collection(db,'kpiSchools',schoolCode,'members');
+    const scopedMembers=isOwner?membersRef:query(membersRef,where('team','==',member?.team||''));
+    return onSnapshot(scopedMembers,
       snapshot=>setMembers(snapshot.docs.map(item=>item.data() as KpiMember)),
       err=>fail(err));
-  },[isReviewer,schoolCode]);
+  },[isReviewer,isOwner,member?.team,schoolCode]);
 
   function connect() {
     const code=lookupCode.trim();
@@ -202,7 +206,10 @@ export default function KpiManager({ currentUser, onBack }:Props) {
     await safely(async()=>{
       const ref=doc(db,'kpiSchools',schoolCode,'periods',month,'entries',uid);
       if(myEntry) {
-        await updateDoc(ref,{selfScores:preview.scores,selfTotal:preview.total,status,updatedAt:serverTimestamp()});
+        await updateDoc(ref,{
+          selfScores:preview.scores,selfTotal:preview.total,status,updatedAt:serverTimestamp(),
+          ...(myEntry.status==='returned'?{reviewScores:null,reviewTotal:null,note:'',reviewedBy:''}:{})
+        });
       } else {
         await setDoc(ref,{
           uid,name:userName.slice(0,160),team:member?.team||'Ban giám hiệu',
