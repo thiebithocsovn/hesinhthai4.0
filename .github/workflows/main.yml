@@ -250,7 +250,8 @@ jobs:
 
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    # Publish a verified build even when the optional Cloud Run ancestor was skipped.
+    if: always() && !cancelled() && needs.build.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
