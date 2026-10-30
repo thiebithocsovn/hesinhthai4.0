@@ -25,7 +25,7 @@ verify(plicker?.description.includes('ngay trên thiết bị'), 'Plicker explai
 verify(chatbot?.dependency === 'ai-cloud', 'Teacher AI assistant is backed by Google-hosted AI.');
 verify(ECOSYSTEM_DEPENDENCY_LABELS['ai-cloud'] === 'AI Google Gemini', 'The homepage identifies the selected AI provider.');
 verify(!ECOSYSTEM_APPLICATIONS.some(application => application.dependency === 'ai-server'), 'No application incorrectly claims that a private AI server is required.');
-verify(ECOSYSTEM_APPLICATIONS.length === 13, 'All 13 educational applications remain available.');
+verify(ECOSYSTEM_APPLICATIONS.length === 14, 'All 14 educational applications remain available.');
 
 verify(normalizeSchoolCounselingText('  BẠO   LỰC học ĐƯỜNG  ') === 'bao luc hoc duong', 'Vietnamese accents and whitespace normalize consistently.');
 
