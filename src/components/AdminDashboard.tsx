@@ -33,6 +33,7 @@ const ExcelMerger = lazy(() => import('./ExcelMerger'));
 const PdfMerger = lazy(() => import('./PdfMerger'));
 const GestureClass = lazy(() => import('./GestureClass'));
 const LearningWall = lazy(() => import('./LearningWall'));
+const KpiManager = lazy(() => import('./KpiManager'));
 
 interface CameraCaptureProps {
   onCapture: (imageSrc: string) => void;
@@ -161,7 +162,7 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
   const currentUserName = currentUser === 'admin' ? 'Admin' : currentUser?.name;
   const studentsStorageKey = createTeacherStorageKey('students', accessScope.ownerUid);
   const [activeTab, setActiveTab] = useState<'teachers' | 'library'>(initialApplication === 'plicker' || currentUser !== 'admin' ? 'library' : 'teachers');
-  const [activeLibraryView, setActiveLibraryView] = useState<'main' | 'gesture-class' | 'learning-wall' | 'lucky-draw' | 'lucky-draw-cards' | 'plicker' | 'head-shake-game' | 'chatbot' | 'create-exam' | 'secret-box' | 'drag-drop-game' | 'excel-merger' | 'pdf-merger'>(initialApplication === 'plicker' ? 'plicker' : 'main');
+  const [activeLibraryView, setActiveLibraryView] = useState<'main' | 'gesture-class' | 'learning-wall' | 'lucky-draw' | 'lucky-draw-cards' | 'plicker' | 'head-shake-game' | 'chatbot' | 'create-exam' | 'kpi-manager' | 'secret-box' | 'drag-drop-game' | 'excel-merger' | 'pdf-merger'>(initialApplication === 'plicker' ? 'plicker' : 'main');
   const [searchTerm, setSearchTerm] = useState('');
   const libraryFilter = useLibraryFilter();
   useLibraryFont();
@@ -916,6 +917,10 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
                   <h3>AI Giáo viên</h3>
                   <p>Chatbot AI hỗ trợ phân tích tâm lý học đường, tư vấn giải pháp cho giáo viên và phụ huynh.</p>
                 </LibraryCard>
+                <LibraryCard id="kpi-manager" icon={<ClipboardCheck />} onOpen={() => setActiveLibraryView('kpi-manager')}>
+                  <h3>EduKPI AI</h3>
+                  <p>Giáo viên nhập điểm KPI hằng tháng; tổ duyệt, trường phê duyệt và xuất bảng tổng hợp.</p>
+                </LibraryCard>
                 <LibraryCard id="create-exam" icon={<ClipboardCheck />} onOpen={() => setActiveLibraryView('create-exam')}>
                   <h3>Tạo kì thi</h3>
                   <p>Công cụ tạo và quản lý các kì thi, bài kiểm tra trực tuyến.</p>
@@ -950,6 +955,8 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
           <div className="flex-1 min-h-0 overflow-auto"><LearningWall key={accessScope.ownerUid} currentUser={currentUser} googleLogin={googleLogin} onBack={() => setActiveLibraryView('main')} /></div>
         ) : activeLibraryView === 'gesture-class' ? (
           <GestureClass onBack={() => setActiveLibraryView('main')} />
+        ) : activeLibraryView === 'kpi-manager' ? (
+          <KpiManager currentUser={currentUser} onBack={() => setActiveLibraryView('main')} />
         ) : activeLibraryView === 'create-exam' ? (
           <ExamManager key={accessScope.ownerUid} initialMode="teacher" onBack={() => setActiveLibraryView('main')} currentUser={currentUser} />
         ) : activeLibraryView === 'chatbot' ? (
