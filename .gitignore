@@ -11,3 +11,4 @@ wall-ai-ui-results/
 .env*
 !.env.example
 teacher-password-ui-results/
+.teacher-password-native-*/

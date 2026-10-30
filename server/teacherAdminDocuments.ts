@@ -1,5 +1,5 @@
 import type { Credential } from 'firebase-admin/app';
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 
 // REST accepts both ADC/certificate OAuth tokens and keyless Workload Identity credentials.
 // Only point reads are needed; never expose the database or its credential to the browser.

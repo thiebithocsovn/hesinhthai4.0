@@ -1,6 +1,6 @@
 import { cert, type AppOptions } from 'firebase-admin/app';
-import firebaseConfig from '../firebase-applet-config.json';
-import { createTeacherAdminFederation } from './teacherAdminFederation';
+import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
+import { createTeacherAdminFederation } from './teacherAdminFederation.js';
 
 export class TeacherAdminConfigurationError extends Error {
   readonly code = 'teacher-admin/not-configured';

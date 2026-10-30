@@ -1,8 +1,8 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { createTeacherAdminRouter } from './teacherAdmin';
-import { teacherAdminAppOptions } from './teacherAdminCredentials';
-import { readTeacherAdminDocument } from './teacherAdminDocuments';
+import { createTeacherAdminRouter } from './teacherAdmin.js';
+import { teacherAdminAppOptions } from './teacherAdminCredentials.js';
+import { readTeacherAdminDocument } from './teacherAdminDocuments.js';
 
 export function createFirebaseTeacherAdminRouter(origins: Set<string>) {
   const app = () => getApps().find(item => item.name === 'teacher-account-admin') ||

@@ -1,5 +1,5 @@
 import express from 'express';
-import { createFirebaseTeacherAdminRouter } from './teacherAdminFirebase';
+import { createFirebaseTeacherAdminRouter } from './teacherAdminFirebase.js';
 
 export function createTeacherPasswordApp(router?: express.Router) {
   const app = express();

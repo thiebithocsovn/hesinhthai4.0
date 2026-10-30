@@ -1,7 +1,7 @@
 import type { Credential } from 'firebase-admin/app';
 import { IdentityPoolClient } from 'google-auth-library';
 import { getVercelOidcToken } from '@vercel/oidc';
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 
 export interface FederatedTokenClient {
   getAccessToken(): Promise<{ token?: string | null }>;
