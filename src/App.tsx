@@ -13,6 +13,7 @@ import { AUTH_PROFILE_TIMEOUT_MS, AUTH_REQUEST_TIMEOUT_MS, describeAuthError, wa
 import { requestGoogleCredential } from './lib/googleAuth';
 
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const KpiManager = lazy(() => import('./components/KpiManager'));
 const ExamManager = lazy(() => import('./components/ExamManager'));
 const AIChatbot = lazy(() => import('./components/AIChatbot'));
 const HeadShakeGame = lazy(() => import('./components/HeadShakeGame'));
@@ -37,6 +38,7 @@ const PRODUCT_ICONS: Record<EcosystemApplicationId, LucideIcon> = {
   'head-shake-game': Smile,
   chatbot: Brain,
   'exam-manager': ClipboardCheck,
+  'kpi-manager': ClipboardCheck,
   'secret-box': Gift,
   'drag-drop-game': Gamepad2,
   'excel-merger': FileSpreadsheet,
@@ -64,8 +66,9 @@ async function hasAdministratorAccess(user: FirebaseUser): Promise<boolean> {
 
 export default function App() {
   const requestedApplication = readRequestedApplication(window.location.search);
-  const [currentView, setCurrentView] = useState<'landing' | 'auth' | 'admin' | 'student_exam' | 'chatbot' | 'head-shake-game' | 'lucky-draw' | 'lucky-draw-cards' | 'drag-drop-game' | 'secret-box' | 'learning-wall' | 'gesture-class' | 'question-studio' | 'excel-merger' | 'pdf-merger'>(() => {
+  const [currentView, setCurrentView] = useState<'landing' | 'auth' | 'admin' | 'student_exam' | 'kpi-manager' | 'chatbot' | 'head-shake-game' | 'lucky-draw' | 'lucky-draw-cards' | 'drag-drop-game' | 'secret-box' | 'learning-wall' | 'gesture-class' | 'question-studio' | 'excel-merger' | 'pdf-merger'>(() => {
     if (new URLSearchParams(window.location.search).get('app') === 'learning-wall') return 'learning-wall';
+    if (new URLSearchParams(window.location.search).get('app') === 'kpi-manager') return 'kpi-manager';
     if (requestedApplication === 'plicker') return 'admin';
     const saved = sessionStorage.getItem('currentView');
     try {
@@ -187,7 +190,8 @@ export default function App() {
   }, [currentView]);
 
   useEffect(() => {
-    if (authReady && currentView === 'admin' && !currentUser) {
+    if (authReady && (currentView === 'admin' || currentView === 'kpi-manager') && !currentUser) {
+      if (currentView === 'kpi-manager') sessionStorage.setItem('edukpi.pending', '1');
       setAuthMode('login');
       setCurrentView('auth');
     }
@@ -248,7 +252,9 @@ export default function App() {
         throw new Error('Tài khoản đã đăng nhập nhưng chưa được cấp quyền quản trị.');
       }
       setCurrentUser(verifiedUser);
-      setCurrentView('admin');
+      const pendingKpi = sessionStorage.getItem('edukpi.pending') === '1';
+      sessionStorage.removeItem('edukpi.pending');
+      setCurrentView(pendingKpi ? 'kpi-manager' : 'admin');
     } catch (error) {
       if (signedInUid && auth.currentUser?.uid === signedInUid) await signOut(auth).catch(() => undefined);
       setAuthMessage(describeAuthError(error));
@@ -275,7 +281,9 @@ export default function App() {
       const verifiedUser = await resolveSignedInUser(credential.user);
       setCurrentUser(verifiedUser);
       setAuthMessage('');
-      setCurrentView(destination);
+      const pendingKpi = destination === 'admin' && sessionStorage.getItem('edukpi.pending') === '1';
+      if (pendingKpi) sessionStorage.removeItem('edukpi.pending');
+      setCurrentView(pendingKpi ? 'kpi-manager' : destination);
     } catch (error) {
       if (signedInUid && auth.currentUser?.uid === signedInUid) await signOut(auth).catch(() => undefined);
       setAuthMessage(describeAuthError(error));
@@ -339,6 +347,11 @@ export default function App() {
   };
 
   const launchApplication = (applicationId: EcosystemApplicationId) => {
+    if (applicationId === 'kpi-manager') {
+      if (currentUser && auth.currentUser) setCurrentView('kpi-manager');
+      else { sessionStorage.setItem('edukpi.pending', '1'); navigateToAuth('login'); }
+      return;
+    }
     if (applicationId === 'plicker') {
       selectApplicationManifest('plicker', import.meta.env.BASE_URL);
       window.history.replaceState(window.history.state, '', createPlickerLaunchPath(import.meta.env.BASE_URL));
@@ -355,6 +368,14 @@ export default function App() {
     }
     setCurrentView(applicationId);
   };
+
+  if (currentView === 'kpi-manager' && currentUser && auth.currentUser) {
+    return <KpiManager currentUser={currentUser} onBack={() => setCurrentView('landing')} />;
+  }
+
+  if (currentView === 'kpi-manager') {
+    return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600">Đang xác minh phiên đăng nhập KPI...</div>;
+  }
 
   if (currentView === 'admin' && currentUser && auth.currentUser) {
     return <AdminDashboard key={auth.currentUser.uid} onLogout={() => {
