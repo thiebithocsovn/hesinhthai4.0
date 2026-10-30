@@ -8,7 +8,7 @@ Nền tảng trò chơi và công cụ giáo dục tương tác dành cho giáo 
 
 Website: <https://trungtuyen.github.io/4.0/>
 
-## Danh mục 13 ứng dụng
+## Danh mục 14 ứng dụng
 
 | Ứng dụng | Mục đích | Điều kiện hoạt động |
 | --- | --- | --- |
