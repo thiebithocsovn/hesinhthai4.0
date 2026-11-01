@@ -157,6 +157,7 @@ jobs:
           npm run test:ai-services
           npm run test:firebase-ai-diagnostics
           npm run test:platform
+          npm run test:kpi-analytics
           npm run test:auth-flow
           npm run test:teacher-password
           npm run test:smart-timetable
