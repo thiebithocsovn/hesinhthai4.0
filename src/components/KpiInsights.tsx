@@ -114,7 +114,7 @@ export default function KpiInsights({schoolCode,schoolName,uid,month,isOwner,isR
         <div>
           <p className="text-xs font-bold uppercase tracking-[.16em] text-indigo-600">Báo cáo quản trị</p>
           <h2 className="mt-1 text-xl font-extrabold text-slate-900 sm:text-2xl">Tổng hợp KPI đa cấp</h2>
-          <p className="mt-1 text-sm text-slate-500">Trường học → Tổ chuyên môn → Giáo viên · Theo thời gian thực khi tải báo cáo</p>
+          <p className="mt-1 text-sm text-slate-500">Trường học → Tổ chuyên môn → Giáo viên · Dữ liệu trực tiếp từ hệ thống</p>
         </div>
         <button type="button" onClick={()=>void exportReport()} disabled={loading||exporting||!!error}
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50">
