@@ -6,7 +6,7 @@ import { createExamAccessDocumentId, createPublicExamSchedule, protectExamForAcc
 import { describeExamAccessError } from '../src/lib/examAccessError';
 import { loadExamRosterMetadata } from '../src/lib/examRoster';
 import { buildExamReceiptHtml } from '../src/lib/examReceipt';
-import { createStudentRosterLookupKey } from '../src/lib/teacherIsolation';
+import { createExamGuestStudentId, createStudentRosterLookupKey } from '../src/lib/teacherIsolation';
 import { getSubmittedExamClassId, guestExamStudentRecord, withExamStudentClass } from '../src/lib/examStudentClasses';
 import { buildClosedExamResult } from '../src/lib/examCloseout';
 
@@ -79,6 +79,24 @@ try {
   await assertFails(setDoc(doc(guest, 'students/wrong-class'), { ...student, id: 'wrong-class', classId: 'class-9b' }));
   await assertFails(setDoc(doc(guest, 'students/missing-class'), { ...student, id: 'missing-class', classId: 'does-not-exist' }));
   await assertSucceeds(setDoc(doc(guest, 'students', student.id), guestExamStudentRecord(student)));
+  const guestId = await createExamGuestStudentId(exam.teacherId, exam.id, '  Nguyễn   Văn   Tân  ', 'class-8a');
+  assert.equal(guestId, await createExamGuestStudentId(exam.teacherId, exam.id, 'NGUYỄN VĂN TÂN', 'class-8a'));
+  assert.notEqual(guestId, await createExamGuestStudentId(exam.teacherId, exam.id, 'Nguyễn Văn Tân', 'class-9b'));
+  assert.notEqual(guestId, await createExamGuestStudentId(exam.teacherId, 'second-exam', 'Nguyễn Văn Tân', 'class-8a'));
+  const guestIdentity = { id: guestId, teacherId: exam.teacherId, name: 'Nguyễn Văn Tân', code: '346729', examId: exam.id };
+  await assertSucceeds(setDoc(doc(guest, 'students', guestId), guestIdentity));
+  await assertFails(setDoc(doc(guest, 'students', guestId), { ...guestIdentity, code: '356729' }));
+  const guestSessionId = `${guestId}_${exam.id}`;
+  const guestTimestamp = new Date().toISOString();
+  const firstGuestSession = {
+    id: guestSessionId, examId: exam.id, studentId: guestId,
+    teacherId: exam.teacherId, startTime: guestTimestamp, lastActive: guestTimestamp,
+    status: 'taking', examVersion: 'Gốc',
+  };
+  await assertSucceeds(setDoc(doc(guest, 'exam_sessions', guestSessionId), firstGuestSession));
+  await assertFails(setDoc(doc(guest, 'exam_sessions', guestSessionId), {
+    ...firstGuestSession, startTime: new Date(Date.parse(guestTimestamp) + 1000).toISOString(),
+  }));
   assert.equal((await getDoc(doc(teacher, 'students', student.id))).data()?.classId, undefined);
   assert.ok(buildExamReceiptHtml(decoded, student, { id: 'class-receipt', score: 1, totalQuestions: 1, submittedAt: exam.createdAt }).includes('<p>Lớp: 8A</p>'));
   const sessionId = `${student.id}_${exam.id}`;

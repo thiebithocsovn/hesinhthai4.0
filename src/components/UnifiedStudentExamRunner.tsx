@@ -18,6 +18,7 @@ import { evaluateQuestion, type QuestionDefinition, type QuestionResponse } from
 import { isQuestionEngineExamQuestion } from '../lib/questionExamBridge';
 import {
   createStudentRosterLookupKey,
+  createExamGuestStudentId,
   createTeacherStorageKey,
   isValidTeacherUid,
   type PrivateStudentRosterEntry,
@@ -229,7 +230,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
     event.preventDefault();
     if (loginBusy) return;
     setLoginError('');
-    const normalizedName = studentName.trim();
+    const normalizedName = studentName.trim().normalize('NFC').replace(/\s+/g, ' ');
     const normalizedCode = examCode.trim();
     if (!normalizedName || !normalizedCode) {
       setLoginError('Vui lòng nhập đầy đủ họ tên và mã kỳ thi.');
@@ -287,7 +288,15 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       const classLookupKey = selectedClass ? await createStudentRosterLookupKey(exam.teacherId, exam.id, normalizedName, selectedClass.id) : lookupKey;
       const roster = exam.studentDirectory?.[classLookupKey] || exam.studentDirectory?.[lookupKey];
       if (selectedClass && roster?.classId && roster.classId !== selectedClass.id) {
-        setLoginError(`Họ tên này thuộc lớp ${exam.classNames?.[roster.classId] || 'khác'}. Em hãy kiểm tra họ tên và lớp đã chọn.`);
+        setLoginError('Họ tên và lớp chưa khớp với danh sách đăng ký. Hãy kiểm tra với giáo viên.');
+        return;
+      }
+      // A rostered class requires a real roster match; unknown names cannot
+      // bypass a known student ID by creating another anonymous identity.
+      const classHasRoster = Boolean(selectedClass && Object.values(exam.studentDirectory || {})
+        .some(entry => entry.classId === selectedClass.id));
+      if (classHasRoster && !exam.studentDirectory?.[classLookupKey]) {
+        setLoginError('Không tìm thấy họ tên trong danh sách lớp đã đăng ký dự thi. Hãy kiểm tra chính tả hoặc liên hệ giáo viên.');
         return;
       }
       let student: StudentAccount | undefined = roster && (!selectedClass || roster.classId) ? {
@@ -300,14 +309,14 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
 
       if (!student) {
         student = {
-          id: Math.random().toString(36).slice(2, 11),
+          id: await createExamGuestStudentId(exam.teacherId, exam.id, normalizedName, selectedClass?.id),
           code: Math.floor(100000 + Math.random() * 900000).toString(),
           name: normalizedName,
           teacherId: exam.teacherId,
           examId: exam.id,
           ...(selectedClass ? { classId: selectedClass.id } : {}),
         };
-        await setDoc(doc(db, 'students', student.id), guestExamStudentRecord(student));
+        // Reserve a one-time identity only at the moment the student starts the exam.
       }
 
       const submittedKey = createTeacherStorageKey(`submitted_exam_${student.id}_${exam.id}`, exam.teacherId);
@@ -341,6 +350,19 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
         setStatus('closed');
         return;
       }
+      // A guest may CREATE an exam-scoped identity once. The Firestore
+      // update rule denies another creation with the same stable student ID.
+      if (currentStudent.examId === activeExam.id) {
+        try {
+          await setDoc(doc(db, 'students', currentStudent.id), guestExamStudentRecord(currentStudent));
+        } catch (error) {
+          if ((error as { code?: string })?.code === 'permission-denied') {
+            setLoginError('Họ tên này đã đăng ký một lượt thi trong kỳ thi này. Không thể thi lần thứ hai; nếu có nhầm lẫn hãy báo giáo viên.');
+            return;
+          }
+          throw error;
+        }
+      }
       startedAtRef.current = new Date().toISOString();
       const initialSession = {
         id: sessionId, examId: activeExam.id, studentId: currentStudent.id,
@@ -367,7 +389,9 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       setStatus('taking');
     } catch (error) {
       console.error('Không thể tạo phiên làm bài:', error);
-      setLoginError('Không thể bắt đầu bài kiểm tra. Kỳ thi có thể đã đóng hoặc mất kết nối.');
+      setLoginError((error as { code?: string })?.code === 'permission-denied'
+        ? 'Học sinh này đã bắt đầu hoặc đã hoàn thành kỳ thi trên một phiên khác. Mỗi học sinh chỉ được làm một lượt; nếu có sự cố hãy báo giáo viên.'
+        : 'Không thể bắt đầu bài kiểm tra. Kỳ thi có thể đã đóng hoặc mất kết nối.');
     }
   };
 
@@ -634,7 +658,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
                   ) : <div className="sep-empty"><strong>Hiện chưa có bài kiểm tra nào được giáo viên mở.</strong><p>Em theo dõi thông báo của giáo viên để biết lịch thi và nhận mã đăng nhập.</p></div>}
                 </div>
                 <p className="sep-notice-footnote">Danh sách được cập nhật tự động từ mục Tạo kỳ thi của giáo viên. Mã đăng nhập được giáo viên cung cấp riêng cho học sinh.</p>
-                <p className="sep-student-note"><strong>Học sinh lưu ý:</strong> Kiểm tra đúng họ tên, mã kỳ thi và thời gian làm bài. Chuẩn bị kết nối mạng ổn định trước khi bắt đầu.</p>
+                <p className="sep-student-note"><strong>Học sinh lưu ý:</strong> Mỗi họ tên trong cùng một lớp chỉ được bắt đầu một lượt cho mỗi kỳ thi. Nhập đúng họ tên theo danh sách lớp; trường hợp trùng họ tên hoặc gián đoạn thi cần báo giáo viên. Chuẩn bị kết nối mạng ổn định trước khi bắt đầu.</p>
               </section>
             </div>
           </main>

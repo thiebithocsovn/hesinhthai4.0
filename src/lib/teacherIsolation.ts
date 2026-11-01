@@ -150,6 +150,17 @@ export async function createStudentRosterLookupKey(
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * A stable exam-scoped identifier for a guest student without roster enrollment.
+ * The normalized name, class and exam produce the same document ID on every device.
+ * This is only name matching, not proof of a real person's identity.
+ */
+export async function createExamGuestStudentId(
+  teacherUid: string, examId: string, studentName: string, classId?: string,
+): Promise<string> {
+  return `guest-${await createStudentRosterLookupKey(teacherUid, examId, studentName, classId)}`;
+}
+
 export async function createPrivateStudentRosterDirectory(
   teacherUid: string,
   examId: string,

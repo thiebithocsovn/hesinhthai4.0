@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createExamGuestStudentId } from '../src/lib/teacherIsolation';
 import { describeExamAccessError } from '../src/lib/examAccessError';
 import { EXAM_ENROLLMENT_KEY, getExamStudentClasses, getSubmittedExamClassId, withExamStudentClass } from '../src/lib/examStudentClasses';
 import {
@@ -65,6 +66,10 @@ verify(component.includes('PUBLIC_EXAM_SCHEDULES_COLLECTION'), 'Student notices 
 verify(component.includes("setStatus('closed')"), 'Teacher closure stops the student session.');
 verify(component.includes('draftAnswers') && component.includes('updateDoc('), 'Students synchronize draft answers.');
 verify(component.includes('getDocFromServer'), 'Students check current server status before starting.');
+verify(component.includes('createExamGuestStudentId'), 'Guests use a deterministic identity across devices and name casing.');
+verify(component.includes('classHasRoster'), 'Registered classes must match the authorized roster.');
+verify(component.includes('guestExamStudentRecord(currentStudent)'), 'Identity is reserved only when beginning the exam.');
+assert.equal(await createExamGuestStudentId('teacher-one', 'exam-one', '  Lê    Thị   Hà  ', 'class-a'), await createExamGuestStudentId('teacher-one', 'exam-one', 'LÊ THỊ HÀ', 'class-a'));
 verify(component.includes('PUBLIC_EXAM_ACCESS_COLLECTION'), 'Students unlock only their authorized encrypted exam.');
 verify(component.includes('{item.questionCount} câu'), 'Student notices show a count without downloading question content.');
 verify(!component.includes("query(collection(db, 'exams'), where('status', '==', 'published'))"), 'The public student portal never downloads the full private exam collection.');
