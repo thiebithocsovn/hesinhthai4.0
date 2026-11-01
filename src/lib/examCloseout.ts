@@ -18,7 +18,10 @@ export function buildClosedExamResult(exam: ReceiptExam & { teacherId?: string }
       session.id !== `${session.studentId}_${session.examId}`) {
     throw new Error('Không thể thu bài: thông tin phiên thi không khớp với kỳ thi.');
   }
-  const answers = session.draftAnswers && typeof session.draftAnswers === 'object' && !Array.isArray(session.draftAnswers) ? session.draftAnswers : {};
+  if (!session.draftAnswers || typeof session.draftAnswers !== 'object' || Array.isArray(session.draftAnswers)) {
+    throw new Error('Phiên thi không có bản lưu đáp án; không được tự gán 0 điểm khi thiếu dữ liệu.');
+  }
+  const answers = session.draftAnswers;
   const examVersion = session.examVersion || 'Gốc';
   const grading = gradeSubmittedExam(exam, {
     id: session.id, examId: exam.id, studentId: session.studentId,

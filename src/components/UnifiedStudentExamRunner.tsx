@@ -166,6 +166,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   const [autoSubmitted, setAutoSubmitted] = useState(false);
   const [examLive, setExamLive] = useState(false);
   const [draftStatus, setDraftStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [draftSupported, setDraftSupported] = useState(true);
   const [now, setNow] = useState(() => Date.now());
   const submittingRef = useRef(false);
   const [submitting, setSubmitting] = useState(false);
@@ -341,13 +342,26 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
         return;
       }
       startedAtRef.current = new Date().toISOString();
-      await setDoc(doc(db, 'exam_sessions', sessionId), {
+      const initialSession = {
         id: sessionId, examId: activeExam.id, studentId: currentStudent.id,
         startTime: startedAtRef.current, lastActive: startedAtRef.current,
         status: 'taking', teacherId: activeExam.teacherId, examVersion,
-        draftAnswers: withExamStudentClass({}, currentStudent.classId),
-        draftCheatEvents: { rightClicks: 0, tabChanges: 0, windowResizes: 0 },
-      });
+      };
+      try {
+        await setDoc(doc(db, 'exam_sessions', sessionId), {
+          ...initialSession,
+          draftAnswers: withExamStudentClass({}, currentStudent.classId),
+          draftCheatEvents: { rightClicks: 0, tabChanges: 0, windowResizes: 0 },
+        });
+        setDraftSupported(true);
+      } catch (error) {
+        // Existing live Firestore rules may not yet allow new draft fields.
+        // Continue the exam without silently claiming automatic collection works.
+        if ((error as { code?: string })?.code !== 'permission-denied') throw error;
+        await setDoc(doc(db, 'exam_sessions', sessionId), initialSession);
+        setDraftSupported(false);
+        setDraftStatus('error');
+      }
       setAnswers({});
       setTimeRemaining(activeExam.durationMinutes * 60);
       setStatus('taking');
@@ -387,7 +401,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
 
   // Teacher-side collection uses only answers last acknowledged by Firestore.
   useEffect(() => {
-    if (status !== 'taking' || !examLive || !activeExam || !currentStudent) return;
+    if (status !== 'taking' || !examLive || !draftSupported || !activeExam || !currentStudent) return;
     const draftAnswers = withExamStudentClass(answers, currentStudent.classId);
     if (answersPayloadBytes(draftAnswers) > MAX_ANSWERS_PAYLOAD_BYTES) {
       setDraftStatus('error');
@@ -404,7 +418,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [status, examLive, activeExam?.id, currentStudent?.id, answers, cheatEvents]);
+  }, [status, examLive, draftSupported, activeExam?.id, currentStudent?.id, answers, cheatEvents]);
 
   useEffect(() => {
     if (status !== 'taking' || timeRemaining === null) return;
@@ -524,6 +538,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
     setAutoSubmitted(false);
     setExamLive(false);
     setDraftStatus('idle');
+    setDraftSupported(true);
     sessionStorage.removeItem('currentStudent');
     sessionStorage.removeItem('activeExam');
     sessionStorage.removeItem('examVersion');
@@ -656,7 +671,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
               );
             })}
           </fieldset>
-          <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 p-4 backdrop-blur"><div className="mx-auto flex max-w-4xl items-center justify-between"><div><span className="text-sm text-slate-500">{!examLive ? 'Mất kết nối máy chủ: bài làm đang tạm khóa.' : draftStatus === 'error' ? 'Bản nháp chưa được đồng bộ – hãy kiểm tra mạng.' : draftStatus === 'saving' ? 'Đang đồng bộ bài làm…' : 'Bài làm được lưu tự động.'}</span>{loginError && <p role="alert" className="text-sm text-red-600">{loginError}</p>}</div><button type="button" disabled={submitting || !examLive} onClick={() => setShowSubmitConfirm(true)} className="rounded-xl bg-blue-600 px-7 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Đang lưu bài…' : 'Nộp bài'}</button></div></div>
+          <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 p-4 backdrop-blur"><div className="mx-auto flex max-w-4xl items-center justify-between"><div><span className="text-sm text-slate-500">{!examLive ? 'Mất kết nối máy chủ: bài làm đang tạm khóa.' : !draftSupported ? 'Hệ thống chưa bật lưu nháp trên Firebase; cần giáo viên cập nhật cấu hình.' : draftStatus === 'error' ? 'Bản nháp chưa được đồng bộ – hãy kiểm tra mạng.' : draftStatus === 'saving' ? 'Đang đồng bộ bài làm…' : 'Bài làm được lưu tự động.'}</span>{loginError && <p role="alert" className="text-sm text-red-600">{loginError}</p>}</div><button type="button" disabled={submitting || !examLive} onClick={() => setShowSubmitConfirm(true)} className="rounded-xl bg-blue-600 px-7 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Đang lưu bài…' : 'Nộp bài'}</button></div></div>
         </main>
       )}
 

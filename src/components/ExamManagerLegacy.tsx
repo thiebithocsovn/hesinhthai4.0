@@ -967,7 +967,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
 
   // Close first so student drafts are frozen on the server, then collect their last saved answers.
   // Retrying is safe: a received result is never overwritten.
-  const finalizeClosedExamSessions = async (exam: Exam): Promise<number> => {
+  const finalizeClosedExamSessions = async (exam: Exam): Promise<{ finished: number; missing: number }> => {
     const [sessionSnapshot, resultSnapshot] = await Promise.all([
       getDocsFromServer(query(collection(db, 'exam_sessions'), where('teacherId', '==', exam.teacherId))),
       getDocsFromServer(query(collection(db, 'results'), where('teacherId', '==', exam.teacherId))),
@@ -975,11 +975,13 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     const sessions = sessionSnapshot.docs.map(item => ({ ...item.data(), id: item.id } as ExamSession))
       .filter(item => item.examId === exam.id && item.teacherId === exam.teacherId && item.status === 'taking');
     const existingIds = new Set(resultSnapshot.docs.map(item => item.id));
+    const missing = sessions.filter(session => !existingIds.has(session.id) && !session.draftAnswers).length;
+    const recoverable = sessions.filter(session => existingIds.has(session.id) || Boolean(session.draftAnswers));
     let finished = 0;
-    for (let offset = 0; offset < sessions.length; offset += 200) {
+    for (let offset = 0; offset < recoverable.length; offset += 200) {
       const batch = writeBatch(db);
       let createdInBatch = 0;
-      for (const session of sessions.slice(offset, offset + 200)) {
+      for (const session of recoverable.slice(offset, offset + 200)) {
         const at = new Date().toISOString();
         if (!existingIds.has(session.id)) {
           batch.set(doc(db, 'results', session.id), buildClosedExamResult(exam, session, at));
@@ -990,7 +992,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
       await batch.commit();
       finished += createdInBatch;
     }
-    return finished;
+    return { finished, missing };
   };
 
   const toggleExamStatus = async (examId: string) => {
@@ -1004,8 +1006,8 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
       await synchronizeExamPublication(nextExam, exam);
       if (isClosing) {
         try {
-          const count = await finalizeClosedExamSessions(exam);
-          alert(`Kỳ thi đã đóng. Đã tự thu ${count} bài chưa nộp từ bản lưu gần nhất. Xem ở Tổng hợp kết quả; tự luận/thực hành chờ chấm.`);
+          const { finished, missing } = await finalizeClosedExamSessions(exam);
+          alert(`Kỳ thi đã đóng. Đã tự thu ${finished} bài chưa nộp từ bản lưu gần nhất. ${missing ? `Có ${missing} phiên cũ không có bản lưu; chưa thể chấm, cần kiểm tra riêng. ` : ''}Xem ở Tổng hợp kết quả; tự luận/thực hành chờ chấm.`);
         } catch (error) {
           console.error('Không thể tổng hợp toàn bộ phiên đang làm:', error);
           alert('Kỳ thi đã đóng và học sinh không thể tiếp tục. Tổng hợp bài chưa nộp bị gián đoạn. Nhấn “Thu bài còn dang dở” để thử lại; kết quả đã nhận không bị thay đổi.');
@@ -2183,8 +2185,8 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                                     if (closingExamId) return;
                                     setClosingExamId(exam.id);
                                     try {
-                                      const count = await finalizeClosedExamSessions(exam);
-                                      alert(`Đã thu thêm ${count} bài đang dở. Các bài đã nộp được giữ nguyên.`);
+                                      const { finished, missing } = await finalizeClosedExamSessions(exam);
+                                      alert(`Đã thu thêm ${finished} bài đang dở. ${missing ? `Còn ${missing} phiên thiếu bản lưu, cần kiểm tra thủ công.` : 'Các bài đã nộp được giữ nguyên.'}`);
                                     } catch (error) {
                                       console.error('Thu bài còn dang dở thất bại:', error);
                                       alert('Chưa thể thu hết bài. Hãy kiểm tra kết nối rồi thử lại.');

@@ -137,6 +137,9 @@ assert.equal(summarizeExamScore(exam, { answers: autoCollected.answers }, receip
 assert.throws(() => buildClosedExamResult({ ...exam, teacherId: 'teacher-one' }, {
   id: 'wrong', examId: 'exam', studentId: 'student', teacherId: 'teacher-one',
 }, new Date().toISOString()), /phiên thi/);
+assert.throws(() => buildClosedExamResult({ ...exam, teacherId: 'teacher-one' }, {
+  id: 'student_exam', examId: 'exam', studentId: 'student', teacherId: 'teacher-one',
+}, new Date().toISOString()), /không có bản lưu/);
 console.log('Exam essay/practical grading and automatic close-out checks passed.');
 
 // Short answers may be overridden without making every older submission wait for grading.
