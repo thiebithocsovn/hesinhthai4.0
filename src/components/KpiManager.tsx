@@ -332,7 +332,7 @@ export default function KpiManager({ currentUser, onBack }:Props) {
         <section className={box+' mb-4'}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">{isOwner?'Quản trị trường':isReviewer?'Tổ chuyên môn':'Giáo viên'}</p>
-              <h2 className="mt-1 text-xl font-bold">{school.name}</h2>
+              <h2 className="mt-1 text-xl font-bold">Quản lý kỳ KPI · Tháng {Number(month.slice(-2))}/{month.slice(0,4)}</h2>
               <p className="mt-1 text-xs text-slate-500">Mã trường: <span className="select-all font-mono">{schoolCode}</span></p>
             </div>
             <div className="flex flex-wrap items-end gap-2">
