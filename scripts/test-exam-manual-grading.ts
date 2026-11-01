@@ -7,6 +7,7 @@ import {
   examMaxPoints,
   examPointBreakdown,
   examUsesWeightedScoring,
+  formatPoints,
   gradeFromChecks,
   highlightRuns,
   questionMaxPoints,
