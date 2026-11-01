@@ -2972,6 +2972,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                             <span className="text-violet-700">Tự luận {formatPoints(breakdown.essay)}</span>
                             <span className="text-emerald-700">Thực hành {formatPoints(breakdown.practical)}</span>
                             <span className="text-slate-500">→ quy về thang 10</span>
+                            <span className="text-blue-700">Điểm mỗi câu/ý chấm từ 0,25đ, tăng theo bước 0,25đ</span>
                             <label className="flex items-center gap-1.5 text-slate-600"><input type="checkbox" checked={Boolean(editingExam.roundScoreToInteger)} onChange={event => setEditingExam({ ...editingExam, roundScoreToInteger: event.target.checked })} />Làm tròn điểm tổng về số nguyên</label>
                           </div>
                         );

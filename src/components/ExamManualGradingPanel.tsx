@@ -113,7 +113,7 @@ export function ExamGradeCard({ question, result, label, sublabel, keywords, onS
     window.clearTimeout(timer.current);
     pendingSave.current = null;
     const currentRevision = ++revision.current;
-    if (!rubric.length && (nextDirect.trim() === '' || !Number.isFinite(Number(nextDirect)) || Number(nextDirect) < 0 || Number(nextDirect) > max)) {
+    if (!rubric.length && (nextDirect.trim() === '' || !Number.isFinite(Number(nextDirect)) || Number(nextDirect) < 0 || Number(nextDirect) > max || Math.abs(Number(nextDirect) * 4 - Math.round(Number(nextDirect) * 4)) > 1e-8)) {
       reportState('error');
       return;
     }
@@ -194,8 +194,8 @@ export function ExamGradeCard({ question, result, label, sublabel, keywords, onS
         </div>
       ) : (
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700">Điểm câu này
-          <input type="number" min={0} max={max} step={0.01} value={directPoints} onChange={event => { setDirectPoints(event.target.value); schedule(checks, comment, event.target.value); }} className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-right" />
-          <span className="text-slate-500">/ {formatPoints(max)}</span>
+          <input type="number" min={0} max={max} step={0.25} value={directPoints} onChange={event => { setDirectPoints(event.target.value); schedule(checks, comment, event.target.value); }} className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-right" />
+          <span className="text-slate-500">/ {formatPoints(max)} (bước 0,25đ)</span>
         </label>
       )}
 
@@ -205,7 +205,7 @@ export function ExamGradeCard({ question, result, label, sublabel, keywords, onS
         <span className="ml-auto text-xs" aria-live="polite">
           {state === 'saving' && <span className="flex items-center gap-1 text-slate-500"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Đang lưu…</span>}
           {state === 'saved' && <span className="flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />Đã lưu</span>}
-          {state === 'error' && <span role="alert" className="text-red-600">Chưa lưu. Nhập điểm từ 0 đến {formatPoints(max)}, kiểm tra mạng rồi thử lại.</span>}
+          {state === 'error' && <span role="alert" className="text-red-600">Chưa lưu. Nhập điểm từ 0 đến {formatPoints(max)} theo bước 0,25 điểm, kiểm tra mạng rồi thử lại.</span>}
         </span>
       </div>
 

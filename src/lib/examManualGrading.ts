@@ -194,7 +194,7 @@ export function summarizeExamScore<Q extends GradableQuestion>(
   summary.max = round2(summary.objectiveMax + summary.manualMax);
   summary.complete = summary.pendingManual === 0;
   const ratio = summary.max > 0 ? summary.earned / summary.max : 0;
-  summary.score10 = exam.roundScoreToInteger ? Math.round(ratio * 10) : Math.round(ratio * 100) / 10;
+  summary.score10 = exam.roundScoreToInteger ? Math.round(ratio * 10) : round2(ratio * 10);
   return summary;
 }
 

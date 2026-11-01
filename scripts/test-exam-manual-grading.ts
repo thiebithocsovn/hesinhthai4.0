@@ -137,12 +137,12 @@ assert.equal(summarizeExamScore(shortExam, shortResult, receiptQuestionIsCorrect
 const overridden = { ...shortResult, manualGrades: { short: { points: 1.5, checks: [], comment: 'Đúng ý, cần nói rõ nhập dữ liệu.', gradedAt: since } } };
 const shortSummary = summarizeExamScore(shortExam, overridden, receiptQuestionIsCorrect);
 assert.equal(shortSummary.earned, 2.5);
-assert.equal(shortSummary.score10, 8.3);
+assert.equal(shortSummary.score10, 8.33);
 assert.equal(shortSummary.objectiveCorrect, 1, 'Partial teacher credit is included in points, not counted as a fully correct answer.');
 assert.equal(summarizeExamScore(shortExam, { ...overridden, manualGrades: { short: { ...overridden.manualGrades.short, points: 99 } } }, receiptQuestionIsCorrect).earned, 3);
 const shortReceipt = buildExamReceiptHtml(shortExam, { id: 's1', name: 'Học sinh A' }, overridden);
 assert.ok(shortReceipt.includes('Nêu tác dụng của bàn phím.') && shortReceipt.includes('Dùng để gõ chữ'));
-assert.ok(shortReceipt.includes('1,5 / 2') && shortReceipt.includes('8,3 / 10') && shortReceipt.includes(overridden.manualGrades.short.comment));
+assert.ok(shortReceipt.includes('1,5 / 2') && shortReceipt.includes('8,33 / 10') && shortReceipt.includes(overridden.manualGrades.short.comment));
 const privateKeyReceipt = buildExamReceiptHtml({ ...shortExam, receiptSettings: { includeCorrectAnswers: false } }, { id: 's1', name: 'Học sinh A' }, overridden);
 assert.ok(!privateKeyReceipt.includes('Nhập dữ liệu') && privateKeyReceipt.includes('Nêu tác dụng của bàn phím.') && privateKeyReceipt.includes('Dùng để gõ chữ'));
 const withoutPrompt = buildExamReceiptHtml({ ...shortExam, receiptSettings: { includeWrittenQuestions: false } }, { id: 's1', name: 'Học sinh A' }, overridden);
@@ -156,6 +156,12 @@ assert.ok(buildExamReceiptHtml(shuffledShortExam, { id: 's1', name: 'Học sinh 
 const bankShort = toExamQuestion({ id: 'short', prompt: 'Giải thích ngắn gọn.', points: 1, payload: { type: 'short_answer', acceptedAnswers: ['Đáp án mẫu'] } });
 assert.ok(canTeacherGradeQuestion(bankShort), 'Short answers from the question bank support the same teacher review.');
 assert.equal(summarizeExamScore({ questions: [bankShort] }, { ...shortResult, manualGrades: { short: { ...overridden.manualGrades.short, points: 0.75 } } }, receiptQuestionIsCorrect).score10, 7.5);
+const quarterExam = { questions: [mc('quarter', 0, 0.25), mc('threeQuarters', 1, 0.75), mc('nine', 2, 9)] };
+const quarterScore = summarizeExamScore(quarterExam, { answers: { quarter: 0, threeQuarters: 0, nine: 0 } }, receiptQuestionIsCorrect);
+assert.equal(examMaxPoints(quarterExam), 10);
+assert.equal(quarterScore.earned, 0.25, 'A 0.25-point correct question is counted without losing precision.');
+assert.equal(quarterScore.score10, 0.25, 'A quarter point remains 0.25 on the 10-point scale.');
+assert.equal(formatPoints(quarterScore.score10), '0,25');
 const questionMarkup = examQuestionHtml('<p>H<sub>2</sub>O <img src="https://example.com/question.png" onerror="alert(1)"></p><table><tr><td>Ô dữ liệu</td></tr></table><script>alert(1)</script><img src="data:text/html;base64,abcd">');
 assert.ok(questionMarkup.includes('<sub>2</sub>') && questionMarkup.includes('https://example.com/question.png') && questionMarkup.includes('<table>'));
 assert.ok(!questionMarkup.includes('onerror') && !questionMarkup.includes('<script') && !questionMarkup.includes('data:text/html'));
