@@ -86,7 +86,7 @@ verify(rules.includes('examQuestionCountMatches(incoming().examId, incoming().to
   'A submitted result must use the question count from its original private exam.');
 verify(rules.includes('activeSessionBelongsToStudent(resultId, incoming().studentId,'),
   'A submitted result must match the active session student, exam and teacher.');
-verify(rules.includes("affectedKeys().hasOnly(['lastActive', 'status'])"),
+verify(rules.includes("affectedKeys().hasOnly(['lastActive', 'status', 'draftAnswers', 'draftCheatEvents'])"),
   'Guest heartbeats cannot change ownership, student identity or exam identity.');
 
 const firebaseSource = readFileSync(new URL('../src/firebase.ts', import.meta.url), 'utf8');
