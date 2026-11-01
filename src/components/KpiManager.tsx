@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Building2, CheckCircle2, ClipboardCheck, Download, LockKeyhole, Plus, Save, ShieldCheck, Users } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, ClipboardCheck, Copy, Download, LayoutDashboard, LockKeyhole, Plus, Save, ShieldCheck, Settings2, Users, BarChart3, GraduationCap, ArrowRight, Search } from 'lucide-react';
+import KpiInsights from './KpiInsights';
 import { collection, doc, getDoc, onSnapshot, query, where, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type { Teacher } from '../types';
@@ -15,9 +16,9 @@ const STATUS:Record<KpiEntryStatus,string> = {
   draft:'Bản nháp', submitted:'Chờ tổ duyệt', returned:'Cần chấm lại',
   reviewed:'Tổ đã duyệt', approved:'Đã phê duyệt',
 };
-const box = 'rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm';
+const box = 'rounded-[24px] border border-slate-200 bg-white p-5 sm:p-7 shadow-[0_14px_45px_-30px_rgba(15,23,42,0.3)]';
 const inputClass = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
-const primary = 'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50';
+const primary = 'inline-flex items-center justify-center gap-2 rounded-xl bg-[#31499c] px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-[#21377c] disabled:opacity-50';
 const secondary = 'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50';
 
 function messageOf(error:unknown):string {
@@ -61,7 +62,11 @@ export default function KpiManager({ currentUser, onBack }:Props) {
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
   const [editingCriteria,setEditingCriteria]=useState(false);
-  const [membersOpen,setMembersOpen]=useState(false);
+  const [membersOpen,setMembersOpen]=useState(true);
+  const [view,setView]=useState<'overview'|'score'|'review'|'settings'>('overview');
+  const [reportRefresh,setReportRefresh]=useState(0);
+  const [reviewSearch,setReviewSearch]=useState('');
+  const [reviewFilter,setReviewFilter]=useState('all');
 
   const isOwner=!!school && school.ownerUid===uid;
   const isReviewer=isOwner || (member?.role==='reviewer' && member.status==='active');
@@ -70,7 +75,7 @@ export default function KpiManager({ currentUser, onBack }:Props) {
   const canEnter=period?.status==='open' && isMember && (!myEntry || myEntry.status==='draft' || myEntry.status==='returned');
   const preview=useMemo(()=>validateKpiScores(scores,criteria),[scores,criteria]);
 
-  function success(text:string) { setNotice(text); setError(''); }
+  function success(text:string) { setNotice(text); setError(''); setReportRefresh(n=>n+1); }
   function fail(err:unknown) { setError(messageOf(err)); setNotice(''); }
   async function safely(action:()=>Promise<void>) {
     if (busy) return;
@@ -265,14 +270,21 @@ export default function KpiManager({ currentUser, onBack }:Props) {
     approved:entries.filter(e=>e.status==='approved').length,
   }),[entries]);
 
-  return <main className="min-h-screen flex-1 overflow-auto bg-slate-50 text-slate-900">
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+  const pendingReviews=entries.filter(e=>e.status==='submitted'||e.status==='reviewed').length;
+  const missingMembers=members.filter(m=>!entries.some(e=>e.uid===m.uid&&e.status!=='draft'));
+  const filteredEntries=entries.filter(e=>(reviewFilter==='all'||e.status===reviewFilter) && (e.name+' '+e.team).toLocaleLowerCase('vi').includes(reviewSearch.trim().toLocaleLowerCase('vi')));
+  const copyText=(value:string,label:string)=>{void navigator.clipboard.writeText(value).then(()=>setNotice(label)).catch(()=>setError('Không sao chép được. Hãy sao chép thủ công.'));};
+  const actions=[{key:'overview' as const,name:'Tổng quan',icon:LayoutDashboard},{key:'score' as const,name:'Tự chấm điểm',icon:ClipboardCheck},...(isReviewer?[{key:'review' as const,name:'Duyệt phiếu',icon:ShieldCheck}]:[]),...(isOwner?[{key:'settings' as const,name:'Thiết lập',icon:Settings2}]:[])];
+
+  return <main className="min-h-screen flex-1 overflow-auto bg-[#f5f7fb] text-slate-900">
+    <div className="mx-auto max-w-[1360px] px-3 py-5 sm:px-6 lg:px-8">
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <button type="button" onClick={onBack} aria-label="Quay lại thư viện" className={secondary}><ArrowLeft size={18}/></button>
-          <div><div className="flex items-center gap-2"><ClipboardCheck className="text-indigo-600"/><h1 className="text-2xl font-black">EduKPI <span className="text-indigo-600">AI</span></h1></div><p className="text-sm text-slate-500">Đánh giá KPI viên chức — trường học đa đơn vị</p></div>
+          <button type="button" onClick={onBack} aria-label="Quay lại hệ sinh thái" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50"><ArrowLeft size={18}/></button>
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-200"><BarChart3 size={23}/></div>
+          <div><h1 className="text-xl font-black tracking-tight sm:text-2xl">EduKPI <span className="text-indigo-600">AI</span></h1><p className="text-[11px] font-semibold tracking-wide text-slate-500">NỀN TẢNG KPI TRƯỜNG HỌC</p></div>
         </div>
-        {school && <button type="button" onClick={leaveSchool} className={secondary}>Đổi trường</button>}
+        {school&&<button type="button" onClick={leaveSchool} className={secondary}>Đổi trường</button>}
       </header>
       {notice && <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</p>}
       {error && <p role="alert" className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>}
@@ -298,6 +310,25 @@ export default function KpiManager({ currentUser, onBack }:Props) {
         <button type="button" onClick={leaveSchool} className={secondary+' mt-4'}>Nhập mã khác</button>
       </section>}
       {uid && school && isMember && <>
+        <section className="relative mb-5 overflow-hidden rounded-[28px] bg-[#111d38] px-5 py-7 text-white shadow-xl shadow-slate-200 sm:px-8 sm:py-8">
+          <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-indigo-400/20 blur-2xl"/>
+          <div className="relative flex flex-wrap items-end justify-between gap-4">
+            <div className="max-w-2xl">
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-indigo-100">{isOwner?'Cấp trường':isReviewer?'Cấp tổ':'Cấp cá nhân'}</span>
+              <h2 className="mt-4 text-2xl font-extrabold tracking-tight sm:text-3xl">{school.name}</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300">Một hệ thống cho trường, tổ chuyên môn và cá nhân. Đơn giản khi sử dụng, minh bạch khi đánh giá.</p>
+              <button type="button" onClick={()=>copyText(schoolCode,'Đã sao chép mã trường.')} className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-indigo-200"><Copy size={14}/> Sao chép mã trường</button>
+            </div>
+            <div className="flex flex-wrap gap-2 text-sm"><span className="rounded-xl border border-white/15 bg-white/10 px-4 py-3">{isOwner?'Quản trị trường':isReviewer?'Tổ '+member?.team:'Giáo viên'}</span>
+              <span className="rounded-xl border border-white/15 bg-white/10 px-4 py-3">{period?.status==='open'?'Kỳ đang mở':period?.status==='closed'?'Đã khóa kỳ':'Chưa mở kỳ'}</span></div>
+          </div>
+        </section>
+        <nav aria-label="Điều hướng EduKPI" className="mb-5 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+          <div className="flex min-w-max gap-1">{actions.map(action=><button type="button" key={action.key} onClick={()=>{setView(action.key);setReviewTarget(null);}} aria-current={view===action.key?'page':undefined}
+            className={'inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-colors sm:px-5 '+(view===action.key?'bg-[#273d81] text-white':'text-slate-600 hover:bg-slate-50')}>
+            <action.icon size={17}/>{action.name}{action.key==='review'&&pendingReviews>0&&<span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">{pendingReviews}</span>}
+          </button>)}</div>
+        </nav>
         <section className={box+' mb-4'}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">{isOwner?'Quản trị trường':isReviewer?'Tổ chuyên môn':'Giáo viên'}</p>
@@ -318,7 +349,8 @@ export default function KpiManager({ currentUser, onBack }:Props) {
             <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Tháng {month} chưa được nhà trường mở kỳ đánh giá.</p>}
         </section>
 
-        {isOwner && <section className={box+' mb-4'}>
+        {view==='overview'&&<KpiInsights schoolCode={schoolCode} schoolName={school.name} uid={uid} month={month} isOwner={isOwner} isReviewer={isReviewer} memberTeam={member?.team||''} members={members} refreshKey={reportRefresh} onOpenReview={()=>setView('review')}/>}
+        {isOwner && view==='settings' && <section className={box+' mb-4'}>
           <div className="flex flex-wrap justify-between gap-3"><h3 className="font-bold">Thiết lập trường</h3>
             <div className="flex flex-wrap gap-2"><button className={secondary} onClick={()=>setMembersOpen(v=>!v)}><Users size={16}/> Danh sách và phân quyền</button>
               <button className={secondary} onClick={()=>setEditingCriteria(v=>!v)}>Cấu hình tiêu chí</button></div></div>
@@ -346,7 +378,8 @@ export default function KpiManager({ currentUser, onBack }:Props) {
           </div>}
         </section>}
 
-        {period && <section className={box+' mb-4'}>
+        {view==='score' && !period && <div className={box+' mb-4'}>Nhà trường chưa mở kỳ đánh giá tháng này. Bạn có thể xem báo cáo ở tab Tổng quan.</div>}
+        {view==='score' && period && <section className={box+' mb-4'}>
           <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
             <div><h3 className="text-lg font-bold">Phiếu tự chấm KPI tháng {month}</h3><p className="text-sm text-slate-500">Chỉ cần nhập điểm vào 6 ô và gửi, không bắt buộc tải minh chứng.</p></div>
             {myEntry && <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-700">{STATUS[myEntry.status]}</span>}
@@ -374,14 +407,22 @@ export default function KpiManager({ currentUser, onBack }:Props) {
           <p className="mt-4 text-xs text-slate-500">Điểm dự kiến không tự động trở thành kết quả xếp loại viên chức chính thức. Quyết định cuối cùng thuộc người có thẩm quyền.</p>
         </section>}
 
-        {isReviewer && period && <section className={box}>
+        {view==='review' && isReviewer && !period && <div className={box}>Nhà trường chưa mở kỳ đánh giá tháng này.</div>}
+        {view==='review' && isReviewer && period && <section className={box}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div><h3 className="text-lg font-bold">Bảng tổng hợp và xét duyệt</h3><p className="text-sm text-slate-500">Đã gửi: {kpiTotals.submitted} · Đã phê duyệt: {kpiTotals.approved} · Tổng số phiếu: {entries.length}</p></div>
             <button type="button" onClick={()=>void exportExcel()} className={secondary}><Download size={16}/> Xuất Excel</button>
           </div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <label className="relative min-w-48 flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-3 text-slate-400"/><input value={reviewSearch} onChange={e=>setReviewSearch(e.target.value)} placeholder="Tìm giáo viên hoặc tổ..." aria-label="Tìm phiếu chấm" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-indigo-500"/></label>
+            <select aria-label="Trạng thái phiếu KPI" value={reviewFilter} onChange={e=>setReviewFilter(e.target.value)} className={inputClass+' w-auto'}>
+              <option value="all">Tất cả trạng thái</option><option value="submitted">Chờ tổ duyệt</option><option value="reviewed">Chờ trường duyệt</option><option value="approved">Đã phê duyệt</option><option value="returned">Cần bổ sung</option><option value="draft">Bản nháp</option>
+            </select>
+            <button type="button" className={secondary} onClick={()=>copyText(missingMembers.map(m=>m.name+' - '+m.team).join('\n')||'Không có phiếu chưa nộp','Đã sao chép danh sách chưa nộp.')}><Copy size={16}/> Chưa nộp ({missingMembers.length})</button>
+          </div>
           <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-slate-600"><tr><th className="p-3">Giáo viên</th><th className="p-3">Tổ</th><th className="p-3">Tự chấm</th><th className="p-3">Tổ duyệt</th><th className="p-3">Trạng thái</th><th className="p-3">Thao tác</th></tr></thead>
-            <tbody>{entries.map(entry=><tr className="border-b border-slate-100" key={entry.uid}>
+            <tbody>{filteredEntries.map(entry=><tr className="border-b border-slate-100 hover:bg-slate-50" key={entry.uid}>
               <td className="p-3 font-semibold">{entry.name}</td><td className="p-3">{entry.team}</td><td className="p-3">{entry.selfTotal}</td><td className="p-3">{entry.reviewTotal??'—'}</td>
               <td className="p-3">{STATUS[entry.status]}</td><td className="p-3">
                 {entry.uid!==uid && period.status==='open' && (entry.status==='submitted' || entry.status==='reviewed') &&
@@ -390,7 +431,7 @@ export default function KpiManager({ currentUser, onBack }:Props) {
               </td></tr>)}</tbody>
           </table>{!entries.length&&<p className="p-4 text-sm text-slate-500">Chưa có phiếu KPI nào trong tháng này.</p>}</div>
         </section>}
-        {reviewTarget && period && <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/40 p-4"><div className="mx-auto my-6 max-w-xl rounded-3xl bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-label="Tổ chấm KPI">
+        {reviewTarget && period && <div className="fixed inset-0 z-[100] overflow-y-auto bg-[#101d36]/65 p-4 backdrop-blur-sm"><div className="mx-auto my-6 max-w-xl rounded-3xl bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-label="Tổ chấm KPI">
           <div className="flex justify-between gap-3"><h3 className="text-xl font-bold">Tổ chấm: {reviewTarget.name}</h3><button className={secondary} onClick={()=>setReviewTarget(null)}>Đóng</button></div>
           <p className="my-3 text-sm text-slate-500">Điểm tự chấm: {reviewTarget.selfTotal}. Người duyệt có thể điều chỉnh nhưng phải ghi lý do khi trả lại.</p>
           <div className="grid gap-2">{period.criteria.map(item=><label className="flex items-center gap-2" key={item.key}><span className="flex-1 text-sm">{item.label} (/{item.max})</span><input type="number" min="0" max={item.max} step="0.5" className={inputClass+' max-w-24'} value={reviewScores[item.key]} onChange={e=>setReviewScores(old=>({...old,[item.key]:e.target.value}))}/></label>)}</div>
