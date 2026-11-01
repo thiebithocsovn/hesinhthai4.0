@@ -163,7 +163,7 @@ service cloud.firestore {
           'id', 'examId', 'studentId', 'startTime', 'lastActive', 'status', 'teacherId', 'examVersion'
         ]) &&
         incoming().keys().hasOnly([
-          'id', 'examId', 'studentId', 'startTime', 'lastActive', 'status', 'teacherId', 'examVersion'
+          'id', 'examId', 'studentId', 'startTime', 'lastActive', 'status', 'teacherId', 'examVersion', 'draftAnswers', 'draftCheatEvents'
         ]) &&
         incoming().id == sessionId &&
         isValidId(incoming().examId) && isValidId(incoming().studentId) &&
@@ -172,6 +172,8 @@ service cloud.firestore {
         incoming().lastActive is string && incoming().lastActive.size() <= 64 &&
         (incoming().status == 'taking' || incoming().status == 'submitted') &&
         incoming().examVersion is string && incoming().examVersion.size() <= 128 &&
+        (!('draftAnswers' in incoming()) || incoming().draftAnswers is map) &&
+        (!('draftCheatEvents' in incoming()) || incoming().draftCheatEvents is map) &&
         enrolledStudentBelongsToTeacher(incoming().studentId, incoming().teacherId);
     }
 
@@ -419,7 +421,7 @@ service cloud.firestore {
         !isSignedIn() &&
         ownerRemainsUnchanged('teacherId') &&
         guestSessionIsSafe(sessionId) &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['lastActive', 'status']) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['lastActive', 'status', 'draftAnswers', 'draftCheatEvents']) &&
         existing().status == 'taking' &&
         sessionId == incoming().studentId + '_' + incoming().examId &&
         publishedExamBelongsToTeacher(incoming().examId, incoming().teacherId)
