@@ -62,6 +62,9 @@ verify(wrapper.includes("props.initialMode === 'student'"), 'ExamManager routes 
 verify(wrapper.includes('<UnifiedStudentExamRunner'), 'The upgraded student runner is the production student portal.');
 verify(component.includes("where('status', '==', 'published')"), 'Student schedule subscribes only to published exams.');
 verify(component.includes('PUBLIC_EXAM_SCHEDULES_COLLECTION'), 'Student notices are stored separately from private teacher exams.');
+verify(component.includes("setStatus('closed')"), 'Teacher closure stops the student session.');
+verify(component.includes('draftAnswers') && component.includes('updateDoc('), 'Students synchronize draft answers.');
+verify(component.includes('getDocFromServer'), 'Students check current server status before starting.');
 verify(component.includes('PUBLIC_EXAM_ACCESS_COLLECTION'), 'Students unlock only their authorized encrypted exam.');
 verify(component.includes('{item.questionCount} câu'), 'Student notices show a count without downloading question content.');
 verify(!component.includes("query(collection(db, 'exams'), where('status', '==', 'published'))"), 'The public student portal never downloads the full private exam collection.');

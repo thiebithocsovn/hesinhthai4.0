@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { buildClosedExamResult } from '../src/lib/examCloseout';
 import { readFileSync } from 'node:fs';
 import {
   examHasManualQuestions,
@@ -124,7 +125,19 @@ const atSubmitReceipt = buildExamReceiptHtml(atSubmitExam, { id: 's1', name: 'H�
 assert.ok(atSubmitReceipt.includes(code) && atSubmitReceipt.includes('không cần ký lại'));
 assert.ok(finalReceipt.includes('Phiếu có điểm cuối cùng; học sinh ký một lần.'));
 
-console.log('Exam essay/practical grading checks passed.');
+const autoCollected = buildClosedExamResult({ ...exam, teacherId: 'teacher-one' }, {
+  id: 'student_exam', examId: 'exam', studentId: 'student', teacherId: 'teacher-one',
+  examVersion: 'Gốc', draftAnswers: { q1: 0, q3: 2 }, draftCheatEvents: { rightClicks: 1, tabChanges: 0, windowResizes: 0 },
+}, '2026-11-01T12:00:00.000Z');
+assert.equal(autoCollected.score, 2);
+assert.equal(autoCollected.totalQuestions, 5);
+assert.equal(autoCollected.closedByTeacher, true);
+assert.equal(autoCollected.cheatEvents.rightClicks, 1);
+assert.equal(summarizeExamScore(exam, { answers: autoCollected.answers }, receiptQuestionIsCorrect).objectiveEarned, 3);
+assert.throws(() => buildClosedExamResult({ ...exam, teacherId: 'teacher-one' }, {
+  id: 'wrong', examId: 'exam', studentId: 'student', teacherId: 'teacher-one',
+}, new Date().toISOString()), /phiên thi/);
+console.log('Exam essay/practical grading and automatic close-out checks passed.');
 
 // Short answers may be overridden without making every older submission wait for grading.
 const shortAnswer: ReceiptQuestion = { id: 'short', text: '<p>Nêu tác dụng của bàn phím.</p>', options: [], correctAnswer: -1, type: 'short_answer', correctTextAnswer: 'Nhập dữ liệu', points: 2 };

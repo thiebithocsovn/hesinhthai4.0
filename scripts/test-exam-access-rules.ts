@@ -8,6 +8,7 @@ import { loadExamRosterMetadata } from '../src/lib/examRoster';
 import { buildExamReceiptHtml } from '../src/lib/examReceipt';
 import { createStudentRosterLookupKey } from '../src/lib/teacherIsolation';
 import { getSubmittedExamClassId, guestExamStudentRecord, withExamStudentClass } from '../src/lib/examStudentClasses';
+import { buildClosedExamResult } from '../src/lib/examCloseout';
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error('Run this test only in the Firestore emulator.');
 const [host, port] = process.env.FIRESTORE_EMULATOR_HOST.split(':');
@@ -85,6 +86,9 @@ try {
   const session = { id: sessionId, examId: exam.id, studentId: student.id, teacherId: exam.teacherId, startTime: timestamp, lastActive: timestamp, status: 'taking', examVersion: 'Gốc' };
   await assertSucceeds(setDoc(doc(guest, 'exam_sessions', sessionId), session));
   await assertSucceeds(updateDoc(doc(guest, 'exam_sessions', sessionId), { lastActive: new Date().toISOString() }));
+  await assertSucceeds(updateDoc(doc(guest, 'exam_sessions', sessionId), { draftAnswers: { q1: 0 }, draftCheatEvents: { rightClicks: 0, tabChanges: 0, windowResizes: 0 } }));
+  await assertFails(getDoc(doc(guest, 'exam_sessions', sessionId)));
+  await assertFails(updateDoc(doc(guest, 'exam_sessions', sessionId), { teacherId: 'teacher-two' }));
   const result = { id: sessionId, examId: exam.id, studentId: student.id, teacherId: exam.teacherId, score: 1, totalQuestions: 1, submittedAt: timestamp, answers: withExamStudentClass({ q1: 0 }, student.classId), cheatEvents: { rightClicks: 0, tabChanges: 0, windowResizes: 0 }, examVersion: 'Gốc' };
   await assertFails(setDoc(doc(guest, 'results', sessionId), { ...result, totalQuestions: 99 }));
   await assertSucceeds(setDoc(doc(guest, 'results', sessionId), result));
@@ -93,12 +97,27 @@ try {
   assert.equal(getSubmittedExamClassId(decoded, savedResult), 'class-8a');
   assert.ok(buildExamReceiptHtml(decoded, guestExamStudentRecord(student), savedResult).includes('<p>Lớp: 8A</p>'));
   await assertSucceeds(updateDoc(doc(guest, 'exam_sessions', sessionId), { status: 'submitted', lastActive: timestamp }));
+  const pendingStudent = { ...student, id: 'student-two', name: 'Học sinh chưa nộp' };
+  await assertSucceeds(setDoc(doc(guest, 'students', pendingStudent.id), guestExamStudentRecord(pendingStudent)));
+  const pendingId = `${pendingStudent.id}_${exam.id}`;
+  await assertSucceeds(setDoc(doc(guest, 'exam_sessions', pendingId), {
+    ...session, id: pendingId, studentId: pendingStudent.id,
+    draftAnswers: { q1: 0 }, draftCheatEvents: { rightClicks: 0, tabChanges: 0, windowResizes: 0 },
+  }));
   const close = writeBatch(teacher);
   close.set(doc(teacher, 'exams', exam.id), { ...exam, status: 'closed' });
   close.delete(doc(teacher, 'public_exam_schedules', schedule.id));
   close.delete(doc(teacher, 'public_exam_access', accessId));
   await assertSucceeds(close.commit());
   assert.equal((await getDocs(query(collection(guest, 'public_exam_schedules'), where('status', '==', 'published')))).size, 0);
+  await assertFails(updateDoc(doc(guest, 'exam_sessions', pendingId), { draftAnswers: { q1: 1 } }));
+  await assertFails(setDoc(doc(guest, 'results', pendingId), { ...result, id: pendingId, studentId: pendingStudent.id }));
+  const savedPending = (await assertSucceeds(getDoc(doc(teacher, 'exam_sessions', pendingId)))).data()!;
+  const finalDraft = buildClosedExamResult(exam, { ...savedPending, id: pendingId } as Parameters<typeof buildClosedExamResult>[1], new Date().toISOString());
+  assert.equal(finalDraft.score, 1);
+  await assertSucceeds(setDoc(doc(teacher, 'results', pendingId), finalDraft));
+  await assertSucceeds(updateDoc(doc(teacher, 'exam_sessions', pendingId), { status: 'submitted' }));
+  assert.equal((await assertSucceeds(getDoc(doc(teacher, 'results', pendingId)))).data()?.closedByTeacher, true);
   await assertFails(getDoc(doc(guest, 'public_exam_access', accessId)));
   assert.match(describeExamAccessError({ code: 'permission-denied' }, 'login'), /quyền Firebase/);
   assert.match(describeExamAccessError({ code: 'unavailable' }, 'login'), /kiểm tra mạng/);
