@@ -152,11 +152,12 @@ export default function KpiManager({ currentUser, onBack }:Props) {
   function connect() {
     const code=lookupCode.trim();
     if(!/^[A-Za-z0-9_-]{8,128}$/.test(code)){setError('Mã trường không hợp lệ.');return;}
+    setView('overview');
     setSchoolCode(code);
     sessionStorage.setItem('edukpi.school.'+uid,code);
   }
   function leaveSchool() {
-    setSchoolCode('');setLookupCode('');setNotice('');setError('');
+    setSchoolCode('');setLookupCode('');setNotice('');setError('');setView('overview');
     sessionStorage.removeItem('edukpi.school.'+uid);
   }
   async function createSchool() {
@@ -164,7 +165,7 @@ export default function KpiManager({ currentUser, onBack }:Props) {
     await safely(async()=>{
       const ref=doc(collection(db,'kpiSchools'));
       await setDoc(ref,{name:schoolName.trim(),ownerUid:uid,criteria:DEFAULT_KPI_CRITERIA,createdAt:serverTimestamp()});
-      setLookupCode(ref.id);setSchoolCode(ref.id);
+      setLookupCode(ref.id);setSchoolCode(ref.id);setView('overview');
       sessionStorage.setItem('edukpi.school.'+uid,ref.id);
       success('Đã tạo trường. Hãy thêm giáo viên bằng mã UID và mở tháng đánh giá.');
     });
@@ -368,7 +369,7 @@ export default function KpiManager({ currentUser, onBack }:Props) {
             <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Tháng {month} chưa được nhà trường mở kỳ đánh giá.</p>}
         </section>
 
-        {view==='overview'&&<KpiInsights schoolCode={schoolCode} schoolName={school.name} uid={uid} month={month} isOwner={isOwner} isReviewer={isReviewer} memberTeam={member?.team||''} members={members} refreshKey={reportRefresh} onOpenReview={()=>setView('review')}/>}
+        {view==='overview'&&<KpiInsights schoolCode={schoolCode} schoolName={school.name} uid={uid} month={month} isOwner={isOwner} isReviewer={isReviewer} memberTeam={member?.team||''} members={isReviewer?members:member?[member]:[]} refreshKey={reportRefresh} onOpenReview={()=>setView('review')}/>}
         {isOwner && view==='settings' && <section className={box+' mb-4'}>
           <div className="flex flex-wrap justify-between gap-3"><h3 className="font-bold">Thiết lập trường</h3>
             <div className="flex flex-wrap gap-2"><button className={secondary} onClick={()=>setMembersOpen(v=>!v)}><Users size={16}/> Danh sách và phân quyền</button>
