@@ -170,6 +170,8 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   const [draftSupported, setDraftSupported] = useState(true);
   const [now, setNow] = useState(() => Date.now());
   const submittingRef = useRef(false);
+  const startingRef = useRef(false);
+  const [starting, setStarting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const startedAtRef = useRef('');
   const [receiptHtml, setReceiptHtml] = useState('');
@@ -341,7 +343,10 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   };
 
   const startExam = async () => {
-    if (!activeExam || !currentStudent || !isValidTeacherUid(activeExam.teacherId) || !examLive) return;
+    if (!activeExam || !currentStudent || !isValidTeacherUid(activeExam.teacherId) || !examLive || startingRef.current) return;
+    startingRef.current = true;
+    setStarting(true);
+    setLoginError('');
     const sessionId = `${currentStudent.id}_${activeExam.id}`;
     try {
       const scheduleId = await createPublicExamScheduleId(activeExam.teacherId, activeExam.id);
@@ -392,6 +397,9 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       setLoginError((error as { code?: string })?.code === 'permission-denied'
         ? 'Học sinh này đã bắt đầu hoặc đã hoàn thành kỳ thi trên một phiên khác. Mỗi học sinh chỉ được làm một lượt; nếu có sự cố hãy báo giáo viên.'
         : 'Không thể bắt đầu bài kiểm tra. Kỳ thi có thể đã đóng hoặc mất kết nối.');
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
     }
   };
 
@@ -667,7 +675,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       )}
 
       {status === 'waiting' && activeExam && (
-        <main className="flex flex-1 items-center justify-center p-4"><section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm"><div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-blue-50 text-blue-600"><FileText className="h-10 w-10" /></div><h2 className="text-2xl font-bold">{activeExam.title}</h2><div className="my-6 flex justify-center gap-6 text-sm text-slate-600"><span>{activeExam.durationMinutes} phút</span><span>{activeExam.questions.length} câu</span></div><button type="button" onClick={startExam} disabled={!examLive} className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-lg font-bold text-white hover:bg-emerald-600 disabled:opacity-50">{examLive ? 'Bắt đầu làm bài' : 'Đang kiểm tra kết nối kỳ thi…'}</button>{loginError && <p className="mt-3 text-sm text-red-600">{loginError}</p>}</section></main>
+        <main className="flex flex-1 items-center justify-center p-4"><section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm"><div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-blue-50 text-blue-600"><FileText className="h-10 w-10" /></div><h2 className="text-2xl font-bold">{activeExam.title}</h2><div className="my-6 flex justify-center gap-6 text-sm text-slate-600"><span>{activeExam.durationMinutes} phút</span><span>{activeExam.questions.length} câu</span></div><button type="button" onClick={startExam} disabled={!examLive || starting} className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-lg font-bold text-white hover:bg-emerald-600 disabled:opacity-50">{starting ? 'Đang xác minh lượt thi…' : examLive ? 'Bắt đầu làm bài' : 'Đang kiểm tra kết nối kỳ thi…'}</button>{loginError && <p className="mt-3 text-sm text-red-600">{loginError}</p>}</section></main>
       )}
 
       {status === 'taking' && activeExam && (
