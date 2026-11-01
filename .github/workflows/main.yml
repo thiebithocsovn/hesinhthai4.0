@@ -2,7 +2,7 @@ name: Restore, verify and publish Hesinhthai 4.0
 
 on:
   push:
-    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013, feat/wall-inline-chat-20261014, feat/wall-openai-20261014, feat/wall-cloud-run-20261014, feat/wall-ai-providers-20261014, fix/wall-gemini-appcheck-20261015]
+    branches: [main, fix/types-firebase-deployment-20261013, feat/wall-ai-feedback-20261013, feat/wall-inline-chat-20261014, feat/wall-openai-20261014, feat/wall-cloud-run-20261014, feat/wall-ai-providers-20261014, fix/wall-gemini-appcheck-20261015, fix/exam-close-auto-collect-20261101]
   workflow_dispatch:
 
 permissions:
