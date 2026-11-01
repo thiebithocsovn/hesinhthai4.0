@@ -1522,7 +1522,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     );
   }
 
-  if (appMode === 'student') {
+  if ((appMode as string) === 'student') {
     return (
       <div className={`flex-1 flex flex-col h-full ${examStatus === 'login' ? 'bg-gradient-to-br from-blue-100 via-indigo-50 to-violet-100' : 'bg-slate-50'}`}>
         <header className={`relative z-20 px-4 md:px-8 py-4 flex items-center justify-between shrink-0 ${examStatus === 'login' ? 'bg-white/60 border-b border-blue-200/70 backdrop-blur-md' : 'bg-white border-b border-slate-200'}`}>
