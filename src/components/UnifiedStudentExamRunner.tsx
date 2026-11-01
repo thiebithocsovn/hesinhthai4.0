@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, CalendarDays, CheckCircle, Clock, Eye, EyeOff, FileText, GraduationCap, LoaderCircle, Printer, X } from 'lucide-react';
-import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocFromServer, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
 import { getExamStudentClasses, guestExamStudentRecord, withExamStudentClass } from '../lib/examStudentClasses';
 import { buildStudentExamSchedule, canStudentEnterExam, formatExamScheduleDate, getExamScheduleState } from '../lib/examSchedule';
 import {
   createExamAccessDocumentId,
+  createPublicExamScheduleId,
   openProtectedExamAccess,
   PUBLIC_EXAM_ACCESS_COLLECTION,
   PUBLIC_EXAM_SCHEDULES_COLLECTION,
@@ -155,7 +156,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
     }
   });
   const [examVersion, setExamVersion] = useState(() => sessionStorage.getItem('examVersion') || 'Gốc');
-  const [status, setStatus] = useState<'login' | 'waiting' | 'taking' | 'finished'>(() => activeExam && currentStudent ? 'waiting' : 'login');
+  const [status, setStatus] = useState<'login' | 'waiting' | 'taking' | 'finished' | 'closed'>(() => activeExam && currentStudent ? 'waiting' : 'login');
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [score, setScore] = useState<{ correct: number; total: number; objectiveEarned?: number; objectiveMax?: number; manualCount?: number; weighted?: boolean; score10?: number } | null>(null);
@@ -163,6 +164,8 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   const [cheatEvents, setCheatEvents] = useState({ rightClicks: 0, tabChanges: 0, windowResizes: 0 });
   const [cheatWarning, setCheatWarning] = useState('');
   const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const [examLive, setExamLive] = useState(false);
+  const [draftStatus, setDraftStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [now, setNow] = useState(() => Date.now());
   const submittingRef = useRef(false);
   const [submitting, setSubmitting] = useState(false);
@@ -328,29 +331,80 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   };
 
   const startExam = async () => {
-    if (!activeExam || !currentStudent) return;
-    startedAtRef.current = new Date().toISOString();
-    setAnswers({});
-    setTimeRemaining(activeExam.durationMinutes * 60);
-    setStatus('taking');
+    if (!activeExam || !currentStudent || !isValidTeacherUid(activeExam.teacherId) || !examLive) return;
     const sessionId = `${currentStudent.id}_${activeExam.id}`;
     try {
+      const scheduleId = await createPublicExamScheduleId(activeExam.teacherId, activeExam.id);
+      const schedule = await getDocFromServer(doc(db, PUBLIC_EXAM_SCHEDULES_COLLECTION, scheduleId));
+      if (!schedule.exists() || schedule.data().status !== 'published') {
+        setStatus('closed');
+        return;
+      }
+      startedAtRef.current = new Date().toISOString();
       await setDoc(doc(db, 'exam_sessions', sessionId), {
-        id: sessionId,
-        examId: activeExam.id,
-        studentId: currentStudent.id,
-        startTime: startedAtRef.current,
-        lastActive: new Date().toISOString(),
-        status: 'taking',
-        teacherId: activeExam.teacherId || '',
-        examVersion,
+        id: sessionId, examId: activeExam.id, studentId: currentStudent.id,
+        startTime: startedAtRef.current, lastActive: startedAtRef.current,
+        status: 'taking', teacherId: activeExam.teacherId, examVersion,
+        draftAnswers: withExamStudentClass({}, currentStudent.classId),
+        draftCheatEvents: { rightClicks: 0, tabChanges: 0, windowResizes: 0 },
       });
+      setAnswers({});
+      setTimeRemaining(activeExam.durationMinutes * 60);
+      setStatus('taking');
     } catch (error) {
       console.error('Không thể tạo phiên làm bài:', error);
-      setLoginError('Không thể bắt đầu bài kiểm tra. Hãy thử lại.');
-      setStatus('waiting');
+      setLoginError('Không thể bắt đầu bài kiểm tra. Kỳ thi có thể đã đóng hoặc mất kết nối.');
     }
   };
+
+  // The public notice disappears when the teacher closes the exam.
+  // This watches metadata only; neither private questions nor scores are exposed.
+  useEffect(() => {
+    if (!activeExam || !isValidTeacherUid(activeExam.teacherId) || (status !== 'waiting' && status !== 'taking')) return;
+    let cancelled = false;
+    let unsubscribe = () => {};
+    setExamLive(false);
+    void createPublicExamScheduleId(activeExam.teacherId, activeExam.id).then(scheduleId => {
+      if (cancelled) return;
+      unsubscribe = onSnapshot(
+        query(collection(db, PUBLIC_EXAM_SCHEDULES_COLLECTION), where('status', '==', 'published')),
+        { includeMetadataChanges: true },
+        snapshot => {
+          if (snapshot.metadata.fromCache) { setExamLive(false); return; }
+          const open = snapshot.docs.some(item => item.id === scheduleId);
+          setExamLive(open);
+          if (!open) {
+            setShowSubmitConfirm(false);
+            setCheatWarning('');
+            setStatus('closed');
+          }
+        },
+        error => { console.error('Mất kết nối trạng thái kỳ thi:', error); setExamLive(false); },
+      );
+    }).catch(error => { console.error('Không thể kiểm tra lịch thi:', error); setExamLive(false); });
+    return () => { cancelled = true; unsubscribe(); };
+  }, [activeExam?.id, activeExam?.teacherId, status]);
+
+  // Teacher-side collection uses only answers last acknowledged by Firestore.
+  useEffect(() => {
+    if (status !== 'taking' || !examLive || !activeExam || !currentStudent) return;
+    const draftAnswers = withExamStudentClass(answers, currentStudent.classId);
+    if (answersPayloadBytes(draftAnswers) > MAX_ANSWERS_PAYLOAD_BYTES) {
+      setDraftStatus('error');
+      return;
+    }
+    setDraftStatus('saving');
+    const timer = window.setTimeout(() => {
+      const sessionId = `${currentStudent.id}_${activeExam.id}`;
+      void updateDoc(doc(db, 'exam_sessions', sessionId), {
+        draftAnswers, draftCheatEvents: cheatEvents, lastActive: new Date().toISOString(),
+      }).then(() => setDraftStatus('saved')).catch(error => {
+        console.error('Không thể đồng bộ bản nháp:', error);
+        setDraftStatus('error');
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [status, examLive, activeExam?.id, currentStudent?.id, answers, cheatEvents]);
 
   useEffect(() => {
     if (status !== 'taking' || timeRemaining === null) return;
@@ -398,7 +452,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   }, [status, activeExam]);
 
   const submitExam = async () => {
-    if (!activeExam || !currentStudent || status !== 'taking' || submittingRef.current) return;
+    if (!activeExam || !currentStudent || status !== 'taking' || submittingRef.current || !examLive) return;
     const payloadBytes = answersPayloadBytes(answers);
     if (payloadBytes > MAX_ANSWERS_PAYLOAD_BYTES) {
       setLoginError(`Bài làm có tệp quá lớn (${formatFileSize(payloadBytes)}). Em hãy thay tệp bằng ảnh chụp màn hình rồi nộp lại.`);
@@ -446,6 +500,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       }) : null;
       setScore({ correct, total: activeExam.questions.length, weighted, objectiveEarned: objective?.objectiveEarned, objectiveMax: objective?.objectiveMax, manualCount: objective?.manualCount, score10: objective?.score10 });
       setStatus('finished');
+      setDraftStatus('idle');
     } catch (error) {
       console.error('Không thể nộp bài:', error);
       setLoginError('Không thể nộp bài. Vui lòng kiểm tra kết nối và thử lại.');
@@ -467,6 +522,8 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
     setLoginError('');
     setStatus('login');
     setAutoSubmitted(false);
+    setExamLive(false);
+    setDraftStatus('idle');
     sessionStorage.removeItem('currentStudent');
     sessionStorage.removeItem('activeExam');
     sessionStorage.removeItem('examVersion');
@@ -571,13 +628,13 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       )}
 
       {status === 'waiting' && activeExam && (
-        <main className="flex flex-1 items-center justify-center p-4"><section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm"><div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-blue-50 text-blue-600"><FileText className="h-10 w-10" /></div><h2 className="text-2xl font-bold">{activeExam.title}</h2><div className="my-6 flex justify-center gap-6 text-sm text-slate-600"><span>{activeExam.durationMinutes} phút</span><span>{activeExam.questions.length} câu</span></div><button type="button" onClick={startExam} className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-lg font-bold text-white hover:bg-emerald-600">Bắt đầu làm bài</button>{loginError && <p className="mt-3 text-sm text-red-600">{loginError}</p>}</section></main>
+        <main className="flex flex-1 items-center justify-center p-4"><section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm"><div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-blue-50 text-blue-600"><FileText className="h-10 w-10" /></div><h2 className="text-2xl font-bold">{activeExam.title}</h2><div className="my-6 flex justify-center gap-6 text-sm text-slate-600"><span>{activeExam.durationMinutes} phút</span><span>{activeExam.questions.length} câu</span></div><button type="button" onClick={startExam} disabled={!examLive} className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-lg font-bold text-white hover:bg-emerald-600 disabled:opacity-50">{examLive ? 'Bắt đầu làm bài' : 'Đang kiểm tra kết nối kỳ thi…'}</button>{loginError && <p className="mt-3 text-sm text-red-600">{loginError}</p>}</section></main>
       )}
 
       {status === 'taking' && activeExam && (
         <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col p-4 md:p-6">
           <div className="sticky top-[65px] z-20 mb-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div><h2 className="font-bold text-slate-800">{activeExam.title}</h2><p className="text-xs text-slate-500">Đã trả lời {Object.keys(answers).length}/{activeExam.questions.length} câu</p></div><div className={`flex items-center gap-2 rounded-xl px-4 py-2 font-mono text-xl font-bold ${timeRemaining !== null && timeRemaining < 300 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-700'}`}><Clock className="h-5 w-5" />{timeRemaining !== null ? formatTime(timeRemaining) : '00:00'}</div></div>
-          <fieldset disabled={submitting} className="space-y-5 pb-28">
+          <fieldset disabled={submitting || !examLive} className="space-y-5 pb-28">
             {activeExam.questions.map((question, index) => {
               const engine = engineQuestionForExam(question);
               return (
@@ -599,7 +656,18 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
               );
             })}
           </fieldset>
-          <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 p-4 backdrop-blur"><div className="mx-auto flex max-w-4xl items-center justify-between"><div><span className="text-sm text-slate-500">Hãy kiểm tra các câu trước khi nộp.</span>{loginError && <p role="alert" className="text-sm text-red-600">{loginError}</p>}</div><button type="button" disabled={submitting} onClick={() => setShowSubmitConfirm(true)} className="rounded-xl bg-blue-600 px-7 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Đang lưu bài…' : 'Nộp bài'}</button></div></div>
+          <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 p-4 backdrop-blur"><div className="mx-auto flex max-w-4xl items-center justify-between"><div><span className="text-sm text-slate-500">{!examLive ? 'Mất kết nối máy chủ: bài làm đang tạm khóa.' : draftStatus === 'error' ? 'Bản nháp chưa được đồng bộ – hãy kiểm tra mạng.' : draftStatus === 'saving' ? 'Đang đồng bộ bài làm…' : 'Bài làm được lưu tự động.'}</span>{loginError && <p role="alert" className="text-sm text-red-600">{loginError}</p>}</div><button type="button" disabled={submitting || !examLive} onClick={() => setShowSubmitConfirm(true)} className="rounded-xl bg-blue-600 px-7 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Đang lưu bài…' : 'Nộp bài'}</button></div></div>
+        </main>
+      )}
+
+      {status === 'closed' && (
+        <main className="flex flex-1 items-center justify-center p-4">
+          <section className="w-full max-w-md rounded-3xl border border-amber-200 bg-white p-8 text-center shadow-sm">
+            <Clock className="mx-auto h-14 w-14 text-amber-600" />
+            <h2 className="mt-4 text-2xl font-bold text-amber-800">Kỳ thi đã đóng</h2>
+            <p className="mt-3 text-slate-600">Giáo viên đã kết thúc kỳ thi. Em không thể làm tiếp hoặc thay đổi đáp án. Bài đã lưu trên máy chủ được thu và tổng hợp; câu tự luận/thực hành chờ giáo viên chấm.</p>
+            <button type="button" onClick={reset} className="mt-6 rounded-xl bg-slate-900 px-6 py-3 font-bold text-white">Về cổng học sinh</button>
+          </section>
         </main>
       )}
 
