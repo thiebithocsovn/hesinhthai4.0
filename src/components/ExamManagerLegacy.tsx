@@ -6,6 +6,8 @@ import ExamReceiptDialog from './ExamReceiptDialog';
 import TeacherExamPrintStation from './TeacherExamPrintStation';
 import { loadExamRosterMetadata } from '../lib/examRoster';
 import { gradeSubmittedExam, type TeacherPrintState } from '../lib/teacherExamPrinting';
+import { buildClosedExamResult } from '../lib/examCloseout';
+import UnifiedStudentExamRunner from './UnifiedStudentExamRunner';
 import { buildExamReceiptHtml, DEFAULT_EXAM_RECEIPT_SETTINGS, getExamReceiptSettings, getReceiptStudentClassId, receiptReadyToSign, receiptSignTiming, type ExamReceiptSettings } from '../lib/examReceipt';
 import * as XLSX from 'xlsx';
 import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, getDocsFromServer, writeBatch } from 'firebase/firestore';
@@ -148,6 +150,8 @@ interface ExamSession {
   status: 'taking' | 'submitted';
   teacherId?: string;
   examVersion?: string;
+  draftAnswers?: Record<string, unknown>;
+  draftCheatEvents?: { rightClicks: number; tabChanges: number; windowResizes: number };
 }
 
 interface ExamManagerProps {
@@ -404,6 +408,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const [cheatEvents, setCheatEvents] = useState({ rightClicks: 0, tabChanges: 0, windowResizes: 0 });
   const [cheatWarning, setCheatWarning] = useState<string | null>(null);
   const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const [closingExamId, setClosingExamId] = useState<string | null>(null);
   const [receiptHtml, setReceiptHtml] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
   const submissionRef = useRef(false);
@@ -960,17 +965,57 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     }
   };
 
+  // Close first so student drafts are frozen on the server, then collect their last saved answers.
+  // Retrying is safe: a received result is never overwritten.
+  const finalizeClosedExamSessions = async (exam: Exam): Promise<number> => {
+    const [sessionSnapshot, resultSnapshot] = await Promise.all([
+      getDocsFromServer(query(collection(db, 'exam_sessions'), where('teacherId', '==', exam.teacherId))),
+      getDocsFromServer(query(collection(db, 'results'), where('teacherId', '==', exam.teacherId))),
+    ]);
+    const sessions = sessionSnapshot.docs.map(item => ({ ...item.data(), id: item.id } as ExamSession))
+      .filter(item => item.examId === exam.id && item.teacherId === exam.teacherId && item.status === 'taking');
+    const existingIds = new Set(resultSnapshot.docs.map(item => item.id));
+    let finished = 0;
+    for (let offset = 0; offset < sessions.length; offset += 200) {
+      const batch = writeBatch(db);
+      let createdInBatch = 0;
+      for (const session of sessions.slice(offset, offset + 200)) {
+        const at = new Date().toISOString();
+        if (!existingIds.has(session.id)) {
+          batch.set(doc(db, 'results', session.id), buildClosedExamResult(exam, session, at));
+          createdInBatch += 1;
+        }
+        batch.update(doc(db, 'exam_sessions', session.id), { status: 'submitted', lastActive: at });
+      }
+      await batch.commit();
+      finished += createdInBatch;
+    }
+    return finished;
+  };
+
   const toggleExamStatus = async (examId: string) => {
     const exam = exams.find(e => e.id === examId);
-    if (exam) {
-      try {
-        const newStatus = exam.status === 'published' ? 'closed' : 'published';
-        const nextExam: Exam = { ...exam, status: newStatus };
-        await synchronizeExamPublication(nextExam, exam);
-      } catch (error) {
-        console.error("Error updating exam status:", error);
-        alert(describeExamAccessError(error, 'publish'));
+    if (!exam || closingExamId) return;
+    const isClosing = exam.status === 'published';
+    if (isClosing && !window.confirm('Đóng kỳ thi ngay? Học sinh đang làm sẽ bị khóa bài. Hệ thống thu bản lưu gần nhất và tự chấm trắc nghiệm; tự luận/thực hành vẫn do giáo viên chấm.')) return;
+    setClosingExamId(examId);
+    try {
+      const nextExam: Exam = { ...exam, status: isClosing ? 'closed' : 'published' };
+      await synchronizeExamPublication(nextExam, exam);
+      if (isClosing) {
+        try {
+          const count = await finalizeClosedExamSessions(exam);
+          alert(`Kỳ thi đã đóng. Đã tự thu ${count} bài chưa nộp từ bản lưu gần nhất. Xem ở Tổng hợp kết quả; tự luận/thực hành chờ chấm.`);
+        } catch (error) {
+          console.error('Không thể tổng hợp toàn bộ phiên đang làm:', error);
+          alert('Kỳ thi đã đóng và học sinh không thể tiếp tục. Tổng hợp bài chưa nộp bị gián đoạn. Nhấn “Thu bài còn dang dở” để thử lại; kết quả đã nhận không bị thay đổi.');
+        }
       }
+    } catch (error) {
+      console.error('Error updating exam status:', error);
+      alert(describeExamAccessError(error, 'publish'));
+    } finally {
+      setClosingExamId(null);
     }
   };
 
@@ -1430,6 +1475,9 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     const s = seconds % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
+
+  // Use the same actively monitored student runner from every entry point.
+  if (appMode === 'student') return <UnifiedStudentExamRunner onBack={() => setAppMode('landing')} />;
 
   // --- Renderers ---
   if (appMode === 'landing') {
@@ -2117,7 +2165,8 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                                 <Trash2 className="h-3.5 w-3.5" /> Xóa
                               </button>
                               <button
-                                onClick={() => toggleExamStatus(exam.id)}
+                                onClick={() => void toggleExamStatus(exam.id)}
+                                disabled={closingExamId !== null}
                                 className={`col-span-2 inline-flex items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors ${
                                   exam.status === 'published'
                                     ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
@@ -2128,6 +2177,24 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                                   ? <><StopCircle className="h-3.5 w-3.5" /> Đóng thi</>
                                   : <><PlayCircle className="h-3.5 w-3.5" /> Mở thi</>}
                               </button>
+                              {exam.status === 'closed' && (
+                                <button type="button" disabled={closingExamId !== null}
+                                  onClick={async () => {
+                                    if (closingExamId) return;
+                                    setClosingExamId(exam.id);
+                                    try {
+                                      const count = await finalizeClosedExamSessions(exam);
+                                      alert(`Đã thu thêm ${count} bài đang dở. Các bài đã nộp được giữ nguyên.`);
+                                    } catch (error) {
+                                      console.error('Thu bài còn dang dở thất bại:', error);
+                                      alert('Chưa thể thu hết bài. Hãy kiểm tra kết nối rồi thử lại.');
+                                    } finally {
+                                      setClosingExamId(null);
+                                    }
+                                  }}
+                                  className="col-span-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                                >Thu bài còn dang dở</button>
+                              )}
                             </div>
                           </td>
                         </tr>
