@@ -30,6 +30,7 @@
     "test:teacher-password-ui": "node scripts/test-teacher-password-ui.cjs",
     "test:head-shake": "node --import tsx scripts/test-head-shake-questions.ts",
     "test:student-portal": "node --import tsx scripts/test-exam-student-portal.ts && npm run test:teacher-printing",
+    "test:kpi-analytics": "node --import tsx scripts/test-kpi-analytics.ts",
     "test:kpi-rules": "node --import tsx scripts/test-kpi-rules.ts",
     "test:exam-access-rules": "node --import tsx scripts/test-exam-access-rules.ts",
     "test:exam-privacy": "node --import tsx scripts/test-exam-privacy.ts",
