@@ -112,6 +112,10 @@ export default function KpiManager({ currentUser, onBack }:Props) {
   },[uid,schoolCode]);
 
   useEffect(()=>{
+    setPeriod(null);setMyEntry(null);setEntries([]);setScores(emptyKpiInputs());
+  },[schoolCode,month]);
+
+  useEffect(()=>{
     if(!isMember || !schoolCode)return;
     return onSnapshot(doc(db,'kpiSchools',schoolCode,'periods',month),
       snapshot=>setPeriod(snapshot.exists()?snapshot.data() as KpiPeriod:null),
@@ -289,19 +293,34 @@ export default function KpiManager({ currentUser, onBack }:Props) {
       {notice && <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</p>}
       {error && <p role="alert" className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>}
       {!uid && <div className={box}>Cần đăng nhập tài khoản giáo viên hợp lệ để truy cập KPI.</div>}
-      {uid && !school && <div className="grid gap-4 lg:grid-cols-2">
-        <section className={box}><h2 className="mb-2 flex items-center gap-2 text-lg font-bold"><Building2 size={20}/> Vào trường đã có</h2>
-          <p className="mb-4 text-sm text-slate-600">Nhà trường thêm UID của giáo viên vào danh sách trước. Mã trường không thay thế quyền đăng nhập.</p>
-          <label className="mb-2 block text-sm font-medium" htmlFor="kpi-school-code">Mã trường</label>
-          <input id="kpi-school-code" className={inputClass} value={lookupCode} onChange={event=>setLookupCode(event.target.value)} placeholder="Dán mã do nhà trường cung cấp"/>
-          <button type="button" className={primary+' mt-3'} onClick={connect}>Truy cập trường</button>
-          <div className="mt-5 rounded-xl bg-slate-100 p-3 text-xs text-slate-700"><strong>UID tài khoản của bạn</strong><p className="mt-1 break-all font-mono select-all">{uid}</p><p className="mt-1">Gửi UID này cho quản trị trường để được thêm vào danh sách.</p></div>
+      {uid && !school && <div className="grid gap-5 lg:grid-cols-2">
+        <section className="relative overflow-hidden rounded-[28px] bg-[#14213e] p-6 text-white shadow-xl shadow-slate-200 sm:p-9">
+          <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-indigo-400/20 blur-2xl"/>
+          <div className="relative">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold"><GraduationCap size={16}/> Không gian KPI của bạn</span>
+            <h2 className="mt-6 text-2xl font-extrabold tracking-tight">Vào trường đang sử dụng</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Nhập mã trường do quản trị cung cấp để tự chấm điểm, xem báo cáo cá nhân và lịch sử đánh giá.</p>
+            <label className="mt-7 block text-xs font-bold text-slate-200" htmlFor="kpi-school-code">Mã trường</label>
+            <input id="kpi-school-code" className="mt-2 w-full rounded-xl border border-white/20 bg-white px-4 py-3 text-slate-900 outline-none focus:ring-4 focus:ring-indigo-500/30" value={lookupCode} onChange={e=>setLookupCode(e.target.value)} placeholder="Nhập mã do nhà trường cung cấp"/>
+            <button type="button" className={primary+' mt-3 w-full'} onClick={connect}>Mở EduKPI <ArrowRight size={17}/></button>
+            <div className="mt-6 rounded-2xl border border-white/15 bg-white/10 p-4">
+              <p className="text-xs font-semibold text-slate-300">Mã UID tài khoản của bạn</p>
+              <p className="mt-2 select-all break-all font-mono text-sm text-white">{uid}</p>
+              <button type="button" onClick={()=>copyText(uid,'Đã sao chép UID tài khoản.')} className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-indigo-200 hover:text-white"><Copy size={14}/> Sao chép UID gửi quản trị trường</button>
+            </div>
+          </div>
         </section>
-        <section className={box}><h2 className="mb-2 flex items-center gap-2 text-lg font-bold"><Plus size={20}/> Thiết lập trường mới</h2>
-          <p className="mb-4 text-sm text-slate-600">Mỗi trường có mã riêng, bộ tiêu chí riêng và dữ liệu độc lập.</p>
-          <label className="mb-2 block text-sm font-medium" htmlFor="kpi-school-name">Tên trường học</label>
-          <input id="kpi-school-name" className={inputClass} value={schoolName} onChange={event=>setSchoolName(event.target.value)} placeholder="Ví dụ: Trường TH&THCS ..."/>
-          <button type="button" disabled={busy} className={primary+' mt-3'} onClick={()=>void createSchool()}>Tạo trường và làm quản trị KPI</button>
+        <section className={box+' flex flex-col justify-between'}>
+          <div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Building2 size={25}/></div>
+            <p className="mt-6 text-xs font-bold uppercase tracking-widest text-indigo-600">Thiết lập tổ chức</p>
+            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900">Khởi tạo trường mới</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Mỗi trường có dữ liệu riêng, bộ tiêu chí riêng và hệ thống quản lý theo cấp trường → tổ → cá nhân.</p>
+            <label className="mt-7 block text-xs font-semibold text-slate-600" htmlFor="kpi-school-name">Tên trường học</label>
+            <input id="kpi-school-name" className={inputClass+' mt-2'} value={schoolName} onChange={e=>setSchoolName(e.target.value)} placeholder="Ví dụ: Trường TH&THCS Na Rì 1"/>
+            <button type="button" disabled={busy} className={primary+' mt-4 w-full'} onClick={()=>void createSchool()}><Plus size={17}/> Tạo trường và làm quản trị KPI</button>
+          </div>
+          <div className="mt-8 grid grid-cols-3 gap-2 border-t border-slate-100 pt-5 text-center text-xs font-medium text-slate-500"><span>Đa trường</span><span>Phân quyền</span><span>Tháng · Quý · Năm</span></div>
         </section>
       </div>}
       {uid && school && !isMember && <section className={box}>
