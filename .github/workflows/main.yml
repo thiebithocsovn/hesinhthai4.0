@@ -145,6 +145,7 @@ jobs:
           npm run test:exam-receipt
           npm run test:teacher-printing
           npm run test:exam-privacy
+          npm run test:student-portal
 
       - name: Run learning wall and app checks
         run: |
