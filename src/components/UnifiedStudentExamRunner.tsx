@@ -432,7 +432,9 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       // Rejoin the very same attempt (same student, class, exam and original
       // shuffled questions) rather than attempting to create another session.
       const cacheKey = resumeStorageKey(exam.teacherId, exam.id, student.id);
-      const recovered = await decryptExamResume(localStorage.getItem(cacheKey), normalizedCode);
+      let encryptedCache: string | null = null;
+      try { encryptedCache = localStorage.getItem(cacheKey); } catch { /* Private mode may block storage. */ }
+      const recovered = await decryptExamResume(encryptedCache, normalizedCode);
       if (recovered && matchesExamResume(recovered, exam.teacherId, exam.id, student.id) &&
           (recovered.student as StudentAccount).classId === student.classId) {
         try {
