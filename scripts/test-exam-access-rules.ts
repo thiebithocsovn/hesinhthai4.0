@@ -115,6 +115,7 @@ try {
   assert.equal(getSubmittedExamClassId(decoded, savedResult), 'class-8a');
   assert.ok(buildExamReceiptHtml(decoded, guestExamStudentRecord(student), savedResult).includes('<p>Lớp: 8A</p>'));
   await assertSucceeds(updateDoc(doc(guest, 'exam_sessions', sessionId), { status: 'submitted', lastActive: timestamp }));
+  await assertFails(updateDoc(doc(guest, 'exam_sessions', sessionId), { lastActive: new Date().toISOString() })); // No re-entry after submission.
   const pendingStudent = { ...student, id: 'student-two', name: 'Học sinh chưa nộp' };
   await assertSucceeds(setDoc(doc(guest, 'students', pendingStudent.id), guestExamStudentRecord(pendingStudent)));
   const pendingId = `${pendingStudent.id}_${exam.id}`;
