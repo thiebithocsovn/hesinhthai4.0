@@ -1,0 +1,122 @@
+name: Restore student exam access - Firestore rules
+
+on:
+  workflow_dispatch:
+    inputs:
+      database_id:
+        description: 'Type the exact Firestore database ID to confirm the target'
+        required: true
+        type: string
+      backup_confirmed:
+        description: 'I reviewed the current production rules and saved a backup in Firebase Console'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hesinhthai-production-firestore-rules
+  cancel-in-progress: false
+
+jobs:
+  validate-and-deploy:
+    name: Validate and publish rules for exam access
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PROJECT_ID: gen-lang-client-0870957273
+      FIRESTORE_DB_ID: ai-studio-51fdfd5e-caf8-4640-bdd8-404753ba685e
+    steps:
+      - name: Confirm exact database and reviewed backup
+        env:
+          REQUESTED_DB: ${{ inputs.database_id }}
+          BACKUP_CONFIRMED: ${{ inputs.backup_confirmed }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$REQUESTED_DB" != "$FIRESTORE_DB_ID" || "$BACKUP_CONFIRMED" != "true" ]]; then
+            echo '::error::Database ID must match the configured named database and backup confirmation must be checked.'
+            exit 1
+          fi
+
+      - name: Check out committed security rules
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate rules file targets only the named database
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const config = JSON.parse(fs.readFileSync("firebase.json", "utf8"));
+            const definitions = config.firestore;
+            if (!Array.isArray(definitions) || definitions.length !== 1 ||
+                definitions[0].database !== process.env.FIRESTORE_DB_ID ||
+                definitions[0].rules !== "firestore.rules") {
+              throw new Error("Firestore deployment target no longer matches the reviewed database.");
+            }
+            const rules = fs.readFileSync("firestore.rules", "utf8");
+            for (const collection of ["public_exam_schedules", "public_exam_access", "exam_sessions", "results", "students"]) {
+              if (!rules.includes("match /" + collection + "/")) {
+                throw new Error("Required exam access collection is missing: " + collection);
+              }
+            }
+          '
+
+      - name: Set up Java for Firestore emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Test student, teacher and private exam access against reviewed rules
+        run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:exam-access-rules && EXAM_RULES_FILE=firestore.learning-wall.rules npm run test:exam-access-rules"
+
+      - name: Authenticate deployment to the exact Firebase project
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-rules-deployer.json
+        run: |
+          set -euo pipefail
+          if [[ -z "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]]; then
+            echo '::error::Repository secret FIREBASE_SERVICE_ACCOUNT_JSON is missing. Do not paste its value into logs or chat.'
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const credentials = JSON.parse(fs.readFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS, "utf8"));
+            if (credentials.project_id !== process.env.PROJECT_ID) {
+              throw new Error("Service account belongs to a different Firebase project.");
+            }
+          '
+          rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+
+      - name: Publish reviewed Firestore rules
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-rules-deployer.json
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          npm run deploy:firestore
+          echo "### Published reviewed Firestore rules" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Firebase project: \`$PROJECT_ID\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Firestore database: \`$FIRESTORE_DB_ID\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- After publication, re-sync the open exam in the teacher dashboard and test one student." >> "$GITHUB_STEP_SUMMARY"
