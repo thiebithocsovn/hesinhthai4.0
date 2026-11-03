@@ -3,6 +3,11 @@ import { ArrowLeft, BookOpen, CalendarDays, CheckCircle, Clock, Eye, EyeOff, Fil
 import { collection, doc, documentId, getDoc, getDocFromServer, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
+import {
+  decryptExamResume, encryptExamResume, matchesExamResume, remainingExamSeconds,
+  resumeStorageKey, EXAM_RESUME_CODE_SESSION_KEY, EXAM_RESUME_SESSION_KEY,
+  type ExamResumeState,
+} from '../lib/examResume';
 import { getExamStudentClasses, guestExamStudentRecord, withExamStudentClass } from '../lib/examStudentClasses';
 import { buildStudentExamSchedule, canStudentEnterExam, formatExamScheduleDate, getExamScheduleState } from '../lib/examSchedule';
 import {
@@ -96,6 +101,7 @@ interface UnifiedStudentExamRunnerProps {
 }
 
 const HEARTBEAT_MS = 60_000;
+type StudentResume = ExamResumeState<UnifiedExam, StudentAccount>;
 
 function formatTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -174,6 +180,8 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   const [starting, setStarting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const startedAtRef = useRef('');
+  // In-flight encryption must not recreate a cache after the student submits.
+  const resumeWriteGenerationRef = useRef(0);
   const [receiptHtml, setReceiptHtml] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
 
@@ -227,6 +235,100 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
     }, 500);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [examCode, status]);
+
+
+  const clearExamResume = (student: StudentAccount | null, exam: UnifiedExam | null) => {
+    resumeWriteGenerationRef.current += 1;
+    sessionStorage.removeItem(EXAM_RESUME_SESSION_KEY);
+    sessionStorage.removeItem(EXAM_RESUME_CODE_SESSION_KEY);
+    if (student && exam && isValidTeacherUid(exam.teacherId)) {
+      try { localStorage.removeItem(resumeStorageKey(exam.teacherId, exam.id, student.id)); }
+      catch { /* Browser storage may be unavailable on managed computers. */ }
+    }
+  };
+
+  const rejoinExamSession = async (snapshot: StudentResume, code?: string) => {
+    if (!matchesExamResume(snapshot, snapshot.teacherId, snapshot.examId, snapshot.studentId)) {
+      throw new Error('Không thể xác minh dữ liệu khôi phục của bài thi.');
+    }
+    // Firestore is authoritative: an existing, still-taking session is mandatory.
+    // updateDoc (unlike setDoc) cannot create a second session or reset startTime.
+    const scheduleId = await createPublicExamScheduleId(snapshot.teacherId, snapshot.examId);
+    const schedule = await getDocFromServer(doc(db, PUBLIC_EXAM_SCHEDULES_COLLECTION, scheduleId));
+    if (!schedule.exists() || schedule.data().status !== 'published') {
+      throw new Error('Giáo viên đã đóng kỳ thi, không thể tiếp tục làm bài.');
+    }
+    await updateDoc(doc(db, 'exam_sessions', `${snapshot.studentId}_${snapshot.examId}`), {
+      lastActive: new Date().toISOString(),
+    });
+    startedAtRef.current = snapshot.startedAt;
+    if (code) sessionStorage.setItem(EXAM_RESUME_CODE_SESSION_KEY, code);
+    sessionStorage.setItem('currentStudent', JSON.stringify(snapshot.student));
+    sessionStorage.setItem('activeExam', JSON.stringify(snapshot.exam));
+    sessionStorage.setItem('examVersion', snapshot.examVersion);
+    sessionStorage.setItem(EXAM_RESUME_SESSION_KEY, JSON.stringify(snapshot));
+    setCurrentStudent(snapshot.student);
+    setActiveExam(snapshot.exam);
+    setExamVersion(snapshot.examVersion);
+    setAnswers(snapshot.answers);
+    setCheatEvents(snapshot.cheatEvents);
+    setTimeRemaining(remainingExamSeconds(snapshot.startedAt, snapshot.exam.durationMinutes));
+    setDraftSupported(true);
+    setDraftStatus('saved');
+    setAutoSubmitted(false);
+    setLoginError('');
+    setStatus('taking');
+  };
+
+  // Refreshing the same tab retains the short-lived session snapshot without
+  // asking the pupil to enter the exam code again.
+  useEffect(() => {
+    if (status !== 'waiting' || !activeExam || !currentStudent || !examLive || startingRef.current) return;
+    const raw = sessionStorage.getItem(EXAM_RESUME_SESSION_KEY);
+    if (!raw) return;
+    let snapshot: unknown;
+    try { snapshot = JSON.parse(raw); } catch { return; }
+    if (!matchesExamResume(snapshot, activeExam.teacherId || '', activeExam.id, currentStudent.id)) return;
+    let cancelled = false;
+    startingRef.current = true;
+    setStarting(true);
+    void rejoinExamSession(snapshot as StudentResume).catch(error => {
+      if (!cancelled) setLoginError(error instanceof Error ? error.message :
+        'Không thể vào lại bài thi. Hãy liên hệ giáo viên để kiểm tra phiên thi.');
+    }).finally(() => {
+      startingRef.current = false;
+      if (!cancelled) setStarting(false);
+    });
+    return () => { cancelled = true; };
+  }, [status, activeExam?.id, currentStudent?.id, examLive]);
+
+  // Keep a synchronous in-tab checkpoint and an AES-GCM encrypted checkpoint
+  // for restoring the same attempt after the browser/tab was closed.
+  useEffect(() => {
+    if (status !== 'taking' || !activeExam || !currentStudent ||
+        !isValidTeacherUid(activeExam.teacherId) || !startedAtRef.current) return;
+    const snapshot: StudentResume = {
+      version: 1, teacherId: activeExam.teacherId, examId: activeExam.id,
+      studentId: currentStudent.id, startedAt: startedAtRef.current,
+      exam: activeExam, student: currentStudent, examVersion, answers, cheatEvents,
+    };
+    try { sessionStorage.setItem(EXAM_RESUME_SESSION_KEY, JSON.stringify(snapshot)); }
+    catch { /* Storage is optional; Firestore still persists the student's draft. */ }
+    const code = sessionStorage.getItem(EXAM_RESUME_CODE_SESSION_KEY);
+    if (!code) return;
+    const generation = resumeWriteGenerationRef.current;
+    const savedAt = Date.now();
+    void encryptExamResume(snapshot, code, savedAt).then(payload => {
+      if (generation !== resumeWriteGenerationRef.current) return;
+      const key = resumeStorageKey(snapshot.teacherId, snapshot.examId, snapshot.studentId);
+      const previous = localStorage.getItem(key);
+      let previousTime = 0;
+      try { previousTime = JSON.parse(previous || '{}').savedAt || 0; } catch { /* Ignore bad cache. */ }
+      if (savedAt >= previousTime && generation === resumeWriteGenerationRef.current) {
+        localStorage.setItem(key, payload);
+      }
+    }).catch(error => console.warn('Không thể lưu bản khôi phục mã hóa trên thiết bị:', error));
+  }, [status, activeExam, currentStudent, examVersion, answers, cheatEvents]);
 
   const login = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -327,6 +429,21 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
         return;
       }
 
+      // Rejoin the very same attempt (same student, class, exam and original
+      // shuffled questions) rather than attempting to create another session.
+      const cacheKey = resumeStorageKey(exam.teacherId, exam.id, student.id);
+      const recovered = await decryptExamResume(localStorage.getItem(cacheKey), normalizedCode);
+      if (recovered && matchesExamResume(recovered, exam.teacherId, exam.id, student.id) &&
+          (recovered.student as StudentAccount).classId === student.classId) {
+        try {
+          await rejoinExamSession(recovered as StudentResume, normalizedCode);
+        } catch (rejoinError) {
+          setLoginError(rejoinError instanceof Error ? rejoinError.message :
+            'Phiên thi không thể khôi phục; vui lòng báo giáo viên.');
+        }
+        return;
+      }
+
       setCurrentStudent(student);
       setActiveExam(selectedExam);
       setExamVersion(selectedVersion);
@@ -389,8 +506,9 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
         setDraftSupported(false);
         setDraftStatus('error');
       }
+      sessionStorage.setItem(EXAM_RESUME_CODE_SESSION_KEY, examCode.trim());
       setAnswers({});
-      setTimeRemaining(activeExam.durationMinutes * 60);
+      setTimeRemaining(remainingExamSeconds(startedAtRef.current, activeExam.durationMinutes));
       setStatus('taking');
     } catch (error) {
       console.error('Không thể tạo phiên làm bài:', error);
@@ -427,6 +545,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
           const open = !snapshot.empty;
           setExamLive(open);
           if (!open) {
+            clearExamResume(currentStudent, activeExam);
             setShowSubmitConfirm(false);
             setCheatWarning('');
             setStatus('closed');
@@ -460,15 +579,20 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   }, [status, examLive, draftSupported, activeExam?.id, currentStudent?.id, answers, cheatEvents]);
 
   useEffect(() => {
-    if (status !== 'taking' || timeRemaining === null) return;
-    if (timeRemaining <= 0) {
-      setAutoSubmitted(true);
-      void submitExam();
-      return;
-    }
-    const timer = window.setTimeout(() => setTimeRemaining(value => value === null ? null : Math.max(0, value - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [status, timeRemaining]);
+    if (status !== 'taking' || !activeExam || !startedAtRef.current) return;
+    const updateClock = () => setTimeRemaining(remainingExamSeconds(
+      startedAtRef.current, activeExam.durationMinutes,
+    ));
+    updateClock();
+    const timer = window.setInterval(updateClock, 1000);
+    return () => window.clearInterval(timer);
+  }, [status, activeExam?.id, activeExam?.durationMinutes]);
+
+  useEffect(() => {
+    if (status !== 'taking' || timeRemaining !== 0 || !examLive) return;
+    setAutoSubmitted(true);
+    void submitExam();
+  }, [status, timeRemaining, examLive]);
 
   useEffect(() => {
     if (status !== 'taking' || !currentStudent || !activeExam) return;
@@ -542,6 +666,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
         teacherId: activeExam.teacherId || '',
       });
       // The saved result is authoritative. A failed heartbeat update must not ask the student to submit again.
+      clearExamResume(currentStudent, activeExam);
       void setDoc(doc(db, 'exam_sessions', resultId), { status: 'submitted', lastActive: submittedAt }, { merge: true }).catch(error => console.error('Không thể cập nhật trạng thái phiên đã nộp:', error));
       try { sessionStorage.setItem(createTeacherStorageKey(`submitted_exam_${currentStudent.id}_${activeExam.id}`, activeExam.teacherId), '1'); } catch { /* The server result has already been saved. */ }
       setReceiptHtml(buildExamReceiptHtml(activeExam, currentStudent, { id: resultId, score: correct, totalQuestions: activeExam.questions.length, submittedAt, answers, examVersion }, startedAtRef.current));
@@ -564,6 +689,8 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   };
 
   const reset = () => {
+    clearExamResume(currentStudent, activeExam);
+    startedAtRef.current = '';
     submittingRef.current = false;
     setReceiptHtml('');
     setShowReceipt(false);
@@ -648,7 +775,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
                   </button>
                 </form>
                 <button type="button" className="sep-help-button" onClick={() => setShowLoginHelp(value => !value)} aria-expanded={showLoginHelp} aria-controls="sep-login-help"><BookOpen size={16} aria-hidden="true" />Hướng dẫn vào thi</button>
-                {showLoginHelp && <div id="sep-login-help" className="sep-help"><ol><li>Nhập đầy đủ họ tên và mã kỳ thi giáo viên đã cấp, rồi chọn lớp trong danh sách.</li><li>Chọn <strong>Đăng nhập</strong>, kiểm tra tên bài và thời gian, rồi chọn <strong>Bắt đầu làm bài</strong>.</li><li>Làm bài trong thời gian quy định và chọn <strong>Nộp bài</strong> khi hoàn thành.</li></ol></div>}
+                {showLoginHelp && <div id="sep-login-help" className="sep-help"><ol><li>Nhập đầy đủ họ tên và mã kỳ thi giáo viên đã cấp, rồi chọn lớp trong danh sách.</li><li>Chọn <strong>Đăng nhập</strong>, kiểm tra tên bài và thời gian, rồi chọn <strong>Bắt đầu làm bài</strong>.</li><li>Làm bài trong thời gian quy định và chọn <strong>Nộp bài</strong> khi hoàn thành.</li><li>Nếu bị mất mạng hoặc thoát tab, hãy mở lại trên <strong>cùng thiết bị và trình duyệt</strong>, nhập đúng họ tên, lớp và mã kỳ thi để <strong>tiếp tục lượt thi cũ</strong>. Thời gian không đặt lại.</li></ol></div>}
               </section>
 
               <section className="sep-notices" aria-labelledby="sep-notice-heading">
