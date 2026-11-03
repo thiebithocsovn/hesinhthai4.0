@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, CalendarDays, CheckCircle, Clock, Eye, EyeOff, FileText, GraduationCap, LoaderCircle, Printer, X } from 'lucide-react';
-import { collection, doc, getDoc, getDocFromServer, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, documentId, getDoc, getDocFromServer, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
 import { getExamStudentClasses, guestExamStudentRecord, withExamStudentClass } from '../lib/examStudentClasses';
@@ -412,12 +412,19 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
     setExamLive(false);
     void createPublicExamScheduleId(activeExam.teacherId, activeExam.id).then(scheduleId => {
       if (cancelled) return;
+      // Follow only this student's exam, not every published exam in the school.
+      // Preserve the published-status filter required by the Firestore security rules.
+      const currentExamQuery = query(
+        collection(db, PUBLIC_EXAM_SCHEDULES_COLLECTION),
+        where('status', '==', 'published'),
+        where(documentId(), '==', scheduleId),
+      );
       unsubscribe = onSnapshot(
-        query(collection(db, PUBLIC_EXAM_SCHEDULES_COLLECTION), where('status', '==', 'published')),
+        currentExamQuery,
         { includeMetadataChanges: true },
         snapshot => {
           if (snapshot.metadata.fromCache) { setExamLive(false); return; }
-          const open = snapshot.docs.some(item => item.id === scheduleId);
+          const open = !snapshot.empty;
           setExamLive(open);
           if (!open) {
             setShowSubmitConfirm(false);
