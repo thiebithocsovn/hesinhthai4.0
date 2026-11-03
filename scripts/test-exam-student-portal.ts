@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createExamGuestStudentId } from '../src/lib/teacherIsolation';
 import { describeExamAccessError } from '../src/lib/examAccessError';
+import {
+  encryptExamResume, decryptExamResume, matchesExamResume,
+  remainingExamSeconds, resumeStorageKey,
+} from '../src/lib/examResume';
 import { EXAM_ENROLLMENT_KEY, getExamStudentClasses, getSubmittedExamClassId, withExamStudentClass } from '../src/lib/examStudentClasses';
 import {
   buildStudentExamSchedule,
@@ -82,5 +86,48 @@ verify(component.includes('evaluateQuestion(engine'), 'Question Engine answers a
 for (const type of ['single_choice', 'multiple_choice', 'true_false', 'true_false_matrix', 'short_answer', 'fill_blank', 'matching', 'ordering', 'classification', 'image_hotspot']) {
   verify(renderer.includes(`payload.type === '${type}'`) || renderer.includes(`payload.type !== '${type}'`), `Student UI supports ${type}.`);
 }
+
+
+const recoveryStart = new Date('2026-11-03T04:00:00.000Z').toISOString();
+const recoveryNow = Date.parse('2026-11-03T04:15:00.000Z');
+const resumeData = {
+  version: 1 as const,
+  teacherId: 'teacher-one',
+  examId: 'exam-one',
+  studentId: 'student-one',
+  startedAt: recoveryStart,
+  exam: { id: 'exam-one', teacherId: 'teacher-one', durationMinutes: 45, questions: [{ id: 'q1' }] },
+  student: { id: 'student-one', name: 'Học sinh thử nghiệm' },
+  examVersion: 'Mã đề B',
+  answers: { q1: 2 },
+  cheatEvents: { rightClicks: 0, tabChanges: 1, windowResizes: 0 },
+};
+verify(remainingExamSeconds(recoveryStart, 45, recoveryNow) === 1800,
+  'Rejoining preserves the original deadline and remaining 30 minutes.');
+verify(remainingExamSeconds(recoveryStart, 45, recoveryNow + 31 * 60_000) === 0,
+  'Rejoining after the original deadline never restarts the countdown.');
+verify(matchesExamResume(resumeData, 'teacher-one', 'exam-one', 'student-one'),
+  'Recovery is bound to the exact exam, student and teacher.');
+verify(!matchesExamResume(resumeData, 'teacher-one', 'exam-one', 'different-student'),
+  'A saved session cannot be used for another student.');
+verify(!matchesExamResume({ ...resumeData, exam: { ...resumeData.exam, teacherId: 'other' } },
+  'teacher-one', 'exam-one', 'student-one'), 'A different teacher cannot inherit the cached exam.');
+verify(resumeStorageKey('teacher-one', 'exam-one', 'student-one').includes('student-one'),
+  'Recovery storage is scoped to one exam and one pupil.');
+const encryptedResume = await encryptExamResume(resumeData, '987654321012');
+verify(!encryptedResume.includes('Học sinh thử nghiệm') && !encryptedResume.includes('Mã đề B'),
+  'The stored recovery cache must not expose the student's name, questions or answers.');
+const decryptedResume = await decryptExamResume(encryptedResume, '987654321012');
+assert.deepEqual(decryptedResume, resumeData, 'The correct exam code restores the original paper and draft.');
+verify(await decryptExamResume(encryptedResume, '012345678987') === null,
+  'A different exam code cannot decrypt the cached attempt.');
+verify(await decryptExamResume(encryptedResume.slice(0, -10), '987654321012') === null,
+  'A damaged recovery checkpoint does not authorize an attempt.');
+verify(component.includes('await rejoinExamSession(recovered as StudentResume, normalizedCode)'),
+  'Re-entry reuses the saved student exam instead of starting a second attempt.');
+verify(component.includes('await updateDoc(doc(db, \'exam_sessions\''),
+  'Recovery must update a pre-existing Firestore session rather than create a new one.');
+verify(component.includes('clearExamResume(currentStudent, activeExam)'),
+  'Submission/closure removes local recovery state.');
 
 console.info(`Unified student exam portal: ${checks} checks passed.`);
