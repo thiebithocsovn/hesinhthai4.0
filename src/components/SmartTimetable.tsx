@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import TimetableAgentPanel from './TimetableAgentPanel';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -51,7 +52,7 @@ interface SmartTimetableProps {
   trialMode?: boolean;
 }
 
-type WorkspaceTab = 'overview' | 'catalog' | 'assignments' | 'constraints' | 'schedule' | 'diagnostics';
+type WorkspaceTab = 'overview' | 'catalog' | 'assignments' | 'constraints' | 'schedule' | 'diagnostics' | 'agent';
 type CatalogKind = 'teacher' | 'class' | 'subject' | 'room';
 type ConstraintKind = 'teacher' | 'class' | 'room';
 type ScheduleView = 'class' | 'teacher' | 'room';
@@ -485,6 +486,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     { id: 'constraints', label: 'Ràng buộc' },
     { id: 'schedule', label: 'Thời khóa biểu' },
     { id: 'diagnostics', label: 'Chẩn đoán' },
+    { id: 'agent', label: 'AI Agent' },
   ];
 
   const catalogGroups: { kind: CatalogKind; title: string; icon: typeof Users; items: { id: string; name: string; meta?: string }[] }[] = [
@@ -504,7 +506,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={onBack} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100" aria-label="Quay lại"><ArrowLeft className="h-5 w-5" /></button>
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white"><CalendarRange className="h-6 w-6" /></div>
-            <div className="min-w-0"><h1 className="truncate text-lg font-extrabold md:text-xl">Xếp thời khóa biểu thông minh</h1><p className="truncate text-xs text-slate-500">Liên cấp Tiểu học + THCS · Constraint optimizer v2</p></div>
+            <div className="min-w-0"><h1 className="truncate text-lg font-extrabold md:text-xl">Xếp thời khóa biểu thông minh</h1><p className="truncate text-xs text-slate-500">AITHEROVA · Liên cấp · AI Agent + Constraint optimizer</p></div>
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={exportExcel} disabled={!solution} className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold disabled:opacity-40 md:flex"><Download className="h-4 w-4" />Xuất Excel</button>
@@ -576,6 +578,20 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
             {!solution ? <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center"><CalendarRange className="mx-auto h-10 w-10 text-slate-300" /><h3 className="mt-4 font-bold">Chưa có phương án</h3><p className="mt-1 text-sm text-slate-500">Bấm “Xếp tự động” để chạy bộ tối ưu.</p></div> : <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white"><table className="w-full min-w-[920px] border-collapse text-sm"><thead><tr className="bg-slate-900 text-white"><th className="w-20 border-r border-slate-700 p-3">Tiết</th>{days.map(day => <th key={day} className="border-r border-slate-700 p-3">{day}</th>)}</tr></thead><tbody>{Array.from({ length: scenario.periodsPerDay }, (_, index) => index + 1).map(period => <React.Fragment key={period}><tr><th className="border-r border-t border-slate-200 bg-slate-50 p-3 text-slate-500">{period}{period === (scenario.morningPeriods || 5) ? <div className="mt-1 text-[9px] font-normal text-amber-600">Hết sáng</div> : null}</th>{days.map((day, dayIndex) => { const entry = visibleEntries.find(item => item.dayIndex === dayIndex && item.period === period); return <td key={day} className="h-28 border-r border-t border-slate-200 p-2 align-top">{entry ? <div className={`h-full rounded-xl border p-2.5 ${entryTone(entry, scenario)}`}><div className="flex items-start justify-between gap-2"><b>{lookup.subjects.get(entry.subjectId)?.name}</b><button type="button" onClick={() => toggleEntryLock(entry)} disabled={entry.fixed} className="rounded-md p-1 text-slate-500 hover:bg-white disabled:cursor-default" title={entry.fixed ? 'Tiết cố định' : entry.locked ? 'Bỏ khóa block' : 'Khóa block'}>{entry.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button></div><div className="mt-2 text-xs text-slate-600">{scheduleView !== 'class' && `${lookup.classes.get(entry.classId)?.name} · `}{lookup.teachers.get(entry.teacherId)?.name}</div>{entry.roomId && <div className="mt-1 text-[11px] text-slate-500">{lookup.rooms.get(entry.roomId)?.name}</div>}{entry.fixed && <div className="mt-2 text-[10px] font-bold uppercase text-amber-700">Cố định</div>}</div> : null}</td>; })}</tr>{period === (scenario.morningPeriods || 5) && period < scenario.periodsPerDay ? <tr><td colSpan={days.length + 1} className="bg-amber-50 px-4 py-1 text-center text-[10px] font-bold uppercase tracking-widest text-amber-700">Chuyển buổi / nghỉ giữa ngày</td></tr> : null}</React.Fragment>)}</tbody></table></div>}
             {versions.length > 0 && <section className="rounded-3xl border border-slate-200 bg-white p-5"><h3 className="font-extrabold">8 phương án gần nhất</h3><div className="mt-3 flex gap-3 overflow-x-auto pb-2">{versions.map((version, index) => <button type="button" key={`${version.generatedAt}-${index}`} onClick={() => setSolution(version)} className="min-w-36 rounded-2xl border border-slate-200 p-3 text-left hover:border-indigo-300 hover:bg-indigo-50"><div className="text-xs font-semibold text-slate-400">PA {index + 1}</div><div className="mt-1 text-xl font-extrabold">{version.score}</div><div className="text-xs text-slate-500">{version.diagnostics.unscheduled.reduce((sum, item) => sum + item.remaining, 0)} tiết thiếu</div></button>)}</div></section>}
           </div>
+        )}
+
+        {activeTab === 'agent' && (
+          <TimetableAgentPanel
+            scenario={scenario}
+            solution={solution}
+            busy={busy}
+            onApply={nextScenario => {
+              setScenario(nextScenario);
+              setSolution(null);
+              setMessage('Đã áp dụng ràng buộc do AI Agent đề xuất. Chưa xếp lại thời khóa biểu.');
+            }}
+            onRunOptimizer={runOptimizer}
+          />
         )}
 
         {activeTab === 'diagnostics' && (
