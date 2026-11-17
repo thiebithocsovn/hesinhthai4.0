@@ -1,0 +1,50 @@
+name: AITHEROVA Timetable AI CI
+
+on:
+  push:
+    branches:
+      - feature/aitherova-timetable-ai-agent-20261118
+  pull_request:
+    paths:
+      - 'src/lib/timetableAgent.ts'
+      - 'src/lib/smartTimetableAudit.ts'
+      - 'src/components/TimetableAgentPanel.tsx'
+      - 'src/components/SmartTimetable.tsx'
+      - 'scripts/test-timetable-agent.ts'
+      - 'services/timetable-solver/**'
+      - 'package.json'
+      - '.github/workflows/timetable-agent-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - run: npm run test:smart-timetable
+      - run: npm run test:timetable-agent
+      - run: npm run lint
+      - run: npm run build:static
+
+  solver:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/timetable-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/timetable-solver/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q

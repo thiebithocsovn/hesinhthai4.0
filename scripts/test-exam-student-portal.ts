@@ -116,7 +116,7 @@ verify(resumeStorageKey('teacher-one', 'exam-one', 'student-one').includes('stud
   'Recovery storage is scoped to one exam and one pupil.');
 const encryptedResume = await encryptExamResume(resumeData, '987654321012');
 verify(!encryptedResume.includes('Học sinh thử nghiệm') && !encryptedResume.includes('Mã đề B'),
-  'The stored recovery cache must not expose the student's name, questions or answers.');
+  "The stored recovery cache must not expose the student's name, questions or answers.");
 const decryptedResume = await decryptExamResume(encryptedResume, '987654321012');
 assert.deepEqual(decryptedResume, resumeData, 'The correct exam code restores the original paper and draft.');
 verify(await decryptExamResume(encryptedResume, '012345678987') === null,

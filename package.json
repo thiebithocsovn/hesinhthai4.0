@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "npm run test:smart-timetable && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "npm run test:smart-timetable && npm run test:timetable-agent && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "build:static": "vite build",
     "build:wall-api": "esbuild server/wallApiServer.ts --bundle --platform=node --format=cjs --packages=external --outfile=api-dist/server.cjs",
     "start:wall-api": "node api-dist/server.cjs",
@@ -66,7 +66,8 @@
     "test:exam-result-deletion": "node --import tsx scripts/test-exam-result-deletion.ts",
     "test:exam-class-receipts": "node --import tsx scripts/test-exam-class-receipts.ts",
     "test:practical-file-check": "node --import tsx scripts/test-practical-file-check.ts",
-    "test:teacher-printing": "node --import tsx scripts/test-teacher-exam-printing.ts"
+    "test:teacher-printing": "node --import tsx scripts/test-teacher-exam-printing.ts",
+    "test:timetable-agent": "node --import tsx scripts/test-timetable-agent.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.32",
