@@ -50,7 +50,7 @@ export const LIBRARY_ENTRIES: Record<string, LibraryEntry> = {
   'excel-merger': { id: 'excel-merger', title: 'Gộp file Excel', category: 'tools', art: 'excel', badge: '⚡ Tiết kiệm thời gian', footer: LOCAL, from: '#dcf5dd', to: '#a9e2ad', search: 'gộp file excel bảng tính dữ liệu' },
   'pdf-merger': { id: 'pdf-merger', title: 'Tách, gộp file PDF', category: 'tools', art: 'pdf', badge: '✂️ Tách & gộp trang', footer: LOCAL, from: '#ffe3e6', to: '#ffbcc4', search: 'tách gộp file pdf trang' },
   'question-studio': { id: 'question-studio', title: 'Trắc nghiệm 10 dạng', category: 'assessment', art: 'quiz', badge: '🔟 10 dạng câu hỏi', footer: BROWSER, from: '#ece6ff', to: '#cfc2ff', search: 'trắc nghiệm 10 dạng ngân hàng câu hỏi question engine' },
-  'smart-timetable': { id: 'smart-timetable', title: 'Xếp thời khóa biểu thông minh', category: 'tools', art: 'timetable', badge: '🧠 Tự động xếp lịch', footer: 'Tiểu học + THCS', from: '#e6ebff', to: '#c3cdfb', search: 'xếp thời khóa biểu lịch liên cấp tiểu học thcs giáo viên phòng học' },
+  'smart-timetable': { id: 'smart-timetable', title: 'Thời khóa biểu', category: 'tools', art: 'timetable', badge: '🧠 Tự động xếp lịch', footer: 'Phổ thông · GDTX · Đại học', from: '#e6ebff', to: '#c3cdfb', search: 'xếp thời khóa biểu lịch liên cấp tiểu học thcs thpt gdtx đại học giáo viên phòng học' },
 };
 
 export const LIBRARY_COUNTS: Record<LibraryFilter, number> = (() => {

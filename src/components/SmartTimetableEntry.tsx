@@ -153,7 +153,7 @@ export default function SmartTimetableEntry() {
   return (
     <TrialAccessGate
       applicationId={APPLICATION_ID}
-      applicationName="Xếp thời khóa biểu thông minh"
+      applicationName="Thời khóa biểu"
       bypass={signedIn}
       onBack={navigateToLanding}
       onRegister={() => navigateToAuth('register')}

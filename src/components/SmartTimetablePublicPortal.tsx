@@ -73,9 +73,9 @@ export default function SmartTimetablePublicPortal() {
         <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">Chạy trên trình duyệt</span>
       </div>
       <span className="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">Quản lý</span>
-      <h3 className="mb-3 text-xl font-bold text-slate-900 group-hover:text-indigo-700">Xếp thời khóa biểu thông minh</h3>
+      <h3 className="mb-3 text-xl font-bold text-slate-900 group-hover:text-indigo-700">Thời khóa biểu</h3>
       <p className="text-sm leading-6 text-slate-600">
-        Bộ xếp lịch liên cấp Tiểu học + THCS với ràng buộc giáo viên, lớp, phòng, giờ bận, khóa tiết, chẩn đoán và xuất Excel.
+        Xếp lịch Tiểu học, THCS, THPT, GDTX, Đại học và trường liên cấp; khai báo riêng từng cấp, kiểm tra giáo viên và phòng dùng chung.
       </p>
     </button>,
     target,

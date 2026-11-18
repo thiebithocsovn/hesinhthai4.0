@@ -76,7 +76,7 @@ console.log('Timetable publication: owner authorization, redaction, XSS-safe HTM
 // Vercel emits separate ESM files. Bundled tests alone would miss extensionless-import failures.
 const output = mkdtempSync(join(tmpdir(), 'aitherova-serverless-'));
 try {
-  const sourceFiles = ['api/timetable.ts', 'server/timetablePublicationFirebase.ts', 'server/timetablePublication.ts', 'server/timetablePublicationToken.ts', 'server/teacherAdminCredentials.ts', 'server/teacherAdminFederation.ts', 'src/lib/smartTimetable.ts', 'src/lib/smartTimetableAdvanced.ts', 'src/lib/smartTimetableResources.ts', 'src/lib/smartTimetableAudit.ts', 'src/lib/timetablePublication.ts'];
+  const sourceFiles = ['api/timetable.ts', 'server/timetablePublicationFirebase.ts', 'server/timetablePublication.ts', 'server/timetablePublicationToken.ts', 'server/teacherAdminCredentials.ts', 'server/teacherAdminFederation.ts', 'src/lib/timetableEducation.ts', 'src/lib/smartTimetable.ts', 'src/lib/smartTimetableAdvanced.ts', 'src/lib/smartTimetableResources.ts', 'src/lib/smartTimetableAudit.ts', 'src/lib/timetablePublication.ts'];
   for (const file of sourceFiles) {
     const target = join(output, file.replace(/\.ts$/, '.js')); mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, transformSync(readFileSync(file, 'utf8'), { loader: 'ts', format: 'esm', target: 'node24' }).code);

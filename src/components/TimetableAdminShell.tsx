@@ -71,8 +71,8 @@ export default function TimetableAdminShell({ pageId, schoolName, trialMode, onN
         <section className="tt-school-banner"><div className="tt-school-title"><GraduationCap size={27} /><div><p>PHẦN MỀM XẾP THỜI KHÓA BIỂU</p><h1>{schoolName || 'Cấu hình tên trường'}</h1></div></div><div className="tt-main-actions">{actions}</div></section>
         <section className="tt-workflow" aria-label="Các bước xếp thời khóa biểu"><strong>Quy trình xếp lịch</strong><div>{TIMETABLE_SETUP_STEPS.map((id, index) => {
           const step = TIMETABLE_ADMIN_PAGES.find(item => item.id === id)!;
-          const labels = ['Khối', 'Lớp', 'Tiết', 'Môn', 'Giáo viên', 'GVCN', 'Phân công', 'Số tiết', 'Xếp TKB'];
-          return <React.Fragment key={id}><button type="button" onClick={() => navigate(id)} className={`${pageId === id ? 'is-active' : ''} ${index === 8 ? 'tt-final-step' : ''}`} aria-current={pageId === id ? 'step' : undefined} title={step.label}><span>{index + 1}</span>{labels[index]}</button>{index < 8 && <ChevronRight size={13} />}</React.Fragment>;
+          const labels = ['Loại TKB', 'Khối', 'Lớp', 'Tiết', 'Môn', 'Giáo viên', 'GVCN', 'Phân công', 'Số tiết', 'Xếp TKB'];
+          return <React.Fragment key={id}><button type="button" onClick={() => navigate(id)} className={`${pageId === id ? 'is-active' : ''} ${index === TIMETABLE_SETUP_STEPS.length - 1 ? 'tt-final-step' : ''}`} aria-current={pageId === id ? 'step' : undefined} title={step.label}><span>{index + 1}</span>{labels[index]}</button>{index < TIMETABLE_SETUP_STEPS.length - 1 && <ChevronRight size={13} />}</React.Fragment>;
         })}</div></section>
         <div className="tt-page-heading"><div><h2>{page.label}</h2><p>{page.description}</p></div><span className="tt-page-label">Thời khóa biểu</span></div>
         {children}

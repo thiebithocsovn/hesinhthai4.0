@@ -1,4 +1,4 @@
-export type TimetableWorkspaceTab = 'overview' | 'catalog' | 'assignments' | 'constraints' | 'schedule' | 'diagnostics' | 'agent' | 'grades' | 'homeroom' | 'curriculum' | 'settings' | 'backup' | 'advanced' | 'schoolboard';
+export type TimetableWorkspaceTab = 'education' | 'overview' | 'catalog' | 'assignments' | 'constraints' | 'schedule' | 'diagnostics' | 'agent' | 'grades' | 'homeroom' | 'curriculum' | 'settings' | 'backup' | 'advanced' | 'schoolboard';
 
 export interface TimetableAdminPage {
   id: string;
@@ -12,9 +12,10 @@ export interface TimetableAdminPage {
 
 export const TIMETABLE_ADMIN_GROUPS: { title: string; pages: TimetableAdminPage[] }[] = [
   { title: 'Khai báo', pages: [
+    { id: 'education', label: 'Loại thời khóa biểu', tab: 'education', description: 'Chọn cấp/hệ đào tạo, năm học, học kỳ và khung giờ riêng từng cấp.' },
     { id: 'grades', label: 'Khối / Khoa', tab: 'grades', description: 'Khai báo khối và sắp xếp các lớp theo khối.' },
     { id: 'classes', label: 'Lớp học', tab: 'catalog', catalog: 'class', description: 'Quản lý tên lớp, cấp học và khối lớp.' },
-    { id: 'periods', label: 'Tiết học', tab: 'settings', description: 'Khai báo khung tiết học và ranh giới buổi sáng, buổi chiều.' },
+    { id: 'periods', label: 'Tiết học', tab: 'settings', description: 'Khai báo khung tiết học và ranh giới buổi sáng, chiều và tối.' },
     { id: 'subjects', label: 'Môn học', tab: 'catalog', catalog: 'subject', description: 'Danh mục môn học và ưu tiên xếp lịch.' },
     { id: 'teachers', label: 'Giáo viên', tab: 'catalog', catalog: 'teacher', description: 'Danh sách giáo viên dùng chung giữa các cấp học.' },
   ] },
@@ -30,10 +31,10 @@ export const TIMETABLE_ADMIN_GROUPS: { title: string; pages: TimetableAdminPage[
   ] },
   { title: 'Cấu hình', pages: [
     { id: 'campuses', label: 'Cơ sở trường học', tab: 'advanced', description: 'Quản lý điểm trường, sĩ số, sức chứa phòng và khoảng nghỉ chuyển cơ sở.' },
-    { id: 'sessions', label: 'Buổi học', tab: 'settings', description: 'Cấu hình số tiết sáng và chiều trong ngày.' },
-    { id: 'days', label: 'Ngày học', tab: 'settings', description: 'Chọn tuần học 5 hoặc 6 ngày.' },
+    { id: 'sessions', label: 'Buổi học', tab: 'settings', description: 'Cấu hình số tiết sáng, chiều và tối trong ngày.' },
+    { id: 'days', label: 'Ngày học', tab: 'settings', description: 'Chọn tuần học 5, 6 hoặc 7 ngày.' },
     { id: 'breaks', label: 'Tiết nghỉ / giờ bận', tab: 'constraints', constraint: 'class', description: 'Khóa các ô thời gian không học của từng lớp.' },
-    { id: 'class-session', label: 'Lớp - môn - buổi', tab: 'curriculum', description: 'Chọn buổi sáng, chiều hoặc bất kỳ cho mỗi phân công.' },
+    { id: 'class-session', label: 'Lớp - môn - buổi', tab: 'curriculum', description: 'Chọn buổi sáng, chiều, tối hoặc bất kỳ cho mỗi phân công.' },
     { id: 'teacher-session', label: 'Giáo viên - buổi dạy', tab: 'constraints', constraint: 'teacher', description: 'Đánh dấu giờ bận theo từng giáo viên.' },
     { id: 'same-session', label: 'Môn cùng buổi', tab: 'advanced', description: 'Đồng bộ các buổi tương ứng của nhiều phân công trong cùng ngày và buổi.' },
     { id: 'fixed', label: 'Môn / tiết cố định', tab: 'curriculum', description: 'Đặt thời điểm bắt đầu cố định cho từng phân công.' },
@@ -69,4 +70,4 @@ export const TIMETABLE_ADMIN_PAGES: TimetableAdminPage[] = [
   ...TIMETABLE_ADMIN_GROUPS.flatMap(group => group.pages),
 ];
 
-export const TIMETABLE_SETUP_STEPS = ['grades', 'classes', 'periods', 'subjects', 'teachers', 'homeroom', 'assignments', 'curriculum', 'schedule'];
+export const TIMETABLE_SETUP_STEPS = ['education', 'grades', 'classes', 'periods', 'subjects', 'teachers', 'homeroom', 'assignments', 'curriculum', 'schedule'];
