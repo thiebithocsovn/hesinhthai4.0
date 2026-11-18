@@ -57,8 +57,9 @@ const XLSX = require('xlsx');
     await button('Mở menu thời khóa biểu').click(); await nav('Cơ sở trường học').click();
     await page.getByRole('heading', { name: 'Cơ sở trường học', exact: true }).first().waitFor();
     assert.equal(await button('Mở menu thời khóa biểu').getAttribute('aria-expanded'), 'false');
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), 'Mobile page has no horizontal document overflow.');
     await page.screenshot({ path: 'timetable-ui-results/campus-mobile.png', fullPage: true });
+    const overflow = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, elements: [...document.querySelectorAll('main *')].map(el => ({ tag: el.tagName, className: el.className, left: Math.round(el.getBoundingClientRect().left), right: Math.round(el.getBoundingClientRect().right), text: (el.textContent || '').slice(0, 60) })).filter(el => el.right > document.documentElement.clientWidth + 1 && el.left >= 0).slice(0, 20) }));
+    assert.ok(overflow.scroll <= overflow.width + 1, 'Mobile page has no horizontal document overflow: ' + JSON.stringify(overflow));
     assert.deepEqual(errors, []);
     console.log('Timetable UI: preview/merge, safe scheduling, Excel/HTML exports, undo, parallel subgroups, school board and mobile navigation passed.');
   } finally { if (browser) await browser.close(); await vite.close(); }

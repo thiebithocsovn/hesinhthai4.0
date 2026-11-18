@@ -21,7 +21,8 @@ export function mergeTimetableAssignments(s: TimetableScenario, ids: string[], r
   if (campuses.length > 1) throw new Error('Chọn cùng cơ sở cho các phân công trước khi ghép.');
   const teachers = [...new Set(items.flatMap(assignmentTeacherIds))];
   const merged: TeachingAssignment = { ...first, additionalClassIds: [...new Set(classes)].filter(id => id !== first.classId),
-    studentGroupId: selectedGroups[0], additionalStudentGroupIds: selectedGroups.slice(1), additionalTeacherIds: teachers.filter(id => id !== first.teacherId), roomId: roomId || undefined, session: sessions[0] || 'any',
+    studentGroupId: selectedGroups[0], additionalStudentGroupIds: selectedGroups.slice(1), additionalTeacherIds: teachers.filter(id => id !== first.teacherId), roomId: roomId || undefined, campusId: campuses[0] || undefined, session: sessions[0] || 'any', avoidLastPeriod: items.some(a => a.avoidLastPeriod),
+    preferredSlots: [...new Set(items.flatMap(a => a.preferredSlots || []))],
     forbiddenSlots: [...new Set(items.flatMap(a => a.forbiddenSlots || []))], maxPerDay: Math.min(...items.map(a => a.maxPerDay || a.blockSize || 1)),
   };
   return { ...s, assignments: s.assignments.filter(a => !ids.includes(a.id) || a.id === first.id).map(a => a.id === first.id ? merged : a) };

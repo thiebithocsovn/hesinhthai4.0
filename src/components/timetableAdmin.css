@@ -14,3 +14,4 @@
 .tt-table input[type=checkbox]{min-width:0;width:15px;height:15px;padding:0}
 .tt-close-menu{display:none}
 @media(max-width:767px){.tt-close-menu{display:block;position:absolute;top:7px;right:7px;padding:5px;color:#64748b}.tt-sidebar .tt-brand{padding-top:27px}}
+.tt-panel,.tt-table-wrap{min-width:0;max-width:100%}

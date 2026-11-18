@@ -491,7 +491,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
         {activeTab === 'advanced' && pageId === 'split' && <TimetableSplitPanel scenario={scenario} onChange={changeScenario} />}
         {activeTab === 'advanced' && pageId === 'same-session' && <TimetableSameSessionPanel scenario={scenario} onChange={changeScenario} />}
         {activeTab === 'advanced' && pageId === 'concurrency' && <TimetableConcurrencyPanel scenario={scenario} onChange={changeScenario} />}
-        {activeTab === 'advanced' && pageId === 'exam-rooms' && <TimetableExamRoomsPanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'advanced' && pageId === 'exam-rooms' && <TimetableExamRoomsPanel scenario={scenario} onChange={next => { setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20)); setRedoHistory([]); setScenario(next); setMessage('Đã lưu đề xuất phân phòng thi.'); }} />}
         {activeTab === 'advanced' && pageId === 'public-links' && <TimetablePublicationPanel scenario={scenario} solution={solution} storageKey={storageKey} />}
         {activeTab === 'backup' && <TimetableBackupPanel solution={solution} versions={versions} onBackup={exportBackup} onRestore={() => jsonInputRef.current?.click()} onExcel={exportExcel} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} onVersion={restoreVersion} onReset={() => { if (window.confirm('Thay dữ liệu hiện tại bằng dữ liệu mẫu? Hãy sao lưu JSON trước khi tiếp tục.')) resetWorkspace(); }} />}
 
