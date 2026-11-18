@@ -43,7 +43,7 @@ export default function TimetablePublicationPanel({ scenario, solution, storageK
     try {
       if (!solution) return;
       const snapshot = makePublicTimetable(scenario, solution, options), url = URL.createObjectURL(new Blob([publicTimetableHtml(snapshot)], { type: 'text/html;charset=utf-8' }));
-      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'AITHEROVA-tra-cuu-thoi-khoa-bieu.html'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'Tra-cuu-thoi-khoa-bieu.html'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       setMessage('Đã xuất trang tra cứu độc lập. Có thể mở trên máy tính/điện thoại, gửi tệp hoặc đưa lên website của trường.');
     } catch (e) { setMessage(e instanceof Error ? e.message : 'Không thể xuất trang.'); }
   };

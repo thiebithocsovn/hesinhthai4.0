@@ -178,7 +178,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   const workerRef = useRef<Worker | null>(null);
   const optimizerGeneration = useRef(0);
   const cancelOptimizer = () => { optimizerGeneration.current++; workerRef.current?.terminate(); workerRef.current = null; setBusy(false); };
-  useEffect(() => { const title = document.title; document.title = 'AITHEROVA · Xếp thời khóa biểu'; return () => { document.title = title; }; }, []);
+  useEffect(() => { const title = document.title; document.title = 'Thời khóa biểu'; return () => { document.title = title; }; }, []);
 
   useEffect(() => {
     try {
