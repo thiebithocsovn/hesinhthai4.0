@@ -54,3 +54,19 @@ assert.equal(missing.complete, false, 'Independent audit must detect missing les
 assert.equal(missing.valid, false);
 
 console.info('AITHEROVA timetable agent and independent audit: all tests passed; ' + audit.placedPeriods + ' periods audited.');
+
+for (const command of ['Cô Hương dạy tối đa 2 tiết mỗi ngày', 'Cô Hương dạy tối đa 2 tiết/ngày']) {
+  const result = planTimetableAgentCommand(command, base, null);
+  assert.equal(result.status, 'ready');
+  const teacher = result.nextScenario!.teachers.find(t => t.name === 'Cô Hương')!;
+  assert.equal(teacher.maxPeriodsPerDay, 2);
+  assert.equal(teacher.maxTeachingDays, base.teachers.find(t => t.name === 'Cô Hương')!.maxTeachingDays);
+}
+const daysPlan = planTimetableAgentCommand('Cô Hương dạy tối đa 2 ngày/tuần', base, null);
+assert.equal(daysPlan.status, 'ready');
+assert.equal(daysPlan.nextScenario!.teachers.find(t => t.name === 'Cô Hương')!.maxTeachingDays, 2);
+assert.equal(daysPlan.nextScenario!.teachers.find(t => t.name === 'Cô Hương')!.maxPeriodsPerDay, base.teachers.find(t => t.name === 'Cô Hương')!.maxPeriodsPerDay);
+assert.equal(planTimetableAgentCommand('Cô Hương dạy tối đa 3 tiết liên tục', base, null).status, 'unsupported');
+assert.equal(planTimetableAgentCommand('Cô Hương dạy tối đa 2 ngày/tuần và tối đa 3 tiết mỗi ngày', base, null).status, 'unsupported');
+assert.equal(JSON.stringify(base), noMutation);
+console.log('Agent limits: daily lessons and weekly teaching days remain distinct; ambiguous combined requests require separate previews.');

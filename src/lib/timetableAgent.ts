@@ -75,8 +75,16 @@ export function planTimetableAgentCommand(
   if (!text) return empty('Chưa có yêu cầu', ['Hãy nhập một yêu cầu bằng tiếng Việt.']);
   const namedTeacher = findNamed(text, scenario.teachers), namedSubject = findNamed(text, scenario.subjects);
   const maximum = text.match(/toi da (\d{1,2})/);
-  if (maximum && namedTeacher && /ngay/.test(text) && /day/.test(text)) {
-    const value = Number(maximum[1]);
+  const teachingDays = text.match(/(?:^| )toi da (\d{1,2}) ngay(?: |$)/);
+  const dailyLessons = text.match(/(?:^| )toi da (\d{1,2}) tiet(?: day)? (?:moi |mot |trong )?ngay(?: |$)/);
+  if (namedTeacher && teachingDays && dailyLessons) return empty('Yêu cầu gồm nhiều giới hạn', ['Hãy tách giới hạn tiết/ngày và ngày dạy/tuần thành hai lệnh để xem trước từng thay đổi.']);
+  if (namedTeacher && dailyLessons) {
+    const value = Number(dailyLessons[1]);
+    if (value < 1 || value > scenario.periodsPerDay) return empty('Số tiết không hợp lệ', ['Số tiết/ngày phải nằm trong khung tiết học đã cấu hình.']);
+    return { status: 'ready', title: `${namedTeacher.name}: tối đa ${value} tiết/ngày`, details: ['Ràng buộc cứng về số tiết mỗi ngày. Giữ nguyên số ngày dạy/tuần và các giờ bận.', 'Chỉ áp dụng sau khi xác nhận; cần xếp lại lịch.'], nextScenario: { ...scenario, teachers: scenario.teachers.map(t => t.id === namedTeacher.id ? { ...t, maxPeriodsPerDay: value } : t) }, affectedSlots: [], requiresReschedule: true };
+  }
+  if (teachingDays && namedTeacher && hasWord(text, ['day'])) {
+    const value = Number(teachingDays[1]);
     if (value < 1 || value > activeTimetableDays(scenario).length) return empty('Số ngày không hợp lệ', ['Số ngày dạy phải nằm trong tuần học đã cấu hình.']);
     return { status: 'ready', title: `${namedTeacher.name} dạy tối đa ${value} ngày/tuần`, details: ['Ràng buộc cứng. Giữ nguyên các giờ bận hiện có.', 'Chỉ áp dụng sau khi xác nhận; cần xếp lại lịch.'], nextScenario: { ...scenario, teachers: scenario.teachers.map(t => t.id === namedTeacher.id ? { ...t, maxTeachingDays: value } : t) }, affectedSlots: [], requiresReschedule: true };
   }

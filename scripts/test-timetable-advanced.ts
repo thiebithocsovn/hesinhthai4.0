@@ -91,3 +91,7 @@ const large: TimetableScenario = { ...base, classes: Array.from({ length: 50 }, 
 const started = performance.now(), largeSolution = solveAndAudit(large);
 assert.equal(largeSolution.entries.length, 200);
 console.log(`Additional cases: cross-class subgroups, complete blocks, validated swaps; 50 classes / 200 periods in ${Math.round(performance.now() - started)} ms.`);
+
+const explicitCampus = mergeTimetableAssignments({ ...base, campuses: [{ id: 'campus-b', name: 'Điểm B' }], assignments: base.assignments.map((a, i) => ({ ...a, campusId: i ? 'campus-b' : undefined })) }, ['a', 'b'], 'r1');
+assert.equal(explicitCampus.assignments[0].campusId, 'campus-b', 'Merge preserves the compatible explicit campus even when only a later source declares it.');
+solveAndAudit(explicitCampus);
