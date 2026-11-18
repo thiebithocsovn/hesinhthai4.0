@@ -9,6 +9,9 @@ import {
   type TimetableScenario,
   type TimetableSubject,
   type TimetableTeacher,
+  type TimetableCampus,
+  type TimetableStudentGroup,
+  type TimetableLessonGroup,
 } from './smartTimetable';
 
 export type TimetableImportRow = Record<string, unknown>;
@@ -123,6 +126,9 @@ export function scenarioFromAssignmentRows(rows: TimetableImportRow[], base?: Ti
   const subjects: TimetableSubject[] = [];
   const rooms: TimetableRoom[] = [];
   const assignments: TeachingAssignment[] = [];
+  const campuses: TimetableCampus[] = [];
+  const studentGroups: TimetableStudentGroup[] = [];
+  const lessonGroups: TimetableLessonGroup[] = [];
 
   rows.forEach((row, index) => {
     const className = text(findColumn(row, ['Lớp', 'Lop', 'Class']));
@@ -144,7 +150,33 @@ export function scenarioFromAssignmentRows(rows: TimetableImportRow[], base?: Ti
       preferMorning: booleanValue(findColumn(row, ['Ưu tiên sáng', 'Uu tien sang', 'Prefer morning'])),
     }));
     const roomName = text(findColumn(row, ['Phòng', 'Phong', 'Phòng học', 'Room']));
-    const room = roomName ? upsertByName(rooms, roomName, () => ({ id: timetableEntityId('phong', roomName), name: roomName })) : undefined;
+    const room = roomName ? upsertByName<TimetableRoom>(rooms, roomName, () => ({ id: timetableEntityId('phong', roomName), name: roomName })) : undefined;
+    const list = (names: string[]) => text(findColumn(row, names)).split(/[;,|]+/).map(x => x.trim()).filter(Boolean);
+    const additionalClassIds = list(['Lớp ghép', 'Lop ghep']).map(name => upsertByName(classes, name, () => ({ id: timetableEntityId('lop', name), name, level: parseLevel('', name), maxPeriodsPerDay: seed.periodsPerDay })).id).filter(id => id !== classroom.id);
+    const additionalTeacherIds = list(['Đồng giảng', 'Dong giang']).map(name => upsertByName(teachers, name, () => ({ id: timetableEntityId('gv', name), name, level: teacher.level, maxPeriodsPerDay: 6, maxConsecutivePeriods: 4 })).id).filter(id => id !== teacher.id);
+    const campusName = text(findColumn(row, ['Cơ sở', 'Co so', 'Campus']));
+    const campus = campusName ? upsertByName(campuses, campusName, () => ({ id: timetableEntityId('campus', campusName), name: campusName })) : undefined;
+    const count = numberValue(findColumn(row, ['Sĩ số', 'Si so', 'Student count']), 0);
+    if (count > 0) classroom.studentCount = Math.floor(count);
+    const capacity = numberValue(findColumn(row, ['Sức chứa', 'Suc chua', 'Room capacity']), 0);
+    if (room && capacity > 0) room.capacity = Math.floor(capacity);
+    if (room && campus) room.campusId = campus.id;
+    const studentGroupName = text(findColumn(row, ['Nhóm', 'Nhom', 'Nhóm học']));
+    let studentGroup = studentGroups.find(g => g.classId === classroom.id && g.name === studentGroupName);
+    if (studentGroupName && !studentGroup) {
+      studentGroup = { id: timetableEntityId('group', classroom.name + '-' + studentGroupName), classId: classroom.id, name: studentGroupName, studentCount: numberValue(findColumn(row, ['Sĩ số nhóm', 'Si so nhom']), 0) || undefined };
+      studentGroups.push(studentGroup);
+    }
+    const additionalStudentGroupIds = list(['Nhóm ghép', 'Nhom ghep']).map(value => {
+      const separator = value.indexOf(':');
+      if (separator < 1 || !value.slice(separator + 1).trim() || !studentGroup) throw new Error(`Dòng ${index + 1}: Nhóm ghép dùng dạng Lớp:Nhóm và phải khai báo Nhóm chính.`);
+      const name = value.slice(0, separator).trim(), groupName = value.slice(separator + 1).trim();
+      const owner = upsertByName(classes, name, () => ({ id: timetableEntityId('lop', name), name, level: parseLevel('', name), maxPeriodsPerDay: seed.periodsPerDay }));
+      if (owner.id !== classroom.id && !additionalClassIds.includes(owner.id)) additionalClassIds.push(owner.id);
+      let group = studentGroups.find(g => g.classId === owner.id && g.name === groupName);
+      if (!group) { group = { id: timetableEntityId('group', owner.name + '-' + groupName), classId: owner.id, name: groupName }; studentGroups.push(group); }
+      return group.id;
+    });
     const homeroom = booleanValue(findColumn(row, ['GVCN', 'Chủ nhiệm', 'Chu nhiem', 'Homeroom']));
     if (homeroom) {
       classroom.homeroomTeacherId = teacher.id;
@@ -153,13 +185,16 @@ export function scenarioFromAssignmentRows(rows: TimetableImportRow[], base?: Ti
 
     const periods = Math.max(1, Math.round(numberValue(findColumn(row, ['Tiết/tuần', 'Tiet/tuan', 'Số tiết', 'So tiet', 'Periods/week']), 1)));
     const blockRaw = findColumn(row, ['Tiết đôi', 'Tiet doi', 'Block', 'Block size']);
-    const blockSize = booleanValue(blockRaw) ? 2 : Math.max(1, Math.min(3, Math.round(numberValue(blockRaw, 1)))) as 1 | 2 | 3;
+    const numericBlock = numberValue(blockRaw, NaN);
+    const blockSize = Number.isFinite(numericBlock) && text(blockRaw) ? Math.max(1, Math.min(3, Math.round(numericBlock))) as 1 | 2 | 3 : booleanValue(blockRaw) ? 2 : 1;
     const maxPerDay = Math.max(blockSize, Math.round(numberValue(findColumn(row, ['Tối đa/ngày', 'Toi da/ngay', 'Max/day']), blockSize > 1 ? blockSize : 1)));
-    const importedFixedSlots = parseImportedSlots(findColumn(row, ['Tiết cố định', 'Tiet co dinh', 'Ô cố định', 'O co dinh', 'Fixed slots']));
-    // A fixed start consumes one full block. Ignore surplus fixed starts instead of allowing imported data
-    // to place more periods than the assignment's declared weekly total.
-    const maxFixedStarts = Math.floor(periods / blockSize);
-    const fixedStartSlots = importedFixedSlots.slice(0, maxFixedStarts);
+    const slots = (names: string[]) => {
+      const raw = findColumn(row, names);
+      for (const part of text(raw).split(/[;,|]+/).map(x => x.trim()).filter(Boolean)) if (!parseImportedSlots(part).length) throw new Error(`Dòng ${index + 1}: ô thời gian không hợp lệ: ${part}.`);
+      return parseImportedSlots(raw);
+    };
+    // Keep every declared hard constraint. The preview reports surplus fixed starts for correction.
+    const fixedStartSlots = slots(['Tiết cố định', 'Tiet co dinh', 'Ô cố định', 'O co dinh', 'Fixed slots']);
 
     assignments.push({
       id: `asg-import-${index + 1}-${classroom.id}-${subject.id}`,
@@ -167,15 +202,22 @@ export function scenarioFromAssignmentRows(rows: TimetableImportRow[], base?: Ti
       subjectId: subject.id,
       teacherId: teacher.id,
       roomId: room?.id,
+      additionalClassIds, additionalTeacherIds, studentGroupId: studentGroup?.id, additionalStudentGroupIds, campusId: campus?.id,
       periodsPerWeek: periods,
       maxPerDay,
       blockSize,
       session: parseSession(findColumn(row, ['Buổi', 'Buoi', 'Session'])),
       avoidLastPeriod: booleanValue(findColumn(row, ['Tránh tiết cuối', 'Tranh tiet cuoi', 'Avoid last period'])),
       fixedStartSlots,
-      forbiddenSlots: parseImportedSlots(findColumn(row, ['Tiết cấm', 'Tiet cam', 'Ô cấm', 'O cam', 'Forbidden slots'])),
-      preferredSlots: parseImportedSlots(findColumn(row, ['Tiết ưu tiên', 'Tiet uu tien', 'Ô ưu tiên', 'O uu tien', 'Preferred slots'])),
+      forbiddenSlots: slots(['Tiết cấm', 'Tiet cam', 'Ô cấm', 'O cam', 'Forbidden slots']),
+      preferredSlots: slots(['Tiết ưu tiên', 'Tiet uu tien', 'Ô ưu tiên', 'O uu tien', 'Preferred slots']),
     });
+    for (const [kind, column] of [['parallel', 'Nhóm song song'], ['same-session', 'Nhóm cùng buổi']] as const) {
+      const name = text(findColumn(row, [column])); if (!name) continue;
+      let group = lessonGroups.find(g => g.kind === kind && g.name === name);
+      if (!group) { group = { id: timetableEntityId(kind, name), name, kind, assignmentIds: [] }; lessonGroups.push(group); }
+      group.assignmentIds.push(assignments[assignments.length - 1].id);
+    }
   });
 
   return normalizeTimetableScenario({
@@ -185,10 +227,12 @@ export function scenarioFromAssignmentRows(rows: TimetableImportRow[], base?: Ti
     subjects,
     rooms,
     assignments,
+    campuses, studentGroups, lessonGroups,
   });
 }
 
 export const TIMETABLE_IMPORT_COLUMNS = [
   'Cấp', 'Lớp', 'Môn', 'Giáo viên', 'Cấp GV', 'GVCN', 'Phòng', 'Tiết/tuần', 'Tối đa/ngày',
   'Tiết đôi', 'Buổi', 'Ưu tiên sáng', 'Tránh tiết cuối', 'Tiết cố định', 'Tiết cấm', 'Tiết ưu tiên',
+  'Lớp ghép', 'Đồng giảng', 'Nhóm', 'Nhóm ghép', 'Sĩ số', 'Sĩ số nhóm', 'Cơ sở', 'Sức chứa', 'Nhóm song song', 'Nhóm cùng buổi',
 ] as const;

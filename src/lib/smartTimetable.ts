@@ -1,3 +1,7 @@
+import { optimizeAdvancedTimetable } from './smartTimetableAdvanced.js';
+import { advancedScenarioIssues, assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds, hasAdvancedTimetable } from './smartTimetableResources.js';
+import type { TimetableExamPlan } from './timetableExamRooms';
+
 export const TIMETABLE_DAYS = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'] as const;
 export type TimetableDay = (typeof TIMETABLE_DAYS)[number];
 export type SchoolLevel = 'Tiểu học' | 'THCS' | 'Liên cấp';
@@ -12,6 +16,7 @@ export interface TimetableTeacher {
   homeroomClassId?: string;
   maxPeriodsPerDay?: number;
   maxConsecutivePeriods?: number;
+  maxTeachingDays?: number;
 }
 
 export interface TimetableClass {
@@ -22,6 +27,8 @@ export interface TimetableClass {
   homeroomTeacherId?: string;
   maxPeriodsPerDay?: number;
   gradeId?: string;
+  studentCount?: number;
+  campusId?: string;
 }
 
 export interface TimetableGrade {
@@ -35,13 +42,20 @@ export interface TimetableSubject {
   name: string;
   preferMorning?: boolean;
   avoidLastPeriod?: boolean;
+  maxConcurrentClasses?: number;
 }
 
 export interface TimetableRoom {
   id: string;
   name: string;
   unavailableSlots?: string[];
+  capacity?: number;
+  campusId?: string;
 }
+
+export interface TimetableCampus { id: string; name: string }
+export interface TimetableStudentGroup { id: string; classId: string; name: string; studentCount?: number }
+export interface TimetableLessonGroup { id: string; name: string; kind: 'parallel' | 'same-session'; assignmentIds: string[] }
 
 export interface TeachingAssignment {
   id: string;
@@ -57,6 +71,11 @@ export interface TeachingAssignment {
   preferredSlots?: string[];
   forbiddenSlots?: string[];
   fixedStartSlots?: string[];
+  additionalClassIds?: string[];
+  additionalTeacherIds?: string[];
+  studentGroupId?: string;
+  additionalStudentGroupIds?: string[];
+  campusId?: string;
 }
 
 export interface TimetableScenario {
@@ -70,6 +89,11 @@ export interface TimetableScenario {
   rooms: TimetableRoom[];
   assignments: TeachingAssignment[];
   grades?: TimetableGrade[];
+  campuses?: TimetableCampus[];
+  studentGroups?: TimetableStudentGroup[];
+  lessonGroups?: TimetableLessonGroup[];
+  campusTravelPeriods?: number;
+  examRoomPlan?: TimetableExamPlan;
 }
 
 export interface ScheduleEntry {
@@ -84,6 +108,13 @@ export interface ScheduleEntry {
   blockId?: string;
   locked?: boolean;
   fixed?: boolean;
+  additionalClassIds?: string[];
+  additionalTeacherIds?: string[];
+  studentGroupId?: string;
+  additionalStudentGroupIds?: string[];
+  campusId?: string;
+  meetingIndex?: number;
+  parallelEventId?: string;
 }
 
 export interface UnscheduledLesson {
@@ -133,6 +164,7 @@ export function timetableSlotKey(dayIndex: number, period: number): string {
 }
 
 export function parseTimetableSlot(slot: string): { dayIndex: number; period: number } | null {
+  if (!/^\d+:\d+$/.test(String(slot))) return null;
   const [dayRaw, periodRaw] = slot.split(':');
   const dayIndex = Number(dayRaw);
   const period = Number(periodRaw);
@@ -161,6 +193,11 @@ export function normalizeTimetableScenario(input: TimetableScenario): TimetableS
       unavailableSlots: Array.isArray(item.unavailableSlots) ? item.unavailableSlots : [],
       maxPeriodsPerDay: item.maxPeriodsPerDay ? Math.max(1, Number(item.maxPeriodsPerDay)) : undefined,
     })) : [],
+    grades: Array.isArray(input.grades) ? input.grades : [],
+    campuses: Array.isArray(input.campuses) ? input.campuses : [],
+    studentGroups: Array.isArray(input.studentGroups) ? input.studentGroups : [],
+    lessonGroups: Array.isArray(input.lessonGroups) ? input.lessonGroups : [],
+    campusTravelPeriods: Math.max(0, Math.min(12, Math.floor(Number(input.campusTravelPeriods ?? 1) || 0))),
     subjects: Array.isArray(input.subjects) ? input.subjects : [],
     rooms: Array.isArray(input.rooms) ? input.rooms.map(item => ({
       ...item,
@@ -273,7 +310,7 @@ function describeEntity<T extends { id: string; name: string }>(items: T[], id: 
 
 export function analyzeTimetableScenario(rawScenario: TimetableScenario): string[] {
   const scenario = normalizeTimetableScenario(rawScenario);
-  const issues: string[] = [];
+  const issues: string[] = advancedScenarioIssues(scenario);
   const days = activeTimetableDays(scenario).length;
   const totalSlots = days * scenario.periodsPerDay;
   const teacherIds = new Set(scenario.teachers.map(item => item.id));
@@ -291,7 +328,9 @@ export function analyzeTimetableScenario(rawScenario: TimetableScenario): string
   }
 
   for (const classroom of scenario.classes) {
-    const required = scenario.assignments.filter(item => item.classId === classroom.id).reduce((sum, item) => sum + item.periodsPerWeek, 0);
+    const involved = scenario.assignments.filter(item => assignmentClassIds(item).includes(classroom.id));
+    const groupLoads = (scenario.studentGroups || []).filter(group => group.classId === classroom.id).map(group => involved.filter(a => assignmentStudentGroupIds(a).includes(group.id)).reduce((sum, a) => sum + a.periodsPerWeek, 0));
+    const required = involved.filter(a => !assignmentStudentGroupIds(a).length).reduce((sum, a) => sum + a.periodsPerWeek, 0) + Math.max(0, ...groupLoads);
     const available = totalSlots - (classroom.unavailableSlots || []).filter(slot => {
       const parsed = parseTimetableSlot(slot);
       return parsed && parsed.dayIndex < days && parsed.period <= scenario.periodsPerDay;
@@ -300,13 +339,13 @@ export function analyzeTimetableScenario(rawScenario: TimetableScenario): string
   }
 
   for (const teacher of scenario.teachers) {
-    const required = scenario.assignments.filter(item => item.teacherId === teacher.id).reduce((sum, item) => sum + item.periodsPerWeek, 0);
+    const required = scenario.assignments.filter(item => assignmentTeacherIds(item).includes(teacher.id)).reduce((sum, item) => sum + item.periodsPerWeek, 0);
     const available = totalSlots - (teacher.unavailableSlots || []).filter(slot => {
       const parsed = parseTimetableSlot(slot);
       return parsed && parsed.dayIndex < days && parsed.period <= scenario.periodsPerDay;
     }).length;
     if (required > available) issues.push(`Giáo viên ${teacher.name} được phân ${required} tiết nhưng chỉ có ${available} ô khả dụng.`);
-    if (teacher.maxPeriodsPerDay && required > teacher.maxPeriodsPerDay * days) issues.push(`Giáo viên ${teacher.name} vượt tổng tải theo giới hạn ${teacher.maxPeriodsPerDay} tiết/ngày.`);
+    if (required > (teacher.maxPeriodsPerDay || scenario.periodsPerDay) * Math.min(days, teacher.maxTeachingDays || days)) issues.push(`Giáo viên ${teacher.name} vượt tổng tải theo giới hạn số tiết/ngày và ngày dạy.`);
   }
 
   for (const room of scenario.rooms) {
@@ -345,6 +384,18 @@ function validateEntries(scenario: TimetableScenario, entries: ScheduleEntry[]):
     occupiedClasses.add(classKey);
     occupiedTeachers.add(teacherKey);
     if (roomKey) occupiedRooms.add(roomKey);
+  }
+  for (const teacher of scenario.teachers) for (let day = 0; day < days; day++) {
+    const periods = [...new Set(entries.filter(e => e.teacherId === teacher.id && e.dayIndex === day).map(e => e.period))].sort((a, b) => a - b);
+    if (teacher.maxPeriodsPerDay && periods.length > teacher.maxPeriodsPerDay) conflicts.push(`Giáo viên ${teacher.name} vượt số tiết/ngày.`);
+    let streak = 0, previous = -10;
+    for (const period of periods) { streak = period === previous + 1 ? streak + 1 : 1; if (teacher.maxConsecutivePeriods && streak > teacher.maxConsecutivePeriods) conflicts.push(`Giáo viên ${teacher.name} vượt số tiết liên tục.`); previous = period; }
+  }
+  for (const classroom of scenario.classes) for (let day = 0; day < days; day++) if (classroom.maxPeriodsPerDay && entries.filter(e => e.classId === classroom.id && e.dayIndex === day).length > classroom.maxPeriodsPerDay) conflicts.push(`Lớp ${classroom.name} vượt số tiết/ngày.`);
+  for (const assignment of scenario.assignments) {
+    const placed = entries.filter(e => e.assignmentId === assignment.id);
+    if (placed.length > assignment.periodsPerWeek) conflicts.push(`Phân công ${assignment.id} bị xếp thừa tiết.`);
+    for (let day = 0; day < days; day++) if (placed.filter(e => e.dayIndex === day).length > (assignment.maxPerDay || assignment.blockSize || 1)) conflicts.push(`Phân công ${assignment.id} vượt số tiết/ngày.`);
   }
   return [...new Set(conflicts)];
 }
@@ -460,7 +511,7 @@ function buildCandidate(rawScenario: TimetableScenario, lockedEntries: ScheduleE
       }
       const alreadyAtStart = entries.some(entry => entry.assignmentId === assignment.id && entry.dayIndex === parsed.dayIndex && entry.period === parsed.period);
       if (alreadyAtStart) continue;
-      if (!canOccupyBlock(assignment, parsed.dayIndex, parsed.period, blockSize, true)) {
+      if (!canOccupyBlock(assignment, parsed.dayIndex, parsed.period, blockSize)) {
         forcedConflicts.push(`${describeEntity(scenario.classes, assignment.classId)} · ${describeEntity(scenario.subjects, assignment.subjectId)} không thể giữ ô cố định ${TIMETABLE_DAYS[parsed.dayIndex] || parsed.dayIndex} tiết ${parsed.period}.`);
         continue;
       }
@@ -581,6 +632,7 @@ function buildCandidate(rawScenario: TimetableScenario, lockedEntries: ScheduleE
 }
 
 export function optimizeTimetable(rawScenario: TimetableScenario, lockedEntries: ScheduleEntry[] = [], iterations = 120): TimetableSolution {
+  if (hasAdvancedTimetable(rawScenario)) return optimizeAdvancedTimetable(normalizeTimetableScenario(rawScenario), lockedEntries, iterations);
   const scenario = normalizeTimetableScenario(rawScenario);
   const safeIterations = Math.max(1, Math.min(800, Math.floor(iterations)));
   let best = buildCandidate(scenario, lockedEntries, 1);

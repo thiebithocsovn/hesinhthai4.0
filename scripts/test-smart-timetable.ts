@@ -89,7 +89,8 @@ assert.equal(imported.classes.length, 3, 'Excel rows create three classes.');
 assert.equal(imported.teachers.length, 3, 'Excel rows create three teachers.');
 assert.equal(imported.assignments[0].blockSize, 2, 'Excel boolean block column becomes a double period.');
 assert.deepEqual(imported.assignments[1].fixedStartSlots, ['4:5'], 'Vietnamese fixed-slot notation is parsed.');
-assert.equal(imported.assignments[2].fixedStartSlots?.length, 1, 'Surplus fixed slots are trimmed to the declared weekly period total.');
+assert.equal(imported.assignments[2].fixedStartSlots?.length, 3, 'Import preserves all declared fixed starts for explicit review.');
+assert.ok(analyzeTimetableScenario(imported).some(issue => issue.includes('số tiết cố định vượt')), 'Surplus hard constraints are reported instead of silently relaxed.');
 assert.equal(imported.classes.find(item => item.name === '6A')?.homeroomTeacherId, imported.teachers.find(item => item.name === 'Cô Hương')?.id, 'GVCN import links class and homeroom teacher.');
 
 console.info(`Smart timetable v2: ${first.entries.length} periods scheduled, score ${first.score}, ${first.diagnostics.quality.teacherGaps} teacher gaps.`);

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type { EcosystemApplicationId } from '../ecosystem';
 import TrialAccessGate from './TrialAccessGate';
@@ -53,7 +53,9 @@ export default function SmartTimetableEntry() {
 
   useEffect(() => {
     let cancelled = false;
-    return onAuthStateChanged(auth, user => {
+    let generation = 0;
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      const currentGeneration = ++generation;
       void (async () => {
         const nextUid = user?.uid || 'guest';
         setSignedIn(Boolean(user));
@@ -68,6 +70,7 @@ export default function SmartTimetableEntry() {
         }
 
         setCloudState('loading');
+        setReady(false);
         const nextStorageKey = `${STORAGE_PREFIX}:${nextUid}`;
         try {
           // Local data wins when it already exists, preventing an older cloud copy from overwriting recent offline work.
@@ -78,15 +81,16 @@ export default function SmartTimetableEntry() {
               localStorage.setItem(nextStorageKey, JSON.stringify(workspace));
             }
           }
-          if (!cancelled) setCloudState('synced');
+          if (!cancelled && currentGeneration === generation) setCloudState('synced');
         } catch (error) {
           console.info('Thời khóa biểu tiếp tục ở chế độ local-first; chưa tải được bản cloud.', error);
-          if (!cancelled) setCloudState('offline');
+          if (!cancelled && currentGeneration === generation) setCloudState('offline');
         } finally {
-          if (!cancelled) setReady(true);
+          if (!cancelled && currentGeneration === generation) setReady(true);
         }
       })();
     });
+    return () => { cancelled = true; generation++; unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -104,10 +108,16 @@ export default function SmartTimetableEntry() {
 
       writing = true;
       try {
-        await setDoc(doc(db, 'timetable_workspaces', uid), {
-          teacherId: uid,
-          workspace,
-          updatedAt: serverTimestamp(),
+        await runTransaction(db, async transaction => {
+          if (cancelled || auth.currentUser?.uid !== uid) return;
+          const reference = doc(db, 'timetable_workspaces', uid);
+          const previous = await transaction.get(reference);
+          // Published snapshots are authoritative on the server. An offline working copy must not overwrite or resurrect them.
+          const publicationSnapshots = previous.data()?.workspace?.scenario?.publicationSnapshots;
+          const scenario = { ...(workspace.scenario as Record<string, unknown>) };
+          delete scenario.publicationSnapshots;
+          if (publicationSnapshots && typeof publicationSnapshots === 'object') scenario.publicationSnapshots = publicationSnapshots;
+          transaction.set(reference, { teacherId: uid, workspace: { ...workspace, scenario }, updatedAt: serverTimestamp() });
         });
         lastSuccessfulLocalRaw = localRaw;
         if (!cancelled) setCloudState('synced');
@@ -155,6 +165,7 @@ export default function SmartTimetableEntry() {
         </div>
       )}
       <SmartTimetable
+        key={storageKey}
         storageKey={storageKey}
         trialMode={!signedIn}
         onBack={signedIn ? navigateToLibrary : navigateToLanding}

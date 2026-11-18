@@ -8,6 +8,7 @@
     "NODE_OPTIONS": "--experimental-require-module"
   },
   "functions": {
-    "api/admin/teachers/password.ts": { "maxDuration": 30 }
+    "api/admin/teachers/password.ts": { "maxDuration": 30 },
+    "api/timetable.ts": { "maxDuration": 30 }
   }
 }

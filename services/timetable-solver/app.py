@@ -220,6 +220,9 @@ def solve(data: SolveRequest) -> dict[str, Any]:
     morning = int(scenario.get("morningPeriods") or min(5, periods))
     if not (1 <= periods <= 12) or not (1 <= morning <= periods):
         raise ValueError("Khung ngày học không hợp lệ.")
+    if scenario.get('studentGroups') or scenario.get('lessonGroups') or scenario.get('campuses') or any(a.get('additionalClassIds') or a.get('additionalTeacherIds') or a.get('studentGroupId') or a.get('additionalStudentGroupIds') or a.get('campusId') for a in scenario.get('assignments', [])) or any(s.get('maxConcurrentClasses') for s in scenario.get('subjects', [])) or any(t.get('maxTeachingDays') for t in scenario.get('teachers', [])) or any(r.get('capacity') for r in scenario.get('rooms', [])):
+        from advanced import solve_advanced
+        return solve_advanced(scenario, data.lockedEntries, data.timeLimitSeconds)
     teachers = {x["id"]: x for x in scenario["teachers"]}
     classes = {x["id"]: x for x in scenario["classes"]}
     rooms = {x["id"]: x for x in scenario["rooms"]}
@@ -370,5 +373,5 @@ def solve(data: SolveRequest) -> dict[str, Any]:
 def solve_endpoint(data: SolveRequest) -> dict[str, Any]:
     try:
         return solve(data)
-    except ValueError as exc:
+    except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

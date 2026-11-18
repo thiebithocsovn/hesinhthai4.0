@@ -17,6 +17,16 @@ on:
       - 'src/lib/timetableAdmin.ts'
       - 'src/lib/timetableNavigation.ts'
       - 'src/lib/smartTimetable.ts'
+      - 'src/lib/smartTimetable*.ts'
+      - 'src/lib/timetable*.ts'
+      - 'src/components/Timetable*.tsx'
+      - 'src/components/PublicTimetableViewer.tsx'
+      - 'server/timetable*.ts'
+      - 'api/timetable.ts'
+      - 'scripts/test-timetable-*.ts'
+      - 'scripts/test-timetable-*.cjs'
+      - 'scripts/fixtures/timetable-*'
+      - 'vercel.json'
       - 'scripts/test-timetable-admin.ts'
       - 'scripts/test-timetable-agent.ts'
       - 'services/timetable-solver/**'
@@ -40,8 +50,28 @@ jobs:
       - run: npm run test:smart-timetable
       - run: npm run test:timetable-agent
       - run: npm run test:timetable-admin
+      - run: npm run test:timetable-advanced
       - run: npm run lint
       - run: npm run build:static
+
+  ui:
+    runs-on: ubuntu-latest
+    needs: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:timetable-ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: timetable-ui-results
+          path: timetable-ui-results/
+          if-no-files-found: ignore
 
   solver:
     runs-on: ubuntu-latest
