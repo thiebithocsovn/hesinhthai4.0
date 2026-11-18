@@ -112,6 +112,9 @@ assert.equal(planTimetableAgentCommand('Giảng viên nghỉ thứ Ba và Chủ 
 const eveningProposal = planTimetableAgentCommand('Giảng viên nghỉ tối Chủ nhật', uni, null);
 assert.equal(eveningProposal.status, 'ready');
 assert.deepEqual(eveningProposal.affectedSlots, ['6:11','6:12','6:13','6:14','6:15']);
+assert.equal(planTimetableAgentCommand('Khóa Giảng viên cả ngày thứ Ba giúp tôi', uni, null).affectedSlots.length, 15, 'The pronoun tôi does not select the evening session.');
+assert.equal(planTimetableAgentCommand('Khóa Giảng viên sáng thứ Ba giúp tôi', uni, null).affectedSlots.length, 5);
+assert.equal(planTimetableAgentCommand('Giang vien nghi ca toi chu nhat giup toi', uni, null).affectedSlots.length, 5);
 const afternoonProposal = planTimetableAgentCommand('Giảng viên nghỉ chiều thứ Ba', uni, null);
 assert.deepEqual(afternoonProposal.affectedSlots, ['1:6','1:7','1:8','1:9','1:10'], 'Afternoon commands must not silently lock evening slots.');
 const shortDayProposal = planTimetableAgentCommand('Giảng viên nghỉ T2', uni, null);

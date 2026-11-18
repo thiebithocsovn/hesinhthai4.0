@@ -47,11 +47,12 @@ function parseDay(text: string, daysPerWeek: number): number | null {
   return days.length === 1 && days[0] < daysPerWeek ? days[0] : null;
 }
 
-function identifySlots(text: string, scenario: TimetableScenario): { dayIndex: number; slots: string[] } | null {
+function identifySlots(text: string, scenario: TimetableScenario, original: string): { dayIndex: number; slots: string[] } | null {
   const dayIndex = parseDay(text, activeTimetableDays(scenario).length);
   if (dayIndex === null) return null;
   const explicitPeriod = text.match(/(?:^| )tiet\s*(\d{1,2})(?: |$)/);
-  const sessions = [['morning', /(?:^| )sang(?: |$)/], ['afternoon', /(?:^| )chieu(?: |$)/], ['evening', /(?:^| )toi(?: |$)/]].filter(([, pattern]) => (pattern as RegExp).test(text)).map(([session]) => session as 'morning' | 'afternoon' | 'evening');
+  const sessionText = fold(original.normalize('NFC').replace(/\btôi\b/giu, ' ').replace(/\b(?:giup|cho|cua)\s+toi\b/gi, ' '));
+  const sessions = [['morning', /(?:^| )sang(?: |$)/], ['afternoon', /(?:^| )chieu(?: |$)/], ['evening', /(?:^| )toi(?: |$)/]].filter(([, pattern]) => (pattern as RegExp).test(sessionText)).map(([session]) => session as 'morning' | 'afternoon' | 'evening');
   if (sessions.length > 1 || explicitPeriod && sessions.length === 1 && sessionForPeriod(scenario, Number(explicitPeriod[1])) !== sessions[0]) return null;
   const periods = explicitPeriod ? [Number(explicitPeriod[1])] : Array.from({ length: scenario.periodsPerDay }, (_, i) => i + 1).filter(p => !sessions.length || sessionForPeriod(scenario, p) === sessions[0]);
   if (!periods.length || periods.some(period => !Number.isInteger(period) || period < 1 || period > scenario.periodsPerDay)) return null;
@@ -107,7 +108,7 @@ export function planTimetableAgentCommand(
     'Có thể yêu cầu: “Cô Hương nghỉ thứ Ba tiết 2”, “Phòng Tin học bận sáng thứ Tư”, “Lớp 6A không học Toán thứ Sáu tiết 5”, “Mở khóa Cô Hương thứ Ba tiết 2”, hoặc “Thống kê thời khóa biểu”.',
     'AI Agent chỉ đề xuất thay đổi rõ nghĩa; những yêu cầu khác cần người xếp lịch thao tác trực tiếp.',
   ]);
-  const times = identifySlots(text, scenario);
+  const times = identifySlots(text, scenario, command);
   if (!times) return empty('Thiếu ngày hoặc tiết hợp lệ', ['Vui lòng ghi rõ ngày trong khung tuần đã khai báo (có Chủ nhật khi chọn 7 ngày), kèm “tiết 2”, “sáng”, “chiều”, “tối” hoặc cả ngày. Mỗi lệnh chọn một buổi.']);
 
   const classroom = findNamed(text, scenario.classes);
