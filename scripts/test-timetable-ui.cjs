@@ -27,6 +27,8 @@ const XLSX = require('xlsx');
     await page.getByText('Đã kiểm tra độc lập: đủ tiết, không trùng lớp, giáo viên hoặc phòng.', { exact: true }).waitFor();
     await page.getByLabel('Chọn đối tượng xem lịch').selectOption('6b');
     assert.ok((await page.getByRole('main').innerText()).includes('Toán'), 'Merged math appears in the second class.');
+    await nav('Khối - môn - số tiết').click(); await page.getByLabel('Lọc phân công theo lớp').selectOption('6b');
+    assert.ok((await page.getByRole('table').first().innerText()).includes('6A + 6B'), 'Merged curriculum remains visible when filtering the second class.');
     const excelEvent = page.waitForEvent('download'); await button('Xuất Excel').click();
     const excel = await excelEvent, book = XLSX.readFile(await excel.path());
     assert.ok(XLSX.utils.sheet_to_csv(book.Sheets['Lop 6B']).includes('Toán'));
