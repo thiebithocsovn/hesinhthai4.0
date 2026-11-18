@@ -1,3 +1,4 @@
+import { scenarioForTeachingWeek, sessionForPeriod } from './timetableEducation';
 import {
   TIMETABLE_DAYS,
   activeTimetableDays,
@@ -39,23 +40,21 @@ function findNamed<T extends { id: string; name: string }>(text: string, items: 
 }
 
 function parseDay(text: string, daysPerWeek: number): number | null {
-  const match = text.match(/(?:^| )(?:thu|t)\s*(hai|ba|tu|bon|nam|sau|bay|[2-7])(?: |$)/);
-  if (!match) return null;
-  const value = match[1];
-  const index = ({ hai: 0, ba: 1, tu: 2, bon: 2, nam: 3, sau: 4, bay: 5, '2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5 } as Record<string, number>)[value];
-  return index < daysPerWeek ? index : null;
+  const names = { hai: 0, ba: 1, tu: 2, bon: 2, nam: 3, sau: 4, bay: 5, '2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5 } as Record<string, number>;
+  const matches = [...text.matchAll(/(?:^| )(?:thu|t)\s*(hai|ba|tu|bon|nam|sau|bay|[2-7])(?= |$)/g)].map(m => names[m[1]]);
+  if (/(?:^| )(?:chu nhat|cn)(?: |$)/.test(text)) matches.push(6);
+  const days = [...new Set(matches)];
+  return days.length === 1 && days[0] < daysPerWeek ? days[0] : null;
 }
 
-function identifySlots(text: string, scenario: TimetableScenario): { dayIndex: number; slots: string[] } | null {
+function identifySlots(text: string, scenario: TimetableScenario, original: string): { dayIndex: number; slots: string[] } | null {
   const dayIndex = parseDay(text, activeTimetableDays(scenario).length);
   if (dayIndex === null) return null;
-  const explicitPeriod = text.match(/(?:tiet|t)\s*(\d{1,2})(?: |$)/);
-  const periods = explicitPeriod ? [Number(explicitPeriod[1])] :
-    /(?:^| )buoi sang(?: |$)|(?:^| )sang(?: |$)/.test(text)
-      ? Array.from({ length: scenario.morningPeriods || 5 }, (_, i) => i + 1)
-      : /(?:^| )buoi chieu(?: |$)|(?:^| )chieu(?: |$)/.test(text)
-        ? Array.from({ length: scenario.periodsPerDay - (scenario.morningPeriods || 5) }, (_, i) => i + (scenario.morningPeriods || 5) + 1)
-        : Array.from({ length: scenario.periodsPerDay }, (_, i) => i + 1);
+  const explicitPeriod = text.match(/(?:^| )tiet\s*(\d{1,2})(?: |$)/);
+  const sessionText = fold(original.normalize('NFC').replace(/\btôi\b/giu, ' ').replace(/\b(?:giup|cho|cua)\s+toi\b/gi, ' '));
+  const sessions = [['morning', /(?:^| )sang(?: |$)/], ['afternoon', /(?:^| )chieu(?: |$)/], ['evening', /(?:^| )toi(?: |$)/]].filter(([, pattern]) => (pattern as RegExp).test(sessionText)).map(([session]) => session as 'morning' | 'afternoon' | 'evening');
+  if (sessions.length > 1 || explicitPeriod && sessions.length === 1 && sessionForPeriod(scenario, Number(explicitPeriod[1])) !== sessions[0]) return null;
+  const periods = explicitPeriod ? [Number(explicitPeriod[1])] : Array.from({ length: scenario.periodsPerDay }, (_, i) => i + 1).filter(p => !sessions.length || sessionForPeriod(scenario, p) === sessions[0]);
   if (!periods.length || periods.some(period => !Number.isInteger(period) || period < 1 || period > scenario.periodsPerDay)) return null;
   return { dayIndex, slots: periods.map(period => timetableSlotKey(dayIndex, period)) };
 }
@@ -97,7 +96,7 @@ export function planTimetableAgentCommand(
     const missing = solution?.diagnostics.unscheduled.reduce((sum, item) => sum + item.remaining, 0) ?? null;
     const conflicts = solution?.diagnostics.hardConflicts.length ?? null;
     return empty('Phân tích thời khóa biểu hiện tại', [
-      'Tổng số phân công: ' + scenario.assignments.length + '. Tổng số tiết yêu cầu: ' + scenario.assignments.reduce((sum, item) => sum + item.periodsPerWeek, 0) + '.',
+      'Tổng số phân công tuần đang chọn: ' + scenarioForTeachingWeek(scenario).assignments.length + '. Tổng số tiết yêu cầu: ' + scenarioForTeachingWeek(scenario).assignments.reduce((sum, item) => sum + item.periodsPerWeek, 0) + '.',
       solution ? 'Đã xếp: ' + solution.entries.length + ' tiết; chưa xếp: ' + missing + '; xung đột được bộ giải ghi nhận: ' + conflicts + '.' : 'Chưa có thời khóa biểu. Hãy bấm “Xếp tự động” để tạo phương án.',
       ...(solution?.diagnostics.unscheduled.slice(0, 3).map(item => item.assignmentId + ': ' + item.reason) || []),
     ], 'information');
@@ -109,8 +108,8 @@ export function planTimetableAgentCommand(
     'Có thể yêu cầu: “Cô Hương nghỉ thứ Ba tiết 2”, “Phòng Tin học bận sáng thứ Tư”, “Lớp 6A không học Toán thứ Sáu tiết 5”, “Mở khóa Cô Hương thứ Ba tiết 2”, hoặc “Thống kê thời khóa biểu”.',
     'AI Agent chỉ đề xuất thay đổi rõ nghĩa; những yêu cầu khác cần người xếp lịch thao tác trực tiếp.',
   ]);
-  const times = identifySlots(text, scenario);
-  if (!times) return empty('Thiếu ngày hoặc tiết hợp lệ', ['Vui lòng ghi rõ “thứ Hai” đến “thứ Sáu” (hoặc thứ Bảy nếu trường học 6 ngày), kèm “tiết 2”, “sáng”, “chiều” hoặc cả ngày.']);
+  const times = identifySlots(text, scenario, command);
+  if (!times) return empty('Thiếu ngày hoặc tiết hợp lệ', ['Vui lòng ghi rõ ngày trong khung tuần đã khai báo (có Chủ nhật khi chọn 7 ngày), kèm “tiết 2”, “sáng”, “chiều”, “tối” hoặc cả ngày. Mỗi lệnh chọn một buổi.']);
 
   const classroom = findNamed(text, scenario.classes);
   const teacher = findNamed(text, scenario.teachers);
@@ -118,7 +117,7 @@ export function planTimetableAgentCommand(
   const subject = findNamed(text, scenario.subjects);
   const classIntent = hasWord(text, ['lop']);
   const roomIntent = hasWord(text, ['phong']);
-  const teacherIntent = hasWord(text, ['giao vien', 'thay', 'co', 'gv']);
+  const teacherIntent = hasWord(text, ['giao vien', 'giang vien', 'thay', 'co', 'gv']);
   const named = [
     ...(classIntent && classroom ? [{ kind: 'class' as const, id: classroom.id, name: classroom.name }] : []),
     ...(roomIntent && room ? [{ kind: 'room' as const, id: room.id, name: room.name }] : []),

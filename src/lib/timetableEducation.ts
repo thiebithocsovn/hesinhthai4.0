@@ -115,7 +115,7 @@ export function scenarioForTeachingWeek(s: TimetableScenario): TimetableScenario
   if (!s.education) return s;
   const assignments = s.assignments.filter(a => assignmentActiveInWeek(a, s.education!.activeWeek, s.education!.weekCount));
   const ids = new Set(assignments.map(a => a.id));
-  return { ...s, assignments, lessonGroups: s.lessonGroups?.filter(g => g.assignmentIds.some(id => ids.has(id))) };
+  return { ...s, assignments, lessonGroups: s.lessonGroups?.map(g => ({ ...g, assignmentIds: g.assignmentIds.filter(id => ids.has(id)) })).filter(g => g.assignmentIds.length >= 2) };
 }
 export function educationScenarioIssues(s: TimetableScenario): string[] {
   const e = s.education;
@@ -139,6 +139,7 @@ export function educationScenarioIssues(s: TimetableScenario): string[] {
       previousEnd = interval.end;
     }
   }
+  for (const g of s.lessonGroups || []) if (g.assignmentIds.length < 2 || g.assignmentIds.some(id => !s.assignments.some(a => a.id === id))) errors.push(`Nhóm ${g.name} cần ít nhất hai phân công tồn tại trong học kỳ.`);
   for (const a of s.assignments) {
     if (!Number.isInteger(a.startWeek ?? 1) || !Number.isInteger(a.endWeek ?? e.weekCount) || (a.startWeek ?? 1) < 1 || (a.endWeek ?? e.weekCount) > e.weekCount || (a.startWeek ?? 1) > (a.endWeek ?? e.weekCount) || !['all', 'odd', 'even'].includes(a.weekPattern ?? 'all')) errors.push(`Khoảng tuần không hợp lệ: ${a.id}.`);
     const members = s.classes.filter(c => [a.classId, ...(a.additionalClassIds || [])].includes(c.id));

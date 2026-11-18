@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { planTimetableAgentCommand } from '../src/lib/timetableAgent';
 import { activeTimetableDays, analyzeTimetableScenario, createDefaultTimetableScenario, normalizeTimetableScenario, optimizeTimetable, type TimetableScenario, type TimetableSolution } from '../src/lib/smartTimetable';
 import { applyEducationConfiguration, createEducationConfiguration, EDUCATION_PROFILES, educationScenarioIssues, entryClockLabel, inferEducationKind, scenarioForTeachingWeek } from '../src/lib/timetableEducation';
 import { auditTimetableSolution } from '../src/lib/smartTimetableAudit';
@@ -91,6 +92,36 @@ assert.equal(optimizeTimetable(week2, [], 20).entries.length, 1);
 const invalidWeek = structuredClone(uni); invalidWeek.assignments[1].endWeek = 40;
 assert.ok(analyzeTimetableScenario(invalidWeek).some(e => e.includes('Khoảng tuần')));
 assert.ok(optimizeTimetable(invalidWeek, [], 20).diagnostics.hardConflicts.length);
+
+for (const kind of ['parallel', 'same-session'] as const) {
+  const groupedWeek = structuredClone(uni);
+  groupedWeek.classes = ['u','v','w'].map(id => ({ id, name: id.toUpperCase(), level: 'Đại học' }));
+  groupedWeek.teachers = ['t','t2','t3'].map(id => ({ id, name: id, level: 'Đại học' }));
+  groupedWeek.assignments = ['a','b','c'].map((id,i) => ({ id, classId: groupedWeek.classes[i].id, teacherId: groupedWeek.teachers[i].id, subjectId: 'm', periodsPerWeek: 1, weekPattern: i === 2 ? 'even' : 'all' }));
+  groupedWeek.lessonGroups = [{ id: 'g', name: 'Nhóm theo tuần', kind, assignmentIds: ['a','b','c'] }];
+  assert.deepEqual(scenarioForTeachingWeek(groupedWeek).lessonGroups![0].assignmentIds, ['a','b']);
+  assert.ok(auditTimetableSolution(groupedWeek, optimizeTimetable(groupedWeek, [], 20)).valid, 'Two active group members can schedule while the even-week member is inactive.');
+  groupedWeek.assignments[1].weekPattern = 'even';
+  assert.deepEqual(scenarioForTeachingWeek(groupedWeek).lessonGroups, []);
+  assert.ok(auditTimetableSolution(groupedWeek, optimizeTimetable(groupedWeek, [], 20)).valid);
+  groupedWeek.lessonGroups[0].assignmentIds.push('missing');
+  assert.ok(analyzeTimetableScenario(groupedWeek).some(e => e.includes('tồn tại trong học kỳ')), 'Missing source references cannot disappear during calendar projection.');
+}
+assert.equal(planTimetableAgentCommand('Giảng viên nghỉ thứ Ba và Chủ nhật', uni, null).status, 'unsupported');
+
+const eveningProposal = planTimetableAgentCommand('Giảng viên nghỉ tối Chủ nhật', uni, null);
+assert.equal(eveningProposal.status, 'ready');
+assert.deepEqual(eveningProposal.affectedSlots, ['6:11','6:12','6:13','6:14','6:15']);
+assert.equal(planTimetableAgentCommand('Khóa Giảng viên cả ngày thứ Ba giúp tôi', uni, null).affectedSlots.length, 15, 'The pronoun tôi does not select the evening session.');
+assert.equal(planTimetableAgentCommand('Khóa Giảng viên sáng thứ Ba giúp tôi', uni, null).affectedSlots.length, 5);
+assert.equal(planTimetableAgentCommand('Giang vien nghi ca toi chu nhat giup toi', uni, null).affectedSlots.length, 5);
+const afternoonProposal = planTimetableAgentCommand('Giảng viên nghỉ chiều thứ Ba', uni, null);
+assert.deepEqual(afternoonProposal.affectedSlots, ['1:6','1:7','1:8','1:9','1:10'], 'Afternoon commands must not silently lock evening slots.');
+const shortDayProposal = planTimetableAgentCommand('Giảng viên nghỉ T2', uni, null);
+assert.equal(shortDayProposal.affectedSlots.length, 15, 'T2 names a day, not period 2.');
+assert.equal(planTimetableAgentCommand('Giảng viên nghỉ sáng chiều thứ Ba', uni, null).status, 'unsupported');
+assert.equal(planTimetableAgentCommand('Giảng viên nghỉ chiều thứ Ba tiết 11', uni, null).status, 'unsupported');
+assert.equal(planTimetableAgentCommand('Giảng viên nghỉ tối Chủ nhật', { ...uni, daysPerWeek: 6 }, null).status, 'unsupported');
 
 const options = { title: 'Lịch học kỳ', notes: '', effectiveFrom: '', effectiveTo: '', showTeacherNames: false };
 const snapshot = makePublicTimetable(uni, week1, options);
