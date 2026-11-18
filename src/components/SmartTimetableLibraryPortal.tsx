@@ -45,8 +45,8 @@ export default function SmartTimetableLibraryPortal() {
 
   return createPortal(
     <LibraryCard id="smart-timetable" icon={<CalendarRange />} onOpen={openSmartTimetable} data-smart-timetable-library-card="true">
-      <h3>Xếp thời khóa biểu thông minh</h3>
-      <p>Xếp lịch liên cấp Tiểu học + THCS, kiểm soát trùng giáo viên, phòng học, giờ bận và khóa tiết.</p>
+      <h3>Thời khóa biểu</h3>
+      <p>Xếp lịch Tiểu học, THCS, THPT, GDTX, Đại học và trường liên cấp; kiểm tra trùng giáo viên và phòng dùng chung.</p>
     </LibraryCard>,
     target,
   );

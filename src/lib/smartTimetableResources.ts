@@ -1,3 +1,4 @@
+import { entryInterval, normalBreak, sessionForPeriod } from './timetableEducation.js';
 import type { ScheduleEntry, TeachingAssignment, TimetableScenario } from './smartTimetable';
 
 type Participants = Pick<TeachingAssignment, 'classId' | 'teacherId' | 'additionalClassIds' | 'additionalTeacherIds' | 'studentGroupId' | 'additionalStudentGroupIds'>;
@@ -22,7 +23,7 @@ export function assignmentStudentCount(scenario: TimetableScenario, item: Partic
   return assignmentClassIds(item).reduce((sum, id) => sum + (scenario.classes.find(value => value.id === id)?.studentCount || 0), 0);
 }
 export function hasAdvancedTimetable(s: TimetableScenario): boolean {
-  return Boolean(s.studentGroups?.length || s.lessonGroups?.length || s.campuses?.length || s.subjects.some(x => x.maxConcurrentClasses) || s.teachers.some(x => x.maxTeachingDays) || s.assignments.some(x => x.additionalClassIds?.length || x.additionalTeacherIds?.length || x.studentGroupId || x.additionalStudentGroupIds?.length || x.campusId) || s.rooms.some(x => x.capacity));
+  return Boolean(s.education || s.morningPeriods === 0 || s.daysPerWeek === 7 || s.afternoonPeriods !== undefined || s.assignments.some(a => a.session === 'evening' || a.startWeek !== undefined || a.endWeek !== undefined || a.weekPattern === 'odd' || a.weekPattern === 'even') || s.studentGroups?.length || s.lessonGroups?.length || s.campuses?.length || s.subjects.some(x => x.maxConcurrentClasses) || s.teachers.some(x => x.maxTeachingDays) || s.assignments.some(x => x.additionalClassIds?.length || x.additionalTeacherIds?.length || x.studentGroupId || x.additionalStudentGroupIds?.length || x.campusId) || s.rooms.some(x => x.capacity));
 }
 export function advancedScenarioIssues(s: TimetableScenario): string[] {
   const issues: string[] = [];
@@ -77,8 +78,18 @@ export function timetableMetrics(s: TimetableScenario, entries: ScheduleEntry[])
     return map;
   };
   const gaps = (map: Map<string, Set<number>>) => [...map.values()].reduce((sum, values) => sum + Math.max(...values) - Math.min(...values) + 1 - values.size, 0);
-  const teacherGaps = gaps(groups('teacher')), classMap = groups('class'), classGaps = gaps(classMap);
-  const lateCorePeriods = entries.filter(e => s.subjects.find(x => x.id === e.subjectId)?.preferMorning && e.period > (s.morningPeriods || 5)).length;
-  const dailyImbalance = s.classes.reduce((sum, x) => { const loads = Array.from({ length: s.daysPerWeek === 6 ? 6 : 5 }, (_, d) => classMap.get(`${x.id}:${d}`)?.size || 0); return sum + Math.max(...loads) - Math.min(...loads); }, 0);
+  const clockGaps = (kind: 'teacher' | 'class') => {
+    const map = new Map<string, ScheduleEntry[]>();
+    for (const e of entries) for (const id of kind === 'teacher' ? assignmentTeacherIds(e) : assignmentClassIds(e)) {
+      const key = `${id}:${e.dayIndex}:${sessionForPeriod(s, e.period)}`; map.set(key, [...(map.get(key) || []), e]);
+    }
+    return [...map.values()].reduce((sum, values) => {
+      const times = values.map(e => entryInterval(s, e)).sort((a,b) => a.start - b.start);
+      return sum + times.slice(1).filter((t,i) => t.start - times[i].end > normalBreak(s)).length;
+    }, 0);
+  };
+  const teacherGaps = s.education ? clockGaps('teacher') : gaps(groups('teacher')), classMap = groups('class'), classGaps = s.education ? clockGaps('class') : gaps(classMap);
+  const lateCorePeriods = entries.filter(e => s.subjects.find(x => x.id === e.subjectId)?.preferMorning && sessionForPeriod(s, e.period) !== 'morning').length;
+  const dailyImbalance = s.classes.reduce((sum, x) => { const loads = Array.from({ length: s.daysPerWeek === 7 ? 7 : s.daysPerWeek === 6 ? 6 : 5 }, (_, d) => classMap.get(`${x.id}:${d}`)?.size || 0); return sum + Math.max(...loads) - Math.min(...loads); }, 0);
   return { teacherGaps, classGaps, lateCorePeriods, dailyImbalance };
 }

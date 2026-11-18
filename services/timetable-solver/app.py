@@ -211,6 +211,8 @@ def verify(scenario: dict[str, Any], entries: list[dict[str, Any]]) -> list[str]
 
 def solve(data: SolveRequest) -> dict[str, Any]:
     scenario = data.scenario
+    if scenario.get("education") or scenario.get("morningPeriods") == 0 or scenario.get("daysPerWeek") == 7 or "afternoonPeriods" in scenario or any(a.get("session") == "evening" or a.get("startWeek") or a.get("endWeek") or a.get("weekPattern") in ("odd", "even") for a in scenario.get("assignments", [])):
+        raise ValueError("Dịch vụ CP-SAT này chưa hỗ trợ khung giờ theo cấp và lịch học kỳ. Hãy dùng bộ xếp trên trình duyệt cho cấu hình này.")
     required_fields = ("teachers", "classes", "subjects", "rooms", "assignments", "periodsPerDay")
     for name in required_fields:
         if name not in scenario:

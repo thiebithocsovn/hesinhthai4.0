@@ -10,6 +10,7 @@ export function mergeTimetableAssignments(s: TimetableScenario, ids: string[], r
   if (selectedGroups.length && !groupsOnly) throw new Error('Chọn ghép toàn bộ lớp hoặc ghép các nhóm học; không trộn hai chế độ.');
   if (new Set(selectedGroups).size !== selectedGroups.length) throw new Error('Các phân công có nhóm học trùng nhau.');
   if (new Set(items.map(a => `${a.subjectId}:${a.periodsPerWeek}:${a.blockSize || 1}`)).size !== 1) throw new Error('Chỉ ghép các phân công cùng môn, số tiết/tuần và độ dài block.');
+  if (new Set(items.map(a => JSON.stringify([a.startWeek ?? 1, a.endWeek ?? s.education?.weekCount, a.weekPattern || 'all', a.component || 'theory', a.courseSectionCode || '']))).size > 1) throw new Error('Chỉ ghép các phân công có cùng khoảng tuần, tuần chẵn/lẻ, hình thức và mã lớp học phần.');
   const classes = items.flatMap(assignmentClassIds);
   if (!groupsOnly && new Set(classes).size !== classes.length) throw new Error('Các phân công đã có lớp trùng nhau.');
   if ((s.lessonGroups || []).some(g => g.assignmentIds.some(id => ids.includes(id)))) throw new Error('Gỡ các nhóm song song/cùng buổi liên quan trước khi ghép.');

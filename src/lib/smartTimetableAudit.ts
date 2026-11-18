@@ -1,3 +1,4 @@
+import { classDailyLimit, classPeriodInterval, educationScenarioIssues, entryInterval, entryTimeAtoms, normalBreak, scenarioForTeachingWeek, sessionForPeriod, teachingGap, travelMinimum } from './timetableEducation.js';
 import {
   activeTimetableDays,
   normalizeTimetableScenario,
@@ -20,9 +21,11 @@ export interface TimetableAuditReport {
 
 /** Independent audit of an output timetable (not a call into the solver's own validator). */
 export function auditTimetableSolution(raw: TimetableScenario, solution: TimetableSolution | null): TimetableAuditReport {
-  const scenario = normalizeTimetableScenario(raw);
+  const normalized = normalizeTimetableScenario(raw);
+  const scenario = scenarioForTeachingWeek(normalized);
   const entries = solution?.entries || [];
-  const errors: string[] = [];
+  const errors: string[] = educationScenarioIssues(normalized);
+  if (scenario.education && solution && solution.teachingWeek !== scenario.education.activeWeek) errors.push('Phương án thuộc tuần khác hoặc thiếu tuần học. Hãy xếp lại tuần đang chọn.');
   const warnings: string[] = [];
   for (const [name, values] of Object.entries({ teachers: scenario.teachers, classes: scenario.classes, subjects: scenario.subjects, rooms: scenario.rooms, assignments: scenario.assignments, campuses: scenario.campuses || [], studentGroups: scenario.studentGroups || [], lessonGroups: scenario.lessonGroups || [] })) if (new Set(values.map(x => x.id)).size !== values.length) errors.push('Mã đối tượng bị trùng trong ' + name + '.');
   const days = activeTimetableDays(scenario).length;
@@ -38,16 +41,17 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
   const periodByTeacherDay = new Map<string, number[]>();
   const ids = new Set<string>();
   const dailySeen = new Set<string>();
-  const morningEnd = scenario.morningPeriods || Math.min(5, scenario.periodsPerDay);
 
   const reserve = (kind: string, id: string, entry: ScheduleEntry) => {
-    const key = kind + ':' + id + ':' + entry.dayIndex + ':' + entry.period;
-    if (occupancy.has(key)) errors.push('Trùng ' + kind + ' ' + id + ' tại thứ ' + (entry.dayIndex + 2) + ' tiết ' + entry.period + '.');
-    occupancy.set(key, entry.id);
+    for (const atom of entryTimeAtoms(scenario, entry)) {
+      const key = kind + ':' + id + ':' + entry.dayIndex + ':' + atom;
+      if (occupancy.has(key)) errors.push('Trùng ' + kind + ' ' + id + ' tại ' + activeTimetableDays(scenario)[entry.dayIndex] + ' tiết ' + entry.period + '.');
+      occupancy.set(key, entry.id);
+    }
   };
   const count = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) || 0) + 1);
   const countResource = (map: Map<string, number>, kind: string, id: string, entry: ScheduleEntry) => {
-    const key = `${kind}:${id}:${entry.dayIndex}:${entry.period}`;
+    const key = `${kind}:${id}:${entry.dayIndex}:${entryInterval(scenario, entry).start}`;
     if (!dailySeen.has(key)) { dailySeen.add(key); count(map, `${id}:${entry.dayIndex}`); }
   };
 
@@ -74,6 +78,12 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
       errors.push('Tiết ' + entry.id + ' vượt ngoài khung học.');
       continue;
     }
+    const time = entryInterval(scenario, entry);
+    if (!entryTimeAtoms(scenario, entry).length) errors.push('Khung giờ không hợp lệ: ' + entry.id + '.');
+    for (const id of assignmentClassIds(assignment)) {
+      const level = classes.get(id)?.level;
+      if (level) { const other = classPeriodInterval(scenario, level, entry.period); if (other.start !== time.start || other.end !== time.end) errors.push('Lớp ghép khác giờ thực tế: ' + entry.id + '.'); }
+    }
     const slot = timetableSlotKey(entry.dayIndex, entry.period);
     for (const id of classResourceAtoms(scenario, assignment)) reserve('lớp', id, entry);
     for (const id of assignmentTeacherIds(assignment)) reserve('giáo viên', id, entry);
@@ -82,8 +92,7 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
     for (const id of assignmentClassIds(assignment)) if (classes.get(id)?.unavailableSlots?.includes(slot)) errors.push('Lớp ' + id + ' bị xếp vào giờ nghỉ ' + slot + '.');
     if (entry.roomId && rooms.get(entry.roomId)?.unavailableSlots?.includes(slot)) errors.push('Phòng ' + entry.roomId + ' bị xếp vào giờ bận ' + slot + '.');
     if (assignment.forbiddenSlots?.includes(slot)) errors.push('Phân công ' + assignment.id + ' bị xếp vào tiết cấm ' + slot + '.');
-    if (assignment.session === 'morning' && entry.period > morningEnd) errors.push('Phân công ' + assignment.id + ' chỉ học sáng nhưng nằm ở chiều.');
-    if (assignment.session === 'afternoon' && entry.period <= morningEnd) errors.push('Phân công ' + assignment.id + ' chỉ học chiều nhưng nằm ở sáng.');
+    if (assignment.session && assignment.session !== 'any' && sessionForPeriod(scenario, entry.period) !== assignment.session) errors.push('Phân công ' + assignment.id + ' bị xếp sai buổi học đã khai báo.');
     for (const id of assignmentClassIds(assignment)) countResource(dailyClass, 'class', id, entry);
     for (const id of assignmentTeacherIds(assignment)) countResource(dailyTeacher, 'teacher', id, entry);
     count(dailyAssignment, entry.assignmentId + ':' + entry.dayIndex);
@@ -134,7 +143,7 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
       for (let i = 1; i < ordered.length; i++) {
         if (ordered[i].period !== ordered[i - 1].period + 1) errors.push('Block ' + ordered[0].blockId + ' không liên tiếp.');
       }
-      if (ordered[0].period <= morningEnd && ordered[ordered.length - 1].period > morningEnd) errors.push('Block ' + ordered[0].blockId + ' vượt qua ranh giới sáng/chiều.');
+      if (sessionForPeriod(scenario, ordered[0].period) !== sessionForPeriod(scenario, ordered[ordered.length - 1].period)) errors.push('Block ' + ordered[0].blockId + ' vượt qua ranh giới buổi học.');
     }
   }
 
@@ -144,9 +153,14 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
     for (let day = 0; day < days; day++) {
       const countForDay = dailyTeacher.get(teacher.id + ':' + day) || 0;
       if (teacher.maxPeriodsPerDay && countForDay > teacher.maxPeriodsPerDay) errors.push('Giáo viên ' + teacher.name + ' vượt tối đa/ngày.');
+      if (scenario.education && teacher.maxConsecutivePeriods) {
+        const intervals = entries.filter(e => e.dayIndex === day && assignmentTeacherIds(e).includes(teacher.id)).map(e => entryInterval(scenario, e)).sort((a,b) => a.start - b.start);
+        let run = 0, lastEnd = -100;
+        for (const interval of intervals) { run = interval.start - lastEnd <= normalBreak(scenario) ? run + 1 : 1; if (run > teacher.maxConsecutivePeriods) errors.push('Giáo viên ' + teacher.name + ' vượt số tiết liên tục theo giờ thực tế.'); lastEnd = interval.end; }
+      }
       const periods = [...new Set(periodByTeacherDay.get(teacher.id + ':' + day) || [])].sort((a, b) => a - b);
       let streak = 0, previous = -99;
-      for (const period of periods) {
+      for (const period of scenario.education ? [] : periods) {
         streak = period === previous + 1 ? streak + 1 : 1;
         if (teacher.maxConsecutivePeriods && streak > teacher.maxConsecutivePeriods) {
           errors.push('Giáo viên ' + teacher.name + ' vượt số tiết liên tục tại thứ ' + (day + 2) + '.');
@@ -158,17 +172,19 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
   }
 
   const subjectSlots = new Map<string, Set<string>>();
-  const resourceLocations = new Map<string, { period: number; campus: string }[]>();
+  const resourceLocations = new Map<string, { entry: ScheduleEntry; campus: string }[]>();
   for (const entry of entries) {
     const assignment = assignments.get(entry.assignmentId); if (!assignment) continue;
-    const subjectKey = `${entry.subjectId}:${entry.dayIndex}:${entry.period}`, involvedClasses = subjectSlots.get(subjectKey) || new Set<string>();
-    assignmentClassIds(assignment).forEach(id => involvedClasses.add(id)); subjectSlots.set(subjectKey, involvedClasses);
+    for (const atom of entryTimeAtoms(scenario, entry)) {
+      const subjectKey = `${entry.subjectId}:${entry.dayIndex}:${atom}`, involvedClasses = subjectSlots.get(subjectKey) || new Set<string>();
+      assignmentClassIds(assignment).forEach(id => involvedClasses.add(id)); subjectSlots.set(subjectKey, involvedClasses);
+    }
     const campus = assignmentCampus(scenario, assignment);
     for (const id of [...assignmentTeacherIds(assignment).map(id => `GV:${id}`), ...classResourceAtoms(scenario, assignment).map(id => `Lớp:${id}`)]) {
       const resourceKey = `${id}:${entry.dayIndex}`;
       const previous = resourceLocations.get(resourceKey) || [];
-      for (const other of previous) if (campus && other.campus && campus !== other.campus && Math.abs(other.period - entry.period) - 1 < (scenario.campusTravelPeriods ?? 1)) errors.push('Không đủ thời gian chuyển cơ sở: ' + id + '.');
-      previous.push({ period: entry.period, campus }); resourceLocations.set(resourceKey, previous);
+      for (const other of previous) if (campus && other.campus && campus !== other.campus && teachingGap(scenario, other.entry, entry) < travelMinimum(scenario)) errors.push('Không đủ thời gian chuyển cơ sở: ' + id + '.');
+      previous.push({ entry, campus }); resourceLocations.set(resourceKey, previous);
     }
   }
   for (const subject of scenario.subjects) if (subject.maxConcurrentClasses) {
@@ -184,8 +200,8 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
       for (const member of members) {
         const meeting = (byAssignment.get(member!.id) || []).filter(e => e.meetingIndex === index).sort((a, b) => a.period - b.period);
         if (!meeting.length) { errors.push('Thiếu buổi ' + (index + 1) + ' của nhóm ' + group.name + '.'); continue; }
-        if (group.kind === 'parallel') signatures.push(meeting.map(e => `${e.dayIndex}:${e.period}`).join('|'));
-        else signatures.push(meeting.map(e => `${e.dayIndex}:${e.period <= morningEnd ? 'am' : 'pm'}`).filter((x, i, list) => list.indexOf(x) === i).join('|'));
+        if (group.kind === 'parallel') signatures.push(meeting.map(e => `${e.dayIndex}:${entryInterval(scenario, e).start}:${entryInterval(scenario, e).end}`).join('|'));
+        else signatures.push(meeting.map(e => `${e.dayIndex}:${sessionForPeriod(scenario, e.period)}`).filter((x, i, list) => list.indexOf(x) === i).join('|'));
       }
       if (new Set(signatures).size > 1 || (group.kind === 'same-session' && signatures.some(x => x.includes('|')))) errors.push('Nhóm ' + group.name + ' không thỏa ' + (group.kind === 'parallel' ? 'học song song' : 'học cùng buổi') + '.');
     }
@@ -193,7 +209,7 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
   for (const classroom of scenario.classes) {
     for (let day = 0; day < days; day++) {
       const countForDay = dailyClass.get(classroom.id + ':' + day) || 0;
-      if (classroom.maxPeriodsPerDay && countForDay > classroom.maxPeriodsPerDay) errors.push('Lớp ' + classroom.name + ' vượt số tiết tối đa/ngày.');
+      if (classDailyLimit(scenario, classroom) && countForDay > classDailyLimit(scenario, classroom)!) errors.push('Lớp ' + classroom.name + ' vượt số tiết tối đa/ngày.');
     }
   }
 

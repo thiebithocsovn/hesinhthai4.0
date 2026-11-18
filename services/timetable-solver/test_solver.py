@@ -47,3 +47,10 @@ def test_locked_entry_is_retained():
     assert result["status"] in ("OPTIMAL", "FEASIBLE")
     assert result["solution"]["entries"][0]["dayIndex"] == 1
     assert result["solution"]["entries"][0]["period"] == 2
+
+
+def test_education_calendar_is_rejected_until_server_supports_real_clocks():
+    import pytest
+    for patch in ({"education": {"kind": "primary"}}, {"daysPerWeek": 7}, {"afternoonPeriods": 2}):
+        with pytest.raises(ValueError, match="CP-SAT"):
+            solve(SolveRequest(scenario={**example(), **patch}, timeLimitSeconds=1))
