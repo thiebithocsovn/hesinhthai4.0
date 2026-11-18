@@ -41,7 +41,7 @@ export default function TimetableAgentPanel({ scenario, solution, busy, onApply,
       <section className="rounded-3xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-5 md:p-7">
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white"><Bot className="h-6 w-6" /></div>
-          <div><h2 className="text-xl font-extrabold text-slate-900">AITHEROVA · Trợ lý thời khóa biểu</h2><p className="text-sm text-slate-600">Hiểu lệnh tiếng Việt · xem trước · xác nhận · xếp lại</p></div>
+          <div><h2 className="text-xl font-extrabold text-slate-900">Trợ lý thời khóa biểu</h2><p className="text-sm text-slate-600">Hiểu lệnh tiếng Việt · xem trước · xác nhận · xếp lại</p></div>
           <span className="ml-auto rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Hoạt động không cần API key</span>
         </div>
         <label htmlFor="timetable-agent-command" className="mb-2 block text-sm font-bold text-slate-700">Yêu cầu của bạn</label>

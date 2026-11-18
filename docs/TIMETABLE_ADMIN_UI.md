@@ -1,4 +1,4 @@
-# AITHEROVA — quản trị thời khóa biểu
+# Thời khóa biểu — hướng dẫn quản trị
 
 Mở trực tiếp: `https://thiebithocsovn.github.io/hesinhthai4.0/?app=smart-timetable`.
 

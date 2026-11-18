@@ -46,7 +46,7 @@ export default function TimetableAdminShell({ pageId, schoolName, trialMode, onN
       <button type="button" className="tt-close-menu" aria-label="Đóng menu thời khóa biểu" onClick={() => setMenuOpen(false)}><X size={20} /></button>
       <button type="button" className="tt-brand" onClick={() => navigate('overview')}>
         <span className="tt-brand-icon"><CalendarDays size={23} /></span>
-        <span><strong>AITHEROVA</strong><small>SMART TIMETABLE</small></span>
+        <span><strong>Thời khóa biểu</strong><small>QUẢN LÝ XẾP LỊCH</small></span>
       </button>
       <div className="tt-sidebar-search"><Search size={14} /><input aria-label="Tìm chức năng" placeholder="Tìm chức năng..." value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" onClick={() => setSearch('')} aria-label="Xóa tìm kiếm"><X size={13} /></button>}</div>
       <nav aria-label="Chức năng thời khóa biểu">
@@ -64,7 +64,7 @@ export default function TimetableAdminShell({ pageId, schoolName, trialMode, onN
     <div className="tt-main-column" inert={mobile && menuOpen}>
       <header className="tt-topbar">
         <button type="button" ref={menuButton} aria-controls="timetable-sidebar" className="tt-menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở menu thời khóa biểu" aria-expanded={menuOpen}><Menu size={21} /></button>
-        <div className="tt-breadcrumb">AITHEROVA <ChevronRight size={13} /><span>{page.label}</span></div>
+        <div className="tt-breadcrumb">Thời khóa biểu <ChevronRight size={13} /><span>{page.label}</span></div>
         <span className="tt-local-status"><i />{trialMode ? 'Dùng thử trên thiết bị' : 'Không gian làm việc'}</span>
       </header>
       <main className="tt-content">
@@ -74,9 +74,9 @@ export default function TimetableAdminShell({ pageId, schoolName, trialMode, onN
           const labels = ['Khối', 'Lớp', 'Tiết', 'Môn', 'Giáo viên', 'GVCN', 'Phân công', 'Số tiết', 'Xếp TKB'];
           return <React.Fragment key={id}><button type="button" onClick={() => navigate(id)} className={`${pageId === id ? 'is-active' : ''} ${index === 8 ? 'tt-final-step' : ''}`} aria-current={pageId === id ? 'step' : undefined} title={step.label}><span>{index + 1}</span>{labels[index]}</button>{index < 8 && <ChevronRight size={13} />}</React.Fragment>;
         })}</div></section>
-        <div className="tt-page-heading"><div><h2>{page.label}</h2><p>{page.description}</p></div><span className="tt-page-label">AITHEROVA</span></div>
+        <div className="tt-page-heading"><div><h2>{page.label}</h2><p>{page.description}</p></div><span className="tt-page-label">Thời khóa biểu</span></div>
         {children}
-        <footer className="tt-footer">AITHEROVA Smart Timetable · Hệ sinh thái giáo dục 4.0</footer>
+        <footer className="tt-footer">Thời khóa biểu · Hệ sinh thái giáo dục 4.0</footer>
       </main>
     </div>
   </div>;
