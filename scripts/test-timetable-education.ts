@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { planTimetableAgentCommand } from '../src/lib/timetableAgent';
 import { activeTimetableDays, analyzeTimetableScenario, createDefaultTimetableScenario, normalizeTimetableScenario, optimizeTimetable, type TimetableScenario, type TimetableSolution } from '../src/lib/smartTimetable';
 import { applyEducationConfiguration, createEducationConfiguration, EDUCATION_PROFILES, educationScenarioIssues, entryClockLabel, inferEducationKind, scenarioForTeachingWeek } from '../src/lib/timetableEducation';
 import { auditTimetableSolution } from '../src/lib/smartTimetableAudit';
@@ -91,6 +92,17 @@ assert.equal(optimizeTimetable(week2, [], 20).entries.length, 1);
 const invalidWeek = structuredClone(uni); invalidWeek.assignments[1].endWeek = 40;
 assert.ok(analyzeTimetableScenario(invalidWeek).some(e => e.includes('Khoảng tuần')));
 assert.ok(optimizeTimetable(invalidWeek, [], 20).diagnostics.hardConflicts.length);
+
+const eveningProposal = planTimetableAgentCommand('Giảng viên nghỉ tối Chủ nhật', uni, null);
+assert.equal(eveningProposal.status, 'ready');
+assert.deepEqual(eveningProposal.affectedSlots, ['6:11','6:12','6:13','6:14','6:15']);
+const afternoonProposal = planTimetableAgentCommand('Giảng viên nghỉ chiều thứ Ba', uni, null);
+assert.deepEqual(afternoonProposal.affectedSlots, ['1:6','1:7','1:8','1:9','1:10'], 'Afternoon commands must not silently lock evening slots.');
+const shortDayProposal = planTimetableAgentCommand('Giảng viên nghỉ T2', uni, null);
+assert.equal(shortDayProposal.affectedSlots.length, 15, 'T2 names a day, not period 2.');
+assert.equal(planTimetableAgentCommand('Giảng viên nghỉ sáng chiều thứ Ba', uni, null).status, 'unsupported');
+assert.equal(planTimetableAgentCommand('Giảng viên nghỉ chiều thứ Ba tiết 11', uni, null).status, 'unsupported');
+assert.equal(planTimetableAgentCommand('Giảng viên nghỉ tối Chủ nhật', { ...uni, daysPerWeek: 6 }, null).status, 'unsupported');
 
 const options = { title: 'Lịch học kỳ', notes: '', effectiveFrom: '', effectiveTo: '', showTeacherNames: false };
 const snapshot = makePublicTimetable(uni, week1, options);
