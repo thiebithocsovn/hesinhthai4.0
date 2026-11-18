@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import TimetableAgentPanel from './TimetableAgentPanel';
+import TimetableWorkspaceChrome from './TimetableWorkspaceChrome';
 import { printTimetableView } from '../lib/timetablePrint';
 import {
   AlertTriangle,
-  ArrowLeft,
   BookOpen,
   CalendarRange,
   CheckCircle2,
@@ -22,7 +22,6 @@ import {
   Unlock,
   Upload,
   Users,
-  WandSparkles,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -480,16 +479,6 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     scheduleView === 'class' ? entry.classId === scheduleResourceId : scheduleView === 'teacher' ? entry.teacherId === scheduleResourceId : entry.roomId === scheduleResourceId,
   ) || [];
 
-  const tabs: { id: WorkspaceTab; label: string }[] = [
-    { id: 'overview', label: 'Tổng quan' },
-    { id: 'catalog', label: 'Danh mục' },
-    { id: 'assignments', label: 'Phân công' },
-    { id: 'constraints', label: 'Ràng buộc' },
-    { id: 'schedule', label: 'Thời khóa biểu' },
-    { id: 'diagnostics', label: 'Chẩn đoán' },
-    { id: 'agent', label: 'AI Agent' },
-  ];
-
   const catalogGroups: { kind: CatalogKind; title: string; icon: typeof Users; items: { id: string; name: string; meta?: string }[] }[] = [
     { kind: 'teacher', title: 'Giáo viên', icon: Users, items: scenario.teachers.map(item => ({ id: item.id, name: item.name, meta: item.level })) },
     { kind: 'class', title: 'Lớp học', icon: GraduationCap, items: scenario.classes.map(item => ({ id: item.id, name: item.name, meta: item.level })) },
@@ -502,23 +491,29 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       <input ref={excelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={event => event.target.files?.[0] && void importExcel(event.target.files[0])} />
       <input ref={jsonInputRef} type="file" accept="application/json,.json" className="hidden" onChange={event => event.target.files?.[0] && void importBackup(event.target.files[0])} />
 
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 md:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <button type="button" onClick={onBack} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100" aria-label="Quay lại"><ArrowLeft className="h-5 w-5" /></button>
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white"><CalendarRange className="h-6 w-6" /></div>
-            <div className="min-w-0"><h1 className="truncate text-lg font-extrabold md:text-xl">Xếp thời khóa biểu thông minh</h1><p className="truncate text-xs text-slate-500">AITHEROVA · Liên cấp · AI Agent + Constraint optimizer</p></div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={exportExcel} disabled={!solution} className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold disabled:opacity-40 md:flex"><Download className="h-4 w-4" />Xuất Excel</button>
-            <button type="button" onClick={runOptimizer} disabled={busy || scenario.assignments.length === 0} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow hover:bg-indigo-700 disabled:opacity-50"><WandSparkles className="h-4 w-4" />{busy ? 'Đang tối ưu...' : 'Xếp tự động'}</button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-4 py-5 md:px-6 md:py-7">
-        {message && <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">{message}</div>}
-        <div className="mb-5 overflow-x-auto"><div className="flex min-w-max gap-2 rounded-2xl border border-slate-200 bg-white p-2">{tabs.map(tab => <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === tab.id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{tab.label}</button>)}</div></div>
+      <TimetableWorkspaceChrome
+        schoolName={scenario.name}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onBack={onBack}
+        onRun={runOptimizer}
+        onExport={exportExcel}
+        onImport={() => excelInputRef.current?.click()}
+        onDownloadTemplate={downloadExcelTemplate}
+        busy={busy}
+        canRun={scenario.assignments.length > 0}
+        canExport={Boolean(solution)}
+        preflightCount={preflight.length}
+        stats={{
+          classes: scenario.classes.length,
+          teachers: scenario.teachers.length,
+          required: totalRequiredPeriods,
+          scheduled: scheduledPeriods,
+          unassigned: unscheduledPeriods,
+          conflicts: solution?.diagnostics.hardConflicts.length ?? null,
+        }}
+      >
+        {message && <div role="status" className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">{message}</div>}
 
         {activeTab === 'overview' && (
           <div className="space-y-5">
@@ -608,7 +603,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
             <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="font-extrabold">Khả thi của dữ liệu đầu vào</h2>{preflight.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">Không phát hiện bất khả thi rõ ràng trước khi xếp.</div> : <div className="mt-4 space-y-2">{preflight.map(item => <div key={item} className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800">• {item}</div>)}</div>}</section>
           </div>
         )}
-      </main>
+      </TimetableWorkspaceChrome>
     </div>
   );
 }
