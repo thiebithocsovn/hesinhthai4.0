@@ -150,7 +150,7 @@ export default function SmartTimetableEntry() {
       onLogin={() => navigateToAuth('login')}
     >
       {signedIn && (
-        <div className={`fixed right-3 top-20 z-[70] rounded-full border px-3 py-1.5 text-[11px] font-bold shadow-sm backdrop-blur ${cloudState === 'synced' ? 'border-emerald-200 bg-emerald-50/95 text-emerald-700' : cloudState === 'offline' ? 'border-amber-200 bg-amber-50/95 text-amber-700' : 'border-slate-200 bg-white/95 text-slate-600'}`}>
+        <div className={`fixed bottom-4 right-4 z-[70] rounded-full border px-3 py-1.5 text-[11px] font-bold shadow-sm backdrop-blur ${cloudState === 'synced' ? 'border-emerald-200 bg-emerald-50/95 text-emerald-700' : cloudState === 'offline' ? 'border-amber-200 bg-amber-50/95 text-amber-700' : 'border-slate-200 bg-white/95 text-slate-600'}`}>
           {cloudLabel}
         </div>
       )}

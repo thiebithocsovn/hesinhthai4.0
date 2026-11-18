@@ -136,7 +136,7 @@ export default function PlatformBootstrap() {
     activate('landing');
   };
 
-  if (runtimeActive && readStoredView() === 'smart-timetable') {
+  if (runtimeActive && (readStoredView() === 'smart-timetable' || new URLSearchParams(window.location.search).get('app') === 'smart-timetable')) {
     return (
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600">Đang mở bộ xếp thời khóa biểu...</div>}>
         <SmartTimetableEntry />

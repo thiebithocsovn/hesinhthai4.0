@@ -10,6 +10,14 @@ on:
       - 'src/lib/smartTimetableAudit.ts'
       - 'src/components/TimetableAgentPanel.tsx'
       - 'src/components/SmartTimetable.tsx'
+      - 'src/components/TimetableAdmin*'
+      - 'src/components/timetableAdmin.css'
+      - 'src/components/SmartTimetableEntry.tsx'
+      - 'src/components/PlatformBootstrap.tsx'
+      - 'src/lib/timetableAdmin.ts'
+      - 'src/lib/timetableNavigation.ts'
+      - 'src/lib/smartTimetable.ts'
+      - 'scripts/test-timetable-admin.ts'
       - 'scripts/test-timetable-agent.ts'
       - 'services/timetable-solver/**'
       - 'package.json'
@@ -31,6 +39,7 @@ jobs:
       - run: npm ci --legacy-peer-deps --ignore-scripts
       - run: npm run test:smart-timetable
       - run: npm run test:timetable-agent
+      - run: npm run test:timetable-admin
       - run: npm run lint
       - run: npm run build:static
 

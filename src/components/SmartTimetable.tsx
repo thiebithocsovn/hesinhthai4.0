@@ -1,27 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import TimetableAgentPanel from './TimetableAgentPanel';
+import TimetableAdminShell from './TimetableAdminShell';
+import { TimetableAdvancedPanel, TimetableAvailabilityPanel, TimetableBackupPanel, TimetableCatalogPanel, TimetableCurriculumPanel, TimetableGradesPanel, TimetableHomeroomPanel, TimetableOverviewPanel, TimetableSettingsPanel } from './TimetableAdminPanels';
+import { TIMETABLE_ADMIN_PAGES, type TimetableWorkspaceTab } from '../lib/timetableNavigation';
+import { moveTimetableBlock } from '../lib/timetableAdmin';
+import { auditTimetableSolution } from '../lib/smartTimetableAudit';
 import { printTimetableView } from '../lib/timetablePrint';
 import {
   AlertTriangle,
-  ArrowLeft,
-  BookOpen,
   CalendarRange,
-  CheckCircle2,
-  Database,
   Download,
-  DoorOpen,
   FileDown,
-  FileUp,
-  GraduationCap,
   Lock,
   Plus,
-  RefreshCcw,
   ShieldAlert,
-  Sparkles,
   Trash2,
   Unlock,
-  Upload,
-  Users,
   WandSparkles,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -35,7 +29,6 @@ import {
   parseTimetableSlot,
   timetableSlotKey,
   type ScheduleEntry,
-  type SchoolLevel,
   type TeachingAssignment,
   type TimetableScenario,
   type TimetableSolution,
@@ -43,7 +36,6 @@ import {
 import {
   TIMETABLE_IMPORT_COLUMNS,
   scenarioFromAssignmentRows,
-  timetableEntityId,
   type TimetableImportRow,
 } from '../lib/smartTimetableImport';
 
@@ -53,7 +45,7 @@ interface SmartTimetableProps {
   trialMode?: boolean;
 }
 
-type WorkspaceTab = 'overview' | 'catalog' | 'assignments' | 'constraints' | 'schedule' | 'diagnostics' | 'agent';
+type WorkspaceTab = TimetableWorkspaceTab;
 type CatalogKind = 'teacher' | 'class' | 'subject' | 'room';
 type ConstraintKind = 'teacher' | 'class' | 'room';
 type ScheduleView = 'class' | 'teacher' | 'room';
@@ -135,12 +127,12 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   const [solution, setSolution] = useState<TimetableSolution | null>(initial.solution);
   const [versions, setVersions] = useState<TimetableSolution[]>(initial.versions);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
+  const [pageId, setPageId] = useState('overview');
+  const [selectedEntryId, setSelectedEntryId] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
   const [catalogKind, setCatalogKind] = useState<CatalogKind>('teacher');
-  const [catalogName, setCatalogName] = useState('');
-  const [catalogLevel, setCatalogLevel] = useState<SchoolLevel>('THCS');
 
   const [draft, setDraft] = useState<Partial<TeachingAssignment>>({
     classId: initial.scenario.classes[0]?.id,
@@ -151,13 +143,21 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     blockSize: 1,
     session: 'any',
   });
+  useEffect(() => {
+    setDraft(previous => {
+      const next = { ...previous,
+        classId: scenario.classes.some(item => item.id === previous.classId) ? previous.classId : scenario.classes[0]?.id,
+        teacherId: scenario.teachers.some(item => item.id === previous.teacherId) ? previous.teacherId : scenario.teachers[0]?.id,
+        subjectId: scenario.subjects.some(item => item.id === previous.subjectId) ? previous.subjectId : scenario.subjects[0]?.id,
+        roomId: scenario.rooms.some(item => item.id === previous.roomId) ? previous.roomId : undefined,
+      };
+      return next.classId === previous.classId && next.teacherId === previous.teacherId && next.subjectId === previous.subjectId && next.roomId === previous.roomId ? previous : next;
+    });
+  }, [scenario.classes, scenario.teachers, scenario.subjects, scenario.rooms]);
   const [fixedDay, setFixedDay] = useState(-1);
   const [fixedPeriod, setFixedPeriod] = useState(1);
 
   const [constraintKind, setConstraintKind] = useState<ConstraintKind>('teacher');
-  const [constraintId, setConstraintId] = useState(initial.scenario.teachers[0]?.id || '');
-  const [constraintDay, setConstraintDay] = useState(0);
-  const [constraintPeriod, setConstraintPeriod] = useState(1);
 
   const [scheduleView, setScheduleView] = useState<ScheduleView>('class');
   const [scheduleResourceId, setScheduleResourceId] = useState(initial.scenario.classes[0]?.id || '');
@@ -181,7 +181,6 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
   const days = activeTimetableDays(scenario);
   const totalRequiredPeriods = useMemo(() => scenario.assignments.reduce((sum, item) => sum + item.periodsPerWeek, 0), [scenario.assignments]);
-  const scheduledPeriods = solution?.entries.length || 0;
   const unscheduledPeriods = solution?.diagnostics.unscheduled.reduce((sum, item) => sum + item.remaining, 0) || 0;
   const lockedEntries = solution?.entries.filter(item => item.locked && !item.fixed) || [];
   const preflight = useMemo(() => analyzeTimetableScenario(scenario), [scenario]);
@@ -195,20 +194,60 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   }), [scenario]);
 
   const scheduleResources = scheduleView === 'class' ? scenario.classes : scheduleView === 'teacher' ? scenario.teachers : scenario.rooms;
+  const audit = useMemo(() => auditTimetableSolution(scenario, solution), [scenario, solution]);
+
+  const navigatePage = (id: string) => {
+    const page = TIMETABLE_ADMIN_PAGES.find(item => item.id === id);
+    if (!page) return;
+    setPageId(id);
+    setActiveTab(page.tab);
+    setSelectedEntryId('');
+    if (page.catalog) setCatalogKind(page.catalog);
+    if (page.constraint) setConstraintKind(page.constraint);
+    if (page.view) setScheduleView(page.view);
+  };
+
+  useEffect(() => {
+    if (TIMETABLE_ADMIN_PAGES.find(item => item.id === pageId)?.tab !== activeTab) {
+      setPageId(TIMETABLE_ADMIN_PAGES.find(item => item.tab === activeTab)?.id || 'overview');
+    }
+  }, [activeTab, pageId]);
 
   useEffect(() => {
     const resources = scheduleView === 'class' ? scenario.classes : scheduleView === 'teacher' ? scenario.teachers : scenario.rooms;
     if (!resources.some(item => item.id === scheduleResourceId)) setScheduleResourceId(resources[0]?.id || '');
   }, [scenario.classes, scenario.rooms, scenario.teachers, scheduleResourceId, scheduleView]);
 
-  useEffect(() => {
-    const resources = constraintKind === 'teacher' ? scenario.teachers : constraintKind === 'class' ? scenario.classes : scenario.rooms;
-    if (!resources.some(item => item.id === constraintId)) setConstraintId(resources[0]?.id || '');
-  }, [constraintId, constraintKind, scenario.classes, scenario.rooms, scenario.teachers]);
-
   const resetSolution = () => {
     setSolution(null);
+    setSelectedEntryId('');
     setMessage('Dữ liệu đã thay đổi. Hãy xếp lại để cập nhật phương án.');
+  };
+
+  const changeScenario = (next: TimetableScenario) => {
+    setScenario(next);
+    resetSolution();
+  };
+
+  const restoreVersion = (version: TimetableSolution) => {
+    const report = auditTimetableSolution(scenario, version);
+    if (!report.valid || !report.complete) {
+      setMessage('Phương án này không khớp đầy đủ với dữ liệu và ràng buộc hiện tại. Khôi phục bản JSON tương ứng hoặc xếp lại lịch.');
+      return;
+    }
+    setSolution(version);
+    navigatePage('schedule');
+    setMessage('Đã mở phương án và kiểm tra độc lập.');
+  };
+
+  const moveEntry = (id: string, dayIndex: number, period: number) => {
+    if (!solution || busy) return;
+    const result = moveTimetableBlock(scenario, solution, id, dayIndex, period);
+    if (!result.solution) { setMessage(`Không thể chuyển tiết: ${result.errors.slice(0, 3).join(' ')}`); return; }
+    setSolution(result.solution);
+    setVersions(previous => [result.solution!, ...previous].slice(0, 8));
+    setSelectedEntryId('');
+    setMessage('Đã chuyển toàn bộ block và kiểm tra độc lập: đủ tiết, không trùng lớp, giáo viên hoặc phòng.');
   };
 
   const acceptSolution = (next: TimetableSolution) => {
@@ -272,44 +311,6 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     } : previous);
   };
 
-  const addCatalogItem = () => {
-    const name = catalogName.trim();
-    if (!name) return;
-    setScenario(previous => {
-      if (catalogKind === 'teacher') {
-        if (previous.teachers.some(item => item.name.toLowerCase() === name.toLowerCase())) return previous;
-        return { ...previous, teachers: [...previous.teachers, { id: timetableEntityId('gv', name), name, level: catalogLevel, maxPeriodsPerDay: 6, maxConsecutivePeriods: 4 }] };
-      }
-      if (catalogKind === 'class') {
-        if (previous.classes.some(item => item.name.toLowerCase() === name.toLowerCase())) return previous;
-        return { ...previous, classes: [...previous.classes, { id: timetableEntityId('lop', name), name, level: catalogLevel === 'Tiểu học' ? 'Tiểu học' : 'THCS', maxPeriodsPerDay: previous.periodsPerDay }] };
-      }
-      if (catalogKind === 'subject') {
-        if (previous.subjects.some(item => item.name.toLowerCase() === name.toLowerCase())) return previous;
-        return { ...previous, subjects: [...previous.subjects, { id: timetableEntityId('mon', name), name }] };
-      }
-      if (previous.rooms.some(item => item.name.toLowerCase() === name.toLowerCase())) return previous;
-      return { ...previous, rooms: [...previous.rooms, { id: timetableEntityId('phong', name), name }] };
-    });
-    setCatalogName('');
-    resetSolution();
-  };
-
-  const removeCatalogItem = (kind: CatalogKind, id: string) => {
-    setScenario(previous => {
-      const assignments = previous.assignments.filter(item =>
-        kind === 'teacher' ? item.teacherId !== id :
-          kind === 'class' ? item.classId !== id :
-            kind === 'subject' ? item.subjectId !== id : item.roomId !== id,
-      );
-      if (kind === 'teacher') return { ...previous, teachers: previous.teachers.filter(item => item.id !== id), assignments };
-      if (kind === 'class') return { ...previous, classes: previous.classes.filter(item => item.id !== id), assignments };
-      if (kind === 'subject') return { ...previous, subjects: previous.subjects.filter(item => item.id !== id), assignments };
-      return { ...previous, rooms: previous.rooms.filter(item => item.id !== id), assignments };
-    });
-    resetSolution();
-  };
-
   const addAssignment = () => {
     if (!draft.classId || !draft.subjectId || !draft.teacherId || !draft.periodsPerWeek) return;
     const blockSize = draft.blockSize === 2 || draft.blockSize === 3 ? draft.blockSize : 1;
@@ -331,26 +332,6 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     resetSolution();
   };
 
-  const resourceSlots = (kind: ConstraintKind, id: string): string[] => {
-    const collection = kind === 'teacher' ? scenario.teachers : kind === 'class' ? scenario.classes : scenario.rooms;
-    return collection.find(item => item.id === id)?.unavailableSlots || [];
-  };
-
-  const updateResourceSlots = (kind: ConstraintKind, id: string, slots: string[]) => {
-    setScenario(previous => {
-      if (kind === 'teacher') return { ...previous, teachers: previous.teachers.map(item => item.id === id ? { ...item, unavailableSlots: slots } : item) };
-      if (kind === 'class') return { ...previous, classes: previous.classes.map(item => item.id === id ? { ...item, unavailableSlots: slots } : item) };
-      return { ...previous, rooms: previous.rooms.map(item => item.id === id ? { ...item, unavailableSlots: slots } : item) };
-    });
-    resetSolution();
-  };
-
-  const addUnavailableSlot = () => {
-    if (!constraintId) return;
-    const slot = timetableSlotKey(constraintDay, constraintPeriod);
-    updateResourceSlots(constraintKind, constraintId, [...new Set([...resourceSlots(constraintKind, constraintId), slot])]);
-  };
-
   const resetWorkspace = () => {
     workerRef.current?.terminate();
     workerRef.current = null;
@@ -362,7 +343,6 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     setScheduleView('class');
     setScheduleResourceId(next.classes[0]?.id || '');
     setConstraintKind('teacher');
-    setConstraintId(next.teachers[0]?.id || '');
     setMessage('Đã khôi phục dữ liệu mẫu liên cấp.');
     setActiveTab('overview');
   };
@@ -381,8 +361,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       setSolution(null);
       setVersions([]);
       setScheduleResourceId(next.classes[0]?.id || '');
-      setConstraintId(next.teachers[0]?.id || '');
-      setMessage(`Đã nhập ${next.assignments.length} phân công, ${next.teachers.length} giáo viên và ${next.classes.length} lớp từ Excel.`);
+        setMessage(`Đã nhập ${next.assignments.length} phân công, ${next.teachers.length} giáo viên và ${next.classes.length} lớp từ Excel.`);
       setActiveTab('overview');
     } catch (error) {
       setMessage(error instanceof Error ? `Không thể nhập Excel: ${error.message}` : 'Không thể nhập Excel.');
@@ -480,84 +459,31 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     scheduleView === 'class' ? entry.classId === scheduleResourceId : scheduleView === 'teacher' ? entry.teacherId === scheduleResourceId : entry.roomId === scheduleResourceId,
   ) || [];
 
-  const tabs: { id: WorkspaceTab; label: string }[] = [
-    { id: 'overview', label: 'Tổng quan' },
-    { id: 'catalog', label: 'Danh mục' },
-    { id: 'assignments', label: 'Phân công' },
-    { id: 'constraints', label: 'Ràng buộc' },
-    { id: 'schedule', label: 'Thời khóa biểu' },
-    { id: 'diagnostics', label: 'Chẩn đoán' },
-    { id: 'agent', label: 'AI Agent' },
-  ];
-
-  const catalogGroups: { kind: CatalogKind; title: string; icon: typeof Users; items: { id: string; name: string; meta?: string }[] }[] = [
-    { kind: 'teacher', title: 'Giáo viên', icon: Users, items: scenario.teachers.map(item => ({ id: item.id, name: item.name, meta: item.level })) },
-    { kind: 'class', title: 'Lớp học', icon: GraduationCap, items: scenario.classes.map(item => ({ id: item.id, name: item.name, meta: item.level })) },
-    { kind: 'subject', title: 'Môn học', icon: BookOpen, items: scenario.subjects.map(item => ({ id: item.id, name: item.name })) },
-    { kind: 'room', title: 'Phòng học', icon: DoorOpen, items: scenario.rooms.map(item => ({ id: item.id, name: item.name })) },
-  ];
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <TimetableAdminShell
+      pageId={pageId}
+      schoolName={scenario.name}
+      trialMode={trialMode}
+      onNavigate={navigatePage}
+      onBack={onBack}
+      actions={<>
+        <button type="button" onClick={exportExcel} disabled={!solution || busy} className="tt-action-export"><Download size={15} />Xuất Excel</button>
+        <button type="button" onClick={runOptimizer} disabled={busy || !scenario.assignments.length} className="tt-action-run"><WandSparkles size={15} />{busy ? 'Đang xếp lịch...' : 'Xếp tự động'}</button>
+      </>}
+    >
       <input ref={excelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={event => event.target.files?.[0] && void importExcel(event.target.files[0])} />
       <input ref={jsonInputRef} type="file" accept="application/json,.json" className="hidden" onChange={event => event.target.files?.[0] && void importBackup(event.target.files[0])} />
-
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 md:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <button type="button" onClick={onBack} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100" aria-label="Quay lại"><ArrowLeft className="h-5 w-5" /></button>
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white"><CalendarRange className="h-6 w-6" /></div>
-            <div className="min-w-0"><h1 className="truncate text-lg font-extrabold md:text-xl">Xếp thời khóa biểu thông minh</h1><p className="truncate text-xs text-slate-500">AITHEROVA · Liên cấp · AI Agent + Constraint optimizer</p></div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={exportExcel} disabled={!solution} className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold disabled:opacity-40 md:flex"><Download className="h-4 w-4" />Xuất Excel</button>
-            <button type="button" onClick={runOptimizer} disabled={busy || scenario.assignments.length === 0} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow hover:bg-indigo-700 disabled:opacity-50"><WandSparkles className="h-4 w-4" />{busy ? 'Đang tối ưu...' : 'Xếp tự động'}</button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-4 py-5 md:px-6 md:py-7">
-        {message && <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">{message}</div>}
-        <div className="mb-5 overflow-x-auto"><div className="flex min-w-max gap-2 rounded-2xl border border-slate-200 bg-white p-2">{tabs.map(tab => <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === tab.id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{tab.label}</button>)}</div></div>
-
-        {activeTab === 'overview' && (
-          <div className="space-y-5">
-            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              {[
-                ['Lớp học', scenario.classes.length, GraduationCap],
-                ['Giáo viên', scenario.teachers.length, Users],
-                ['Tiết yêu cầu', totalRequiredPeriods, CalendarRange],
-                ['Đã xếp', scheduledPeriods, CheckCircle2],
-                ['Chưa xếp', unscheduledPeriods, AlertTriangle],
-              ].map(([label, value, Icon]) => { const CardIcon = Icon as typeof GraduationCap; return <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><CardIcon className="h-5 w-5" /></div><div className="text-3xl font-extrabold">{String(value)}</div><div className="mt-1 text-sm text-slate-500">{String(label)}</div></div>; })}
-            </section>
-
-            <section className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 md:p-7">
-                <div className="mb-5 flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Cấu hình nhà trường</p><h2 className="mt-1 text-2xl font-extrabold">{scenario.name}</h2><p className="mt-2 text-sm leading-6 text-slate-600">Dùng chung tài nguyên giáo viên và phòng học giữa Tiểu học – THCS; hỗ trợ 2 buổi, 5/6 ngày, tiết đôi và tiết cố định.</p></div><Sparkles className="h-7 w-7 text-amber-500" /></div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <label className="text-xs font-bold text-slate-600 sm:col-span-2">Tên trường<input value={scenario.name} onChange={event => { setScenario(previous => ({ ...previous, name: event.target.value })); resetSolution(); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" /></label>
-                  <label className="text-xs font-bold text-slate-600">Ngày/tuần<select value={scenario.daysPerWeek || 5} onChange={event => { setScenario(previous => ({ ...previous, daysPerWeek: Number(event.target.value) === 6 ? 6 : 5 })); resetSolution(); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value={5}>5 ngày</option><option value={6}>6 ngày</option></select></label>
-                  <label className="text-xs font-bold text-slate-600">Tiết/ngày<input type="number" min={4} max={12} value={scenario.periodsPerDay} onChange={event => { const periodsPerDay = Math.max(4, Math.min(12, Number(event.target.value))); setScenario(previous => ({ ...previous, periodsPerDay, morningPeriods: Math.min(previous.morningPeriods || 5, periodsPerDay) })); resetSolution(); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" /></label>
-                  <label className="text-xs font-bold text-slate-600">Tiết buổi sáng<input type="number" min={1} max={scenario.periodsPerDay} value={scenario.morningPeriods || 5} onChange={event => { setScenario(previous => ({ ...previous, morningPeriods: Math.max(1, Math.min(previous.periodsPerDay, Number(event.target.value))) })); resetSolution(); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" /></label>
-                </div>
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-slate-900 p-5 text-white md:p-7"><h3 className="text-lg font-bold">Chất lượng phương án</h3><div className="mt-5 space-y-3 text-sm"><div className="flex justify-between"><span className="text-slate-400">Tiết khóa thủ công</span><b>{lockedEntries.length}</b></div><div className="flex justify-between"><span className="text-slate-400">Xung đột cứng</span><b className={solution?.diagnostics.hardConflicts.length ? 'text-rose-300' : 'text-emerald-300'}>{solution?.diagnostics.hardConflicts.length ?? '—'}</b></div><div className="flex justify-between"><span className="text-slate-400">Khoảng trống GV</span><b>{solution?.diagnostics.quality.teacherGaps ?? '—'}</b></div><div className="flex justify-between"><span className="text-slate-400">Môn chính sau buổi sáng</span><b>{solution?.diagnostics.quality.lateCorePeriods ?? '—'}</b></div><div className="flex justify-between"><span className="text-slate-400">Điểm phạt</span><b>{solution?.score ?? '—'}</b></div></div><button type="button" onClick={runOptimizer} className="mt-6 w-full rounded-xl bg-white px-4 py-3 font-bold text-slate-900 hover:bg-indigo-50">Tạo phương án tối ưu</button></div>
-            </section>
-
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 md:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h3 className="font-extrabold">Nhập dữ liệu & sao lưu</h3><p className="mt-1 text-sm text-slate-500">Có thể bắt đầu bằng Excel phân công chuyên môn thay vì nhập từng dòng.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={downloadExcelTemplate} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50"><FileDown className="h-4 w-4" />Tải file mẫu</button><button type="button" onClick={() => excelInputRef.current?.click()} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Upload className="h-4 w-4" />Nhập Excel</button><button type="button" onClick={exportBackup} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50"><Database className="h-4 w-4" />Sao lưu JSON</button><button type="button" onClick={() => jsonInputRef.current?.click()} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50"><FileUp className="h-4 w-4" />Khôi phục</button></div></div></section>
-
-            {preflight.length > 0 && <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5"><div className="flex items-center gap-2 text-amber-900"><AlertTriangle className="h-5 w-5" /><h3 className="font-extrabold">Kiểm tra dữ liệu trước khi xếp</h3></div><div className="mt-3 space-y-1 text-sm text-amber-800">{preflight.slice(0, 8).map(item => <p key={item}>• {item}</p>)}</div></section>}
-            <button type="button" onClick={resetWorkspace} className="flex w-fit items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"><RefreshCcw className="h-4 w-4" />Khôi phục dữ liệu mẫu</button>
-          </div>
-        )}
-
-        {activeTab === 'catalog' && (
-          <div className="space-y-5">
-            <section className="rounded-3xl border border-slate-200 bg-white p-5"><div className="grid gap-3 md:grid-cols-[180px_1fr_180px_auto]"><select value={catalogKind} onChange={event => setCatalogKind(event.target.value as CatalogKind)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="teacher">Giáo viên</option><option value="class">Lớp học</option><option value="subject">Môn học</option><option value="room">Phòng học</option></select><input value={catalogName} onChange={event => setCatalogName(event.target.value)} placeholder="Nhập tên mới..." className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />{catalogKind === 'teacher' || catalogKind === 'class' ? <select value={catalogLevel} onChange={event => setCatalogLevel(event.target.value as SchoolLevel)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="Tiểu học">Tiểu học</option><option value="THCS">THCS</option>{catalogKind === 'teacher' && <option value="Liên cấp">Liên cấp</option>}</select> : <div className="hidden md:block" />}<button type="button" onClick={addCatalogItem} className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white"><Plus className="h-4 w-4" />Thêm</button></div></section>
-            <div className="grid gap-5 md:grid-cols-2">{catalogGroups.map(group => { const Icon = group.icon; return <section key={group.kind} className="rounded-3xl border border-slate-200 bg-white p-5"><div className="mb-4 flex items-center gap-2"><Icon className="h-5 w-5 text-indigo-600" /><h2 className="font-extrabold">{group.title}</h2><span className="ml-auto rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500">{group.items.length}</span></div><div className="space-y-2">{group.items.length === 0 ? <p className="text-sm text-slate-400">Chưa có dữ liệu.</p> : group.items.map(item => <div key={item.id} className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3"><div className="min-w-0 flex-1"><div className="truncate font-semibold">{item.name}</div>{item.meta && <div className="text-xs text-slate-500">{item.meta}</div>}</div><button type="button" onClick={() => removeCatalogItem(group.kind, item.id)} className="rounded-lg p-2 text-rose-500 hover:bg-rose-100"><Trash2 className="h-4 w-4" /></button></div>)}</div></section>; })}</div>
-          </div>
-        )}
+      {message && <div role="status" className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm leading-6 text-indigo-800">{message}</div>}
+      {busy && <div role="status" className="mb-4 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800">Đang xếp toàn trường. Các ô nhập tạm khóa để giữ nhất quán dữ liệu.</div>}
+      <fieldset disabled={busy} className="min-w-0 space-y-4">
+        {activeTab === 'overview' && <TimetableOverviewPanel scenario={scenario} solution={solution} navigate={navigatePage} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} />}
+        {activeTab === 'catalog' && <TimetableCatalogPanel key={catalogKind} scenario={scenario} kind={catalogKind} onChange={changeScenario} />}
+        {activeTab === 'grades' && <TimetableGradesPanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'homeroom' && <TimetableHomeroomPanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'curriculum' && <TimetableCurriculumPanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'settings' && <TimetableSettingsPanel pageId={pageId} scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'advanced' && <TimetableAdvancedPanel pageId={pageId} navigate={navigatePage} />}
+        {activeTab === 'backup' && <TimetableBackupPanel solution={solution} versions={versions} onBackup={exportBackup} onRestore={() => jsonInputRef.current?.click()} onExcel={exportExcel} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} onVersion={restoreVersion} onReset={() => { if (window.confirm('Thay dữ liệu hiện tại bằng dữ liệu mẫu? Hãy sao lưu JSON trước khi tiếp tục.')) resetWorkspace(); }} />}
 
         {activeTab === 'assignments' && (
           <div className="grid gap-5 lg:grid-cols-[390px_1fr]">
@@ -566,18 +492,36 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
           </div>
         )}
 
-        {activeTab === 'constraints' && (
-          <div className="grid gap-5 lg:grid-cols-[410px_1fr]">
-            <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-extrabold">Khóa thời gian không khả dụng</h2><p className="mt-1 text-sm leading-6 text-slate-500">Áp dụng cho giáo viên, lớp hoặc phòng. Đây là ràng buộc cứng.</p><div className="mt-5 space-y-3"><select value={constraintKind} onChange={event => setConstraintKind(event.target.value as ConstraintKind)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="teacher">Giáo viên</option><option value="class">Lớp học</option><option value="room">Phòng học</option></select><select value={constraintId} onChange={event => setConstraintId(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">{(constraintKind === 'teacher' ? scenario.teachers : constraintKind === 'class' ? scenario.classes : scenario.rooms).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><div className="grid grid-cols-2 gap-3"><select value={constraintDay} onChange={event => setConstraintDay(Number(event.target.value))} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">{days.map((day, index) => <option key={day} value={index}>{day}</option>)}</select><select value={constraintPeriod} onChange={event => setConstraintPeriod(Number(event.target.value))} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">{Array.from({ length: scenario.periodsPerDay }, (_, index) => index + 1).map(period => <option key={period} value={period}>Tiết {period}</option>)}</select></div><button type="button" onClick={addUnavailableSlot} disabled={!constraintId} className="w-full rounded-xl bg-slate-900 px-4 py-3 font-bold text-white disabled:opacity-40">Khóa thời gian này</button></div></section>
-            <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="font-extrabold">Các ô đang khóa</h2><div className="mt-4 grid gap-3 md:grid-cols-2">{(constraintKind === 'teacher' ? scenario.teachers : constraintKind === 'class' ? scenario.classes : scenario.rooms).map(resource => <div key={resource.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="font-bold">{resource.name}</div><div className="mt-3 flex flex-wrap gap-2">{(resource.unavailableSlots || []).length === 0 ? <span className="text-sm text-slate-400">Chưa khóa giờ.</span> : (resource.unavailableSlots || []).map(slot => { const parsed = parseTimetableSlot(slot); return <button type="button" key={slot} onClick={() => updateResourceSlots(constraintKind, resource.id, (resource.unavailableSlots || []).filter(value => value !== slot))} className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-200">{parsed ? `${TIMETABLE_DAYS[parsed.dayIndex]} · tiết ${parsed.period}` : slot} ×</button>; })}</div></div>)}</div></section>
-          </div>
-        )}
+        {activeTab === 'constraints' && <TimetableAvailabilityPanel key={constraintKind} scenario={scenario} kind={constraintKind} onKind={setConstraintKind} onChange={changeScenario} />}
 
         {activeTab === 'schedule' && (
           <div className="space-y-4">
-            <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 lg:flex-row lg:items-center"><div><h2 className="font-extrabold">Thời khóa biểu</h2><p className="text-sm text-slate-500">Xem theo lớp, giáo viên hoặc phòng. Khóa một block để giữ nguyên khi tối ưu lại.</p></div><div className="flex flex-wrap gap-2"><select value={scheduleView} onChange={event => setScheduleView(event.target.value as ScheduleView)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm"><option value="class">Theo lớp</option><option value="teacher">Theo giáo viên</option><option value="room">Theo phòng</option></select><select value={scheduleResourceId} onChange={event => setScheduleResourceId(event.target.value)} className="min-w-44 rounded-xl border border-slate-200 px-3 py-2 text-sm">{scheduleResources.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={exportExcel} disabled={!solution} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-40 md:hidden"><Download className="h-4 w-4" />Excel</button><button type="button" onClick={() => { if (!solution) return; try { printTimetableView(scenario, solution, scheduleView, scheduleResourceId); } catch (error) { setMessage(error instanceof Error ? error.message : "Không thể in thời khóa biểu."); } }} disabled={!solution} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-40"><FileDown className="h-4 w-4" />In / PDF</button></div></div>
-            {!solution ? <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center"><CalendarRange className="mx-auto h-10 w-10 text-slate-300" /><h3 className="mt-4 font-bold">Chưa có phương án</h3><p className="mt-1 text-sm text-slate-500">Bấm “Xếp tự động” để chạy bộ tối ưu.</p></div> : <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white"><table className="w-full min-w-[920px] border-collapse text-sm"><thead><tr className="bg-slate-900 text-white"><th className="w-20 border-r border-slate-700 p-3">Tiết</th>{days.map(day => <th key={day} className="border-r border-slate-700 p-3">{day}</th>)}</tr></thead><tbody>{Array.from({ length: scenario.periodsPerDay }, (_, index) => index + 1).map(period => <React.Fragment key={period}><tr><th className="border-r border-t border-slate-200 bg-slate-50 p-3 text-slate-500">{period}{period === (scenario.morningPeriods || 5) ? <div className="mt-1 text-[9px] font-normal text-amber-600">Hết sáng</div> : null}</th>{days.map((day, dayIndex) => { const entry = visibleEntries.find(item => item.dayIndex === dayIndex && item.period === period); return <td key={day} className="h-28 border-r border-t border-slate-200 p-2 align-top">{entry ? <div className={`h-full rounded-xl border p-2.5 ${entryTone(entry, scenario)}`}><div className="flex items-start justify-between gap-2"><b>{lookup.subjects.get(entry.subjectId)?.name}</b><button type="button" onClick={() => toggleEntryLock(entry)} disabled={entry.fixed} className="rounded-md p-1 text-slate-500 hover:bg-white disabled:cursor-default" title={entry.fixed ? 'Tiết cố định' : entry.locked ? 'Bỏ khóa block' : 'Khóa block'}>{entry.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button></div><div className="mt-2 text-xs text-slate-600">{scheduleView !== 'class' && `${lookup.classes.get(entry.classId)?.name} · `}{lookup.teachers.get(entry.teacherId)?.name}</div>{entry.roomId && <div className="mt-1 text-[11px] text-slate-500">{lookup.rooms.get(entry.roomId)?.name}</div>}{entry.fixed && <div className="mt-2 text-[10px] font-bold uppercase text-amber-700">Cố định</div>}</div> : null}</td>; })}</tr>{period === (scenario.morningPeriods || 5) && period < scenario.periodsPerDay ? <tr><td colSpan={days.length + 1} className="bg-amber-50 px-4 py-1 text-center text-[10px] font-bold uppercase tracking-widest text-amber-700">Chuyển buổi / nghỉ giữa ngày</td></tr> : null}</React.Fragment>)}</tbody></table></div>}
-            {versions.length > 0 && <section className="rounded-3xl border border-slate-200 bg-white p-5"><h3 className="font-extrabold">8 phương án gần nhất</h3><div className="mt-3 flex gap-3 overflow-x-auto pb-2">{versions.map((version, index) => <button type="button" key={`${version.generatedAt}-${index}`} onClick={() => setSolution(version)} className="min-w-36 rounded-2xl border border-slate-200 p-3 text-left hover:border-indigo-300 hover:bg-indigo-50"><div className="text-xs font-semibold text-slate-400">PA {index + 1}</div><div className="mt-1 text-xl font-extrabold">{version.score}</div><div className="text-xs text-slate-500">{version.diagnostics.unscheduled.reduce((sum, item) => sum + item.remaining, 0)} tiết thiếu</div></button>)}</div></section>}
+            <div className="tt-panel flex flex-wrap items-center justify-between gap-3">
+              <div><h3>Thời khóa biểu · {solution?.entries.length || 0}/{totalRequiredPeriods} tiết</h3><p>Chọn tiết rồi bấm ô đích để chuyển, hoặc kéo thả. Khóa block để giữ nguyên khi tối ưu lại.</p></div>
+              <div className="flex flex-wrap gap-2">
+                <select aria-label="Chế độ xem thời khóa biểu" value={scheduleView} onChange={event => { setScheduleView(event.target.value as ScheduleView); setSelectedEntryId(''); }} className="rounded-md border border-slate-200 px-3 py-2 text-sm"><option value="class">Theo lớp</option><option value="teacher">Theo giáo viên</option><option value="room">Theo phòng</option></select>
+                <select aria-label="Chọn đối tượng xem lịch" value={scheduleResourceId} onChange={event => { setScheduleResourceId(event.target.value); setSelectedEntryId(''); }} className="rounded-md border border-slate-200 px-3 py-2 text-sm">{scheduleResources.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+                <button type="button" className="tt-button" onClick={() => { if (!solution) return; try { printTimetableView(scenario, solution, scheduleView, scheduleResourceId); } catch (error) { setMessage(error instanceof Error ? error.message : 'Không thể in thời khóa biểu.'); } }} disabled={!solution || !scheduleResourceId}><FileDown size={15} />In / PDF</button>
+              </div>
+            </div>
+            {selectedEntryId && <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Đã chọn tiết. Bấm ô đích để chuyển cả block.<button type="button" className="tt-button" onClick={() => setSelectedEntryId('')}>Hủy chọn</button></div>}
+            {!solution ? <div className="tt-panel py-12 text-center"><CalendarRange className="mx-auto h-10 w-10 text-slate-300" /><h3 className="mt-4">Chưa có phương án</h3><p>Bấm Xếp tự động để tạo lịch từ dữ liệu đã khai báo.</p></div> : <>
+              <div className={`rounded-lg px-4 py-3 text-xs ${audit.valid && audit.complete ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>{audit.valid && audit.complete ? 'Đã kiểm tra độc lập: đủ tiết, không trùng lớp, giáo viên hoặc phòng.' : `Bản nháp: ${audit.errors.length} vấn đề cần kiểm tra trước khi chia sẻ.`}</div>
+              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table className="w-full min-w-[820px] border-collapse text-sm"><thead><tr className="bg-[#293c83] text-white"><th className="w-16 border-r border-white/15 p-3">Tiết</th>{days.map(day => <th key={day} className="border-r border-white/15 p-3">{day}</th>)}</tr></thead><tbody>
+                {Array.from({ length: scenario.periodsPerDay }, (_, index) => index + 1).map(period => <React.Fragment key={period}><tr><th className="border-r border-t border-slate-200 bg-slate-50 p-3 text-slate-500">{period}<div className="mt-1 text-[9px] font-normal text-slate-400">{period <= (scenario.morningPeriods || 5) ? 'Sáng' : 'Chiều'}</div></th>
+                  {days.map((day, dayIndex) => {
+                    const entry = visibleEntries.find(item => item.dayIndex === dayIndex && item.period === period);
+                    return <td key={day} className="h-24 border-r border-t border-slate-200 p-1.5 align-top" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const id = event.dataTransfer.getData('text/timetable-entry'); if (id) moveEntry(id, dayIndex, period); }}>
+                      {entry ? <div draggable={!entry.fixed && !entry.locked} onDragStart={event => event.dataTransfer.setData('text/timetable-entry', entry.id)} className={`h-full rounded-md border p-2 ${entryTone(entry, scenario)} ${selectedEntryId === entry.id ? 'ring-2 ring-blue-500' : ''}`}>
+                        <div className="flex items-start justify-between gap-1"><button type="button" className="flex-1 text-left text-xs font-bold leading-5" aria-label={`Chọn ${lookup.subjects.get(entry.subjectId)?.name} ${day} tiết ${period}`} onClick={() => { if (selectedEntryId && selectedEntryId !== entry.id) moveEntry(selectedEntryId, dayIndex, period); else if (entry.fixed || entry.locked) setMessage('Tiết cố định hoặc đang khóa. Mở khóa trước khi chuyển.'); else setSelectedEntryId(selectedEntryId === entry.id ? '' : entry.id); }}>{lookup.subjects.get(entry.subjectId)?.name}</button><button type="button" onClick={() => toggleEntryLock(entry)} disabled={entry.fixed} className="rounded p-1 text-slate-500 hover:bg-white" aria-label={entry.fixed ? 'Tiết cố định' : entry.locked ? 'Bỏ khóa block' : 'Khóa block'}>{entry.locked || entry.fixed ? <Lock size={12} /> : <Unlock size={12} />}</button></div>
+                        <div className="mt-1 text-[10px] leading-5 text-slate-600">{scheduleView !== 'class' && `${lookup.classes.get(entry.classId)?.name} · `}{lookup.teachers.get(entry.teacherId)?.name}</div>
+                        {entry.roomId && <div className="text-[10px] text-slate-500">{lookup.rooms.get(entry.roomId)?.name}</div>}{entry.fixed && <div className="text-[9px] font-bold text-amber-700">CỐ ĐỊNH</div>}
+                      </div> : <button type="button" className="flex min-h-20 w-full items-center justify-center rounded-md text-[10px] text-slate-300 hover:bg-blue-50 hover:text-blue-600" aria-label={`${day} tiết ${period} trống`} onClick={() => { if (selectedEntryId) moveEntry(selectedEntryId, dayIndex, period); }}>{selectedEntryId ? 'Chuyển vào đây' : '—'}</button>}
+                    </td>;
+                  })}</tr>{period === (scenario.morningPeriods || 5) && period < scenario.periodsPerDay && <tr><td colSpan={days.length + 1} className="bg-amber-50 p-1 text-center text-[9px] font-semibold uppercase tracking-widest text-amber-700">Nghỉ giữa buổi</td></tr>}</React.Fragment>)}
+              </tbody></table></div>
+            </>}
+            {versions.length > 0 && <section className="tt-panel"><h3>Các phương án gần nhất</h3><div className="mt-3 flex gap-2 overflow-auto">{versions.map((version, index) => <button type="button" key={`${version.generatedAt}-${index}`} onClick={() => restoreVersion(version)} className="tt-button min-w-32 flex-col !items-start"><b>Phương án {index + 1}</b><span className="text-xs">{version.entries.length} tiết · {version.score} điểm phạt</span></button>)}</div></section>}
           </div>
         )}
 
@@ -597,6 +541,8 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
         {activeTab === 'diagnostics' && (
           <div className="grid gap-5 lg:grid-cols-2">
+            <section className="tt-panel lg:col-span-2"><h3>Kiểm tra độc lập trước khi công bố</h3>{!solution ? <p>Chưa chạy xếp lịch. Có {totalRequiredPeriods} tiết cần xếp.</p> : <><div className={`my-3 rounded-md px-4 py-3 text-sm ${audit.valid && audit.complete ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>{audit.valid && audit.complete ? 'Đủ tiết, không phát hiện xung đột qua kiểm tra độc lập.' : `Bản nháp: ${audit.placedPeriods}/${audit.expectedPeriods} tiết, ${audit.errors.length} vấn đề cần xử lý.`}</div>{audit.errors.map(item => <p key={item} className="!text-rose-700">• {item}</p>)}{audit.warnings.map(item => <p key={item}>• {item}</p>)}</>}<div className="mt-4 tt-table-wrap"><table className="tt-table"><thead><tr><th>Giáo viên</th><th>Phân công</th><th>Tiết/tuần</th><th>Đã xếp</th><th>Giới hạn/ngày</th></tr></thead><tbody>{scenario.teachers.map(teacher => <tr key={teacher.id}><td>{teacher.name}</td><td>{scenario.assignments.filter(item => item.teacherId === teacher.id).length}</td><td>{scenario.assignments.filter(item => item.teacherId === teacher.id).reduce((sum, item) => sum + item.periodsPerWeek, 0)}</td><td>{solution ? solution.entries.filter(item => item.teacherId === teacher.id).length : '—'}</td><td>{teacher.maxPeriodsPerDay || 'Chưa đặt'}</td></tr>)}</tbody></table></div></section>
+
             <section className="rounded-3xl border border-slate-200 bg-white p-5"><div className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-amber-500" /><h2 className="font-extrabold">Xung đột & cảnh báo</h2></div>{!solution ? <p className="mt-4 text-sm text-slate-500">Chưa có phương án. Kiểm tra khả thi hiện có {preflight.length} cảnh báo.</p> : <div className="mt-4 space-y-3"><div className={`rounded-2xl p-4 ${solution.diagnostics.hardConflicts.length ? 'bg-rose-50 text-rose-800' : 'bg-emerald-50 text-emerald-800'}`}><b>{solution.diagnostics.hardConflicts.length ? `${solution.diagnostics.hardConflicts.length} xung đột cứng` : 'Không có xung đột cứng'}</b>{solution.diagnostics.hardConflicts.map(item => <p key={item} className="mt-1 text-sm">• {item}</p>)}</div>{solution.diagnostics.warnings.map(item => <div key={item} className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{item}</div>)}</div>}</section>
             <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="font-extrabold">Chỉ số chất lượng</h2><div className="mt-4 grid grid-cols-2 gap-3">{[
               ['Khoảng trống GV', solution?.diagnostics.quality.teacherGaps ?? '—'],
@@ -604,11 +550,11 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
               ['Môn chính muộn', solution?.diagnostics.quality.lateCorePeriods ?? '—'],
               ['Lệch tải giữa ngày', solution?.diagnostics.quality.dailyImbalance ?? '—'],
             ].map(([label, value]) => <div key={String(label)} className="rounded-2xl bg-slate-50 p-4"><div className="text-2xl font-extrabold">{String(value)}</div><div className="mt-1 text-xs text-slate-500">{String(label)}</div></div>)}</div></section>
-            <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="font-extrabold">Tiết chưa xếp được</h2>{!solution || solution.diagnostics.unscheduled.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800"><b>Đã xếp đủ các yêu cầu.</b><p className="mt-1">Có thể khóa các block tốt rồi tối ưu lại để giảm khoảng trống.</p></div> : <div className="mt-4 space-y-3">{solution.diagnostics.unscheduled.map(item => { const assignment = lookup.assignments.get(item.assignmentId); return <div key={item.assignmentId} className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><div className="font-bold text-amber-900">{lookup.classes.get(assignment?.classId || '')?.name} · {lookup.subjects.get(assignment?.subjectId || '')?.name}: còn {item.remaining} tiết</div><p className="mt-1 text-sm leading-6 text-amber-800">{item.reason}</p></div>; })}</div>}</section>
+            <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="font-extrabold">Tiết chưa xếp được</h2>{!solution ? <p className="mt-4 text-sm text-slate-500">Chưa chạy xếp lịch. Chưa có kết quả để kết luận.</p> : solution.diagnostics.unscheduled.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800"><b>Đã xếp đủ các yêu cầu.</b><p className="mt-1">Có thể khóa các block tốt rồi tối ưu lại để giảm khoảng trống.</p></div> : <div className="mt-4 space-y-3">{solution.diagnostics.unscheduled.map(item => { const assignment = lookup.assignments.get(item.assignmentId); return <div key={item.assignmentId} className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><div className="font-bold text-amber-900">{lookup.classes.get(assignment?.classId || '')?.name} · {lookup.subjects.get(assignment?.subjectId || '')?.name}: còn {item.remaining} tiết</div><p className="mt-1 text-sm leading-6 text-amber-800">{item.reason}</p></div>; })}</div>}</section>
             <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="font-extrabold">Khả thi của dữ liệu đầu vào</h2>{preflight.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">Không phát hiện bất khả thi rõ ràng trước khi xếp.</div> : <div className="mt-4 space-y-2">{preflight.map(item => <div key={item} className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800">• {item}</div>)}</div>}</section>
           </div>
         )}
-      </main>
-    </div>
+      </fieldset>
+    </TimetableAdminShell>
   );
 }
