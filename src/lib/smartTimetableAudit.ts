@@ -6,8 +6,8 @@ import {
   type ScheduleEntry,
   type TimetableScenario,
   type TimetableSolution,
-} from './smartTimetable';
-import { assignmentCampus, assignmentClassIds, assignmentStudentCount, assignmentStudentGroupIds, assignmentTeacherIds, classResourceAtoms } from './smartTimetableResources';
+} from './smartTimetable.js';
+import { assignmentCampus, assignmentClassIds, assignmentStudentCount, assignmentStudentGroupIds, assignmentTeacherIds, classResourceAtoms } from './smartTimetableResources.js';
 
 export interface TimetableAuditReport {
   expectedPeriods: number;

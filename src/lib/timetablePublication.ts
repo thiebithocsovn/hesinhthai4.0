@@ -1,6 +1,6 @@
-import type { ScheduleEntry, TimetableScenario, TimetableSolution } from './smartTimetable';
-import { auditTimetableSolution } from './smartTimetableAudit';
-import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from './smartTimetableResources';
+import type { ScheduleEntry, TimetableScenario, TimetableSolution } from './smartTimetable.js';
+import { auditTimetableSolution } from './smartTimetableAudit.js';
+import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from './smartTimetableResources.js';
 
 export interface TimetablePublicationOptions { title: string; effectiveFrom: string; effectiveTo: string; notes: string; showTeacherNames: boolean }
 export interface PublicTimetableSnapshot {

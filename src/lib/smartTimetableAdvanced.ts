@@ -1,5 +1,5 @@
-import type { ScheduleEntry, TeachingAssignment, TimetableScenario, TimetableSolution } from './smartTimetable';
-import { advancedScenarioIssues, assignmentCampus, assignmentClassIds, assignmentStudentCount, assignmentStudentGroupIds, assignmentTeacherIds, classResourceAtoms, timetableMetrics } from './smartTimetableResources';
+import type { ScheduleEntry, TeachingAssignment, TimetableScenario, TimetableSolution } from './smartTimetable.js';
+import { advancedScenarioIssues, assignmentCampus, assignmentClassIds, assignmentStudentCount, assignmentStudentGroupIds, assignmentTeacherIds, classResourceAtoms, timetableMetrics } from './smartTimetableResources.js';
 
 interface Unit { assignment: TeachingAssignment; index: number; size: number; fixed?: { day: number; period: number }; locked?: ScheduleEntry[]; parallel?: string }
 interface Bundle { units: Unit[]; domain: { day: number; period: number }[]; priority: number }

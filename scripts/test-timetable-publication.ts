@@ -1,4 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { transformSync } from 'esbuild';
 import type { AddressInfo } from 'node:net';
 import { createDefaultTimetableScenario, optimizeTimetable } from '../src/lib/smartTimetable';
 import { makePublicTimetable, publicTimetableHtml } from '../src/lib/timetablePublication';
@@ -67,3 +72,22 @@ const print = timetablePrintHtml(scenario, solution, 'class', '*'); assert.equal
 const imported = scenarioFromAssignmentRows([{ 'Lớp': '6A', 'Môn': 'Toán', 'Giáo viên': 'A', 'Tiết/tuần': 2, 'Tiết đôi': 1, 'Lớp ghép': '6B', 'Đồng giảng': 'B', 'Cơ sở': 'CS 1' }]);
 assert.equal(imported.assignments[0].blockSize, 1); assert.equal(imported.assignments[0].additionalClassIds?.length, 1); assert.equal(imported.assignments[0].additionalTeacherIds?.length, 1);
 console.log('Timetable publication: owner authorization, redaction, XSS-safe HTML, encrypted tokens, revocation, exam seating and exports passed.');
+
+// Vercel emits separate ESM files. Bundled tests alone would miss extensionless-import failures.
+const output = mkdtempSync(join(tmpdir(), 'aitherova-serverless-'));
+try {
+  const sourceFiles = ['api/timetable.ts', 'server/timetablePublicationFirebase.ts', 'server/timetablePublication.ts', 'server/timetablePublicationToken.ts', 'server/teacherAdminCredentials.ts', 'server/teacherAdminFederation.ts', 'src/lib/smartTimetable.ts', 'src/lib/smartTimetableAdvanced.ts', 'src/lib/smartTimetableResources.ts', 'src/lib/smartTimetableAudit.ts', 'src/lib/timetablePublication.ts'];
+  for (const file of sourceFiles) {
+    const target = join(output, file.replace(/\.ts$/, '.js')); mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, transformSync(readFileSync(file, 'utf8'), { loader: 'ts', format: 'esm', target: 'node24' }).code);
+  }
+  writeFileSync(join(output, 'package.json'), '{"type":"module"}');
+  writeFileSync(join(output, 'firebase-applet-config.json'), readFileSync('firebase-applet-config.json'));
+  symlinkSync(resolve('node_modules'), join(output, 'node_modules'), 'dir');
+  const script = `import app from ${JSON.stringify(join(output, 'api/timetable.js'))};
+  const server=app.listen(0,'127.0.0.1'); await new Promise(r=>server.once('listening',r));
+  try { const response=await fetch('http://127.0.0.1:'+server.address().port+'/api/timetable'); if(response.status!==200||(await response.json()).service!=='timetable-publication') throw new Error('Serverless health failed'); } finally { await new Promise(r=>server.close(r)); }`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 20000, env: { ...process.env, VERCEL: '1', TIMETABLE_PUBLICATION_SECRET: '' } });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  console.log('Vercel entry point: separate ESM modules initialize and answer health requests.');
+} finally { rmSync(output, { recursive: true, force: true }); }

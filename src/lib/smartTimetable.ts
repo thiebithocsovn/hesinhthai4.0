@@ -1,5 +1,5 @@
-import { optimizeAdvancedTimetable } from './smartTimetableAdvanced';
-import { advancedScenarioIssues, assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds, hasAdvancedTimetable } from './smartTimetableResources';
+import { optimizeAdvancedTimetable } from './smartTimetableAdvanced.js';
+import { advancedScenarioIssues, assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds, hasAdvancedTimetable } from './smartTimetableResources.js';
 import type { TimetableExamPlan } from './timetableExamRooms';
 
 export const TIMETABLE_DAYS = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'] as const;
