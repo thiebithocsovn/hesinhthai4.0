@@ -67,7 +67,8 @@
     "test:exam-class-receipts": "node --import tsx scripts/test-exam-class-receipts.ts",
     "test:practical-file-check": "node --import tsx scripts/test-practical-file-check.ts",
     "test:teacher-printing": "node --import tsx scripts/test-teacher-exam-printing.ts",
-    "test:timetable-agent": "node --import tsx scripts/test-timetable-agent.ts"
+    "test:timetable-agent": "node --import tsx scripts/test-timetable-agent.ts",
+    "test:timetable-admin": "node --import tsx scripts/test-timetable-admin.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.32",

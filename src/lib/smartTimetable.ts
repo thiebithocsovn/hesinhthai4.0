@@ -21,6 +21,13 @@ export interface TimetableClass {
   unavailableSlots?: string[];
   homeroomTeacherId?: string;
   maxPeriodsPerDay?: number;
+  gradeId?: string;
+}
+
+export interface TimetableGrade {
+  id: string;
+  name: string;
+  level: Exclude<SchoolLevel, 'Liên cấp'>;
 }
 
 export interface TimetableSubject {
@@ -62,6 +69,7 @@ export interface TimetableScenario {
   subjects: TimetableSubject[];
   rooms: TimetableRoom[];
   assignments: TeachingAssignment[];
+  grades?: TimetableGrade[];
 }
 
 export interface ScheduleEntry {
