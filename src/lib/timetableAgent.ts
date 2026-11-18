@@ -40,12 +40,11 @@ function findNamed<T extends { id: string; name: string }>(text: string, items: 
 }
 
 function parseDay(text: string, daysPerWeek: number): number | null {
-  if (/(?:^| )(?:chu nhat|cn)(?: |$)/.test(text)) return daysPerWeek === 7 ? 6 : null;
-  const match = text.match(/(?:^| )(?:thu|t)\s*(hai|ba|tu|bon|nam|sau|bay|[2-7])(?: |$)/);
-  if (!match) return null;
-  const value = match[1];
-  const index = ({ hai: 0, ba: 1, tu: 2, bon: 2, nam: 3, sau: 4, bay: 5, '2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5 } as Record<string, number>)[value];
-  return index < daysPerWeek ? index : null;
+  const names = { hai: 0, ba: 1, tu: 2, bon: 2, nam: 3, sau: 4, bay: 5, '2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5 } as Record<string, number>;
+  const matches = [...text.matchAll(/(?:^| )(?:thu|t)\s*(hai|ba|tu|bon|nam|sau|bay|[2-7])(?= |$)/g)].map(m => names[m[1]]);
+  if (/(?:^| )(?:chu nhat|cn)(?: |$)/.test(text)) matches.push(6);
+  const days = [...new Set(matches)];
+  return days.length === 1 && days[0] < daysPerWeek ? days[0] : null;
 }
 
 function identifySlots(text: string, scenario: TimetableScenario): { dayIndex: number; slots: string[] } | null {

@@ -16,7 +16,7 @@ Các giá trị trên là cấu hình khởi đầu có thể chỉnh sửa, kh�
 
 ## Tính nhất quán của lịch
 
-- Chọn năm học, học kỳ, số tuần và tuần đang xếp. Phân công có khoảng tuần và tuần chẵn/lẻ. Mỗi phương án thuộc một tuần; phương án khác tuần không được khôi phục/công bố như tuần hiện tại.
+- Chọn năm học, học kỳ, số tuần và tuần đang xếp. Phân công có khoảng tuần và tuần chẵn/lẻ. Nhóm song song/cùng buổi chỉ ràng buộc các thành viên có học trong tuần; dưới hai thành viên thì không còn quan hệ nhóm trong tuần đó. Mỗi phương án thuộc một tuần; phương án khác tuần không được khôi phục/công bố như tuần hiện tại.
 - Tiết tối và Chủ nhật được hỗ trợ trong bộ xếp trình duyệt, bảng toàn trường, Excel, PDF và trang tra cứu.
 - Kiểm tra độc lập đối chiếu đủ tiết, lớp/nhóm, giáo viên, phòng, thời gian chuyển cơ sở, nhóm song song và giới hạn theo giờ thực tế. Ghép các lớp khác thời lượng cần đồng bộ giờ trước.
 - Giờ bận theo ô vẫn là ràng buộc theo số thứ tự tiết áp dụng mọi cấp, được ghi rõ trên biểu mẫu. Khoảng chuyển cơ sở dùng phút khi đã áp dụng loại mới.
