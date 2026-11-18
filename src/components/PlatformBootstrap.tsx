@@ -5,6 +5,7 @@ import FastLandingPage from './FastLandingPage';
 const ProductTrialController = lazy(() => import('./ProductTrialController'));
 const QuestionStudioLibraryPortal = lazy(() => import('./QuestionStudioLibraryPortal'));
 const SmartTimetableEntry = lazy(() => import('./SmartTimetableEntry'));
+const PublicTimetableViewer = lazy(() => import('./PublicTimetableViewer'));
 const SmartTimetableLibraryPortal = lazy(() => import('./SmartTimetableLibraryPortal'));
 const SmartTimetablePublicPortal = lazy(() => import('./SmartTimetablePublicPortal'));
 
@@ -135,6 +136,9 @@ export default function PlatformBootstrap() {
     window.history.replaceState(window.history.state, '', url.toString());
     activate('landing');
   };
+
+  const publicTimetableId = new URLSearchParams(window.location.search).get('tkb');
+  if (publicTimetableId) return <Suspense fallback={<div className="p-10 text-center">Đang mở thời khóa biểu...</div>}><PublicTimetableViewer publicationId={publicTimetableId} /></Suspense>;
 
   if (runtimeActive && (readStoredView() === 'smart-timetable' || new URLSearchParams(window.location.search).get('app') === 'smart-timetable')) {
     return (

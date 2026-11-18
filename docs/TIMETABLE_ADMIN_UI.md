@@ -1,39 +1,63 @@
-# AITHEROVA — giao diện quản trị thời khóa biểu
+# AITHEROVA — quản trị thời khóa biểu
 
 Mở trực tiếp: `https://thiebithocsovn.github.io/hesinhthai4.0/?app=smart-timetable`.
 
-Giao diện được triển khai bằng mã React/TypeScript trong repository hiện có, dựa trên bố cục và các nhóm nghiệp vụ quan sát được ở trang quản trị tkb.com.vn. Không có mã nguồn máy chủ, tài khoản hay dữ liệu nhà trường của tkb.com.vn được sao chép vào ứng dụng.
+Ứng dụng React/Vite hiện có được mở rộng; không thay thế các công cụ khác trong Hệ sinh thái 4.0. Mã triển khai nằm trong repository của trường, không sử dụng mã nguồn máy chủ hoặc dữ liệu riêng của tkb.com.vn.
 
-## Thành phần
+## Phạm vi đã triển khai
 
-- `TimetableAdminShell.tsx` và `timetableAdmin.css`: menu dọc có tìm kiếm, thanh tên trường, quy trình 9 bước, menu di động.
-- `timetableNavigation.ts`: ánh xạ menu đến màn hình thật hoặc thông tin phạm vi hỗ trợ.
-- `TimetableAdminPanels.tsx`: danh mục dạng bảng, khối, GVCN, bảng tiết/phân công, cấu hình, lưới giờ bận, sao lưu.
-- `timetableAdmin.ts`: tương thích khối trong bản sao lưu cũ, cập nhật GVCN hai chiều, chuyển nguyên block qua kiểm tra độc lập.
-- `SmartTimetable.tsx`: tích hợp với Web Worker, Excel/JSON, dữ liệu local-first và các màn hình hiện có.
-
-## Phạm vi hoạt động
-
-| Nghiệp vụ | Trạng thái |
+| Nghiệp vụ | Hoạt động |
 | --- | --- |
-| Khối, lớp, môn, giáo viên, phòng | Thêm, sửa tên, tìm kiếm; chặn xóa khi còn phân công liên quan |
-| Chủ nhiệm | Gán/gỡ và đồng bộ liên kết lớp–giáo viên |
-| Phân công, số tiết | Sửa từng lớp–môn; buổi, block, phòng, thời điểm cố định |
-| Ngày, tiết, buổi | Cấu hình 5/6 ngày, số tiết/ngày, ranh giới sáng/chiều |
-| Giờ bận | Lưới giáo viên/lớp/phòng; khóa cả buổi hoặc từng ô |
-| Giới hạn số tiết | Số tiết/ngày và tiết liên tục của giáo viên |
-| Xếp và tinh chỉnh | Bộ xếp hiện có; chuyển block bằng click hoặc kéo thả, chặn vi phạm bằng bộ kiểm tra độc lập |
-| Xuất/in | Excel theo trường/lớp/GV; in và lưu PDF qua trình duyệt |
-| Sao lưu | JSON đầy đủ; mở lại phương án chỉ khi khớp dữ liệu hiện tại |
-| Nhiều cơ sở và thời gian di chuyển | Chưa hỗ trợ; hiển thị rõ trên màn hình |
-| Nhóm nhiều môn cùng buổi, giới hạn đồng thời theo môn | Chưa hỗ trợ; có hướng dẫn dùng các ràng buộc hiện có khi phù hợp |
-| Ghép lớp, tách nhóm học song song | Chưa hỗ trợ trong mô hình bộ xếp hiện tại; không ghi nhận nhóm như lịch hợp lệ |
-| Link công khai tra cứu, chia phòng thi | Chưa hỗ trợ trong bộ thời khóa biểu; không tạo liên kết hoặc nút xuất bản giả |
+| Danh mục và khối | Thêm/sửa/tìm kiếm, chặn xóa tài nguyên còn trong phân công |
+| GVCN | Liên kết hai chiều giữa lớp và giáo viên |
+| Phân công | Số tiết, block, buổi, phòng, cố định, đồng giảng và nhóm học |
+| Ghép lớp | Xem trước rồi gộp phân công cùng môn/số tiết/block; lịch hiện ở mọi lớp và giữ giờ mọi giáo viên; có thể tách lại |
+| Tách lớp | Các nhóm không trùng học sinh; phân công theo nhóm; ràng buộc học song song theo buổi tương ứng |
+| Môn cùng buổi | Buổi thứ n của các phân công cùng ngày và cùng buổi sáng/chiều |
+| Nhiều cơ sở | Cơ sở của lớp/phòng/phân công; số tiết trống để di chuyển |
+| Phòng và sĩ số | Sức chứa, sĩ số lớp/nhóm và giờ không khả dụng |
+| Giới hạn tài nguyên | Lớp đồng thời theo môn; số tiết/ngày, tiết liên tục, ngày dạy của giáo viên |
+| Xếp lịch | Web Worker; bộ đa tài nguyên có tìm kiếm nhiều lượt và sửa bằng quay lui có giới hạn; không tuyên bố tối ưu toàn cục |
+| Tinh chỉnh | Chuyển/đổi chỗ nguyên block hoặc nhóm song song; giữ tiết khóa/cố định; kiểm tra độc lập trước khi áp dụng |
+| Xem toàn trường | Bảng nhiều lớp theo ngày và cấp học; lịch riêng từng lớp/giáo viên/phòng |
+| Nhập liệu | Excel có bước xem trước; không tự xóa các tiết cố định dư; hiển thị vấn đề để sửa |
+| Hoàn tác | Tối đa 20 trạng thái dữ liệu trong phiên; áp dụng cho chỉnh sửa, nhập, khóa và chuyển tiết |
+| Xuất/in | Excel tổng hợp/lớp/GV/phòng/phân công, PDF qua in trình duyệt, in nhiều đối tượng; nhiều nhóm cùng tiết không bị bỏ sót |
+| Công bố | Kiểm tra độc lập, ngày áp dụng, ẩn/hiện tên GV, xem trước HTML, xác nhận công bố, cập nhật và thu hồi liên kết |
+| Chia phòng thi | SBD/họ tên/lớp, sức chứa, seed có thể tái lập; kiểm tra mỗi thí sinh đúng một chỗ; Excel kết quả |
 
-Dữ liệu cũ không có `grades`/`gradeId` vẫn dùng được. Khối mặc định được suy ra từ tên lớp và cấp; trường có thể tự khai báo khối. Đồng bộ Firebase tiếp tục theo UID; không sửa quy tắc bảo mật.
+## Mô hình mở rộng và tương thích
 
-## Kiểm tra
+`additionalClassIds` và `additionalTeacherIds` là các tài nguyên bổ sung của một phân công. `studentGroups` chia lớp thành các tập học sinh không trùng nhau; một phân công không chọn nhóm chiếm mọi nhóm của lớp đó. `lessonGroups` có hai loại `parallel` và `same-session`, liên kết các buổi cùng chỉ số `meetingIndex`.
 
-`npm run test:smart-timetable`, `npm run test:timetable-agent`, `npm run test:timetable-admin`, `npm run lint`, `npm run build:static` và `python3 -m pytest -q` trong `services/timetable-solver`.
+Các trường mới đều là tùy chọn. Bản JSON cũ tiếp tục dùng được; bản sao lưu đầy đủ mới mang phiên bản 3. Các file Excel không chứa đầy đủ mọi giờ bận và lịch sử; dùng JSON để sao lưu toàn bộ.
 
-Bộ kiểm thử mới kiểm tra GVCN khi đổi lớp, dữ liệu khối cũ/mới và chuyển block: giữ đủ tiết, không trùng tài nguyên, không vào giờ bận, không vượt ranh giới buổi, không di chuyển block cố định/đang khóa. Phương án cũ thiếu mã block tiết đôi phải xếp lại trước khi chuyển.
+Bộ kiểm tra độc lập kiểm đếm lại số tiết, tài nguyên, block, giờ bận, giới hạn tải, sức chứa, lớp đồng thời, chuyển cơ sở và ràng buộc nhóm. Bộ xếp không gọi bộ kiểm tra của chính nó để thay thế bước này. Kết quả chưa đủ tiết hoặc còn lỗi không được công bố.
+
+## Công bố và quyền truy cập
+
+`api/timetable.ts` chạy trên Vercel hiện có; GitHub Pages phục vụ giao diện. Máy chủ giữ nguyên vai trò Google chỉ đọc. Mọi thao tác ghi bản công bố dùng Firebase ID token của chính chủ sở hữu và các Rules hiện tại. Không sửa Firestore Rules hoặc mở rộng quyền Google của máy chủ.
+
+Bản công bố được nén trong `workspace.scenario.publicationSnapshots` của chính giáo viên. Đồng bộ làm việc dùng transaction để giữ các bản công bố trên cloud, tránh dữ liệu offline cũ ghi đè hoặc khôi phục một liên kết đã thu hồi. Liên kết AES-GCM che UID chủ sở hữu và không thể sửa để đọc không gian của tài khoản khác. Khóa `TIMETABLE_PUBLICATION_SECRET` chỉ nằm ở môi trường máy chủ và phải được giữ ổn định để các liên kết đang dùng tiếp tục hoạt động.
+
+Bản công khai là một bản chụp đã duyệt: không gồm tài khoản, giờ bận, lịch sử, sĩ số hay danh sách thí sinh. Tên giáo viên mặc định được ẩn. Thu hồi liên kết không xóa được các tệp người nhận đã tải trước đó.
+
+## Bộ giải CP-SAT
+
+Dịch vụ Python tùy chọn cũng hỗ trợ các ràng buộc đa tài nguyên qua `advanced.py`; kết quả được kiểm tra lại riêng. `OPTIMAL` chỉ là chứng nhận cho hàm mục tiêu đã mô hình hóa; `FEASIBLE` chỉ cho biết có nghiệm hợp lệ. Dịch vụ này vẫn phải được triển khai riêng sau một proxy xác thực để dùng từ trình duyệt; GitHub Pages không tự chạy Python/PostgreSQL/Redis.
+
+## Kiểm thử
+
+- `npm run test:smart-timetable`
+- `npm run test:timetable-agent`
+- `npm run test:timetable-admin`
+- `npm run test:timetable-advanced`
+- `npm run test:timetable-ui` (Chromium, fixture độc lập, không ghi dữ liệu giáo viên thật)
+- `npm run lint` và `npm run build:static`
+- `python3 -m pytest -q` trong `services/timetable-solver`
+
+Các fixture ghi rõ là dữ liệu kiểm thử. Không dùng chúng làm số liệu thực nghiệm nhà trường.
+
+Kiểm tra tải bổ sung: 50 lớp độc lập, 50 giáo viên, 200 tiết; xếp đủ và kiểm tra độc lập trong kiểm thử tự động. Thời gian phụ thuộc thiết bị và độ chặt của ràng buộc. Không coi mẫu này là cam kết hiệu năng mọi trường.
+
+Cột Excel `Nhóm ghép` dùng dạng `6B:Nhóm 1;6C:Nhóm 2`; khai báo nhóm chính ở cột `Nhóm`. Mỗi lớp tách cần ít nhất hai nhóm riêng biệt. Tệp Excel có sheet `Phan cong` sẽ được đọc sheet này khi nhập lại. Mã JSON cũ vẫn được chấp nhận.

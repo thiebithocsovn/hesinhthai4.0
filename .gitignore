@@ -12,3 +12,4 @@ wall-ai-ui-results/
 !.env.example
 teacher-password-ui-results/
 .teacher-password-native-*/
+timetable-ui-results/

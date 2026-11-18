@@ -68,7 +68,9 @@
     "test:practical-file-check": "node --import tsx scripts/test-practical-file-check.ts",
     "test:teacher-printing": "node --import tsx scripts/test-teacher-exam-printing.ts",
     "test:timetable-agent": "node --import tsx scripts/test-timetable-agent.ts",
-    "test:timetable-admin": "node --import tsx scripts/test-timetable-admin.ts"
+    "test:timetable-admin": "node --import tsx scripts/test-timetable-admin.ts",
+    "test:timetable-advanced": "node --import tsx scripts/test-timetable-advanced.ts && node --import tsx scripts/test-timetable-publication.ts",
+    "test:timetable-ui": "node scripts/test-timetable-ui.cjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.32",

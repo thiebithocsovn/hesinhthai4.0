@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, CalendarDays, ChevronRight, GraduationCap, LayoutDashboard, Menu, Search, X } from 'lucide-react';
 import { TIMETABLE_ADMIN_GROUPS, TIMETABLE_ADMIN_PAGES, TIMETABLE_SETUP_STEPS } from '../lib/timetableNavigation';
 import './timetableAdmin.css';
@@ -16,11 +16,34 @@ interface Props {
 export default function TimetableAdminShell({ pageId, schoolName, trialMode, onNavigate, onBack, actions, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
+  const sidebar = useRef<HTMLElement>(null), menuButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)');
+    const update = () => { setMobile(media.matches); if (!media.matches) setMenuOpen(false); };
+    media.addEventListener('change', update); return () => media.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
+    if (!mobile || !menuOpen) return;
+    const previousOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden';
+    sidebar.current?.querySelector<HTMLInputElement>('input')?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setMenuOpen(false); event.preventDefault(); return; }
+      if (event.key !== 'Tab') return;
+      const items = [...(sidebar.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,a[href]') || [])].filter(el => el.offsetParent !== null);
+      const first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { last?.focus(); event.preventDefault(); }
+      else if (!event.shiftKey && document.activeElement === last) { first?.focus(); event.preventDefault(); }
+    };
+    document.addEventListener('keydown', keydown);
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener('keydown', keydown); menuButton.current?.focus(); };
+  }, [menuOpen, mobile]);
   const page = TIMETABLE_ADMIN_PAGES.find(item => item.id === pageId) || TIMETABLE_ADMIN_PAGES[0];
   const navigate = (id: string) => { onNavigate(id); setMenuOpen(false); };
   return <div className="tt-admin" data-timetable-admin="true">
     {menuOpen && <button type="button" className="tt-backdrop" onClick={() => setMenuOpen(false)} aria-label="Đóng menu" />}
-    <aside className={`tt-sidebar ${menuOpen ? 'is-open' : ''}`} aria-label="Điều hướng thời khóa biểu">
+    <aside ref={sidebar} inert={mobile && !menuOpen} aria-hidden={mobile && !menuOpen ? true : undefined} id="timetable-sidebar" className={`tt-sidebar ${menuOpen ? 'is-open' : ''}`} aria-label="Điều hướng thời khóa biểu">
+      <button type="button" className="tt-close-menu" aria-label="Đóng menu thời khóa biểu" onClick={() => setMenuOpen(false)}><X size={20} /></button>
       <button type="button" className="tt-brand" onClick={() => navigate('overview')}>
         <span className="tt-brand-icon"><CalendarDays size={23} /></span>
         <span><strong>AITHEROVA</strong><small>SMART TIMETABLE</small></span>
@@ -38,9 +61,9 @@ export default function TimetableAdminShell({ pageId, schoolName, trialMode, onN
       </nav>
       <button type="button" className="tt-ecosystem" onClick={onBack}><ArrowLeft size={15} />Về Hệ sinh thái 4.0</button>
     </aside>
-    <div className="tt-main-column">
+    <div className="tt-main-column" inert={mobile && menuOpen}>
       <header className="tt-topbar">
-        <button type="button" className="tt-menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở menu thời khóa biểu" aria-expanded={menuOpen}><Menu size={21} /></button>
+        <button type="button" ref={menuButton} aria-controls="timetable-sidebar" className="tt-menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở menu thời khóa biểu" aria-expanded={menuOpen}><Menu size={21} /></button>
         <div className="tt-breadcrumb">AITHEROVA <ChevronRight size={13} /><span>{page.label}</span></div>
         <span className="tt-local-status"><i />{trialMode ? 'Dùng thử trên thiết bị' : 'Không gian làm việc'}</span>
       </header>

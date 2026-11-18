@@ -5,6 +5,7 @@ import {
   type TimetableScenario,
   type TimetableSolution,
 } from './smartTimetable';
+import { assignmentClassIds } from './smartTimetableResources';
 
 export interface TimetableAgentProposal {
   status: 'ready' | 'information' | 'unsupported';
@@ -72,6 +73,17 @@ export function planTimetableAgentCommand(
   const empty = (title: string, details: string[], status: 'information' | 'unsupported' = 'unsupported'): TimetableAgentProposal =>
     ({ status, title, details, affectedSlots: [], requiresReschedule: false });
   if (!text) return empty('Chưa có yêu cầu', ['Hãy nhập một yêu cầu bằng tiếng Việt.']);
+  const namedTeacher = findNamed(text, scenario.teachers), namedSubject = findNamed(text, scenario.subjects);
+  const maximum = text.match(/toi da (\d{1,2})/);
+  if (maximum && namedTeacher && /ngay/.test(text) && /day/.test(text)) {
+    const value = Number(maximum[1]);
+    if (value < 1 || value > activeTimetableDays(scenario).length) return empty('Số ngày không hợp lệ', ['Số ngày dạy phải nằm trong tuần học đã cấu hình.']);
+    return { status: 'ready', title: `${namedTeacher.name} dạy tối đa ${value} ngày/tuần`, details: ['Ràng buộc cứng. Giữ nguyên các giờ bận hiện có.', 'Chỉ áp dụng sau khi xác nhận; cần xếp lại lịch.'], nextScenario: { ...scenario, teachers: scenario.teachers.map(t => t.id === namedTeacher.id ? { ...t, maxTeachingDays: value } : t) }, affectedSlots: [], requiresReschedule: true };
+  }
+  if (maximum && namedSubject && /lop/.test(text) && /dong thoi|cung luc/.test(text)) {
+    const value = Number(maximum[1]); if (value < 1) return empty('Giới hạn không hợp lệ', ['Số lớp đồng thời phải lớn hơn 0.']);
+    return { status: 'ready', title: `${namedSubject.name}: tối đa ${value} lớp đồng thời`, details: ['Tiết ghép được tính theo số lớp tham gia.', 'Chỉ áp dụng sau khi xác nhận; cần xếp lại lịch.'], nextScenario: { ...scenario, subjects: scenario.subjects.map(subject => subject.id === namedSubject.id ? { ...subject, maxConcurrentClasses: value } : subject) }, affectedSlots: [], requiresReschedule: true };
+  }
 
   if (hasWord(text, ['thong ke', 'bao cao', 'kiem tra', 'chan doan', 'vi sao', 'giai thich'])) {
     const missing = solution?.diagnostics.unscheduled.reduce((sum, item) => sum + item.remaining, 0) ?? null;
@@ -113,7 +125,7 @@ export function planTimetableAgentCommand(
   const target = named[0];
   const subjectConstraint = target.kind === 'class' && subject && hasWord(text, ['mon', 'khong hoc', 'cam', 'tranh']);
   if (subjectConstraint && subject) {
-    const assignments = scenario.assignments.filter(item => item.classId === target.id && item.subjectId === subject.id);
+    const assignments = scenario.assignments.filter(item => assignmentClassIds(item).includes(target.id) && item.subjectId === subject.id);
     if (!assignments.length) return empty('Không tìm thấy phân công môn học', ['Lớp ' + target.name + ' chưa có phân công môn ' + subject.name + '.']);
     const nextAssignments = scenario.assignments.map(item => {
       if (!assignments.some(match => match.id === item.id)) return item;

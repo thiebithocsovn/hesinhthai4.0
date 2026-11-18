@@ -3,6 +3,7 @@ import { BookOpen, CalendarDays, CheckCircle2, ChevronRight, Database, Download,
 import { activeTimetableDays, parseTimetableSlot, timetableSlotKey, type SchoolLevel, type TimetableScenario, type TimetableSolution, type TeachingAssignment } from '../lib/smartTimetable';
 import { timetableEntityId } from '../lib/smartTimetableImport';
 import { classGradeId, setHomeroomTeacher, timetableGrades } from '../lib/timetableAdmin';
+import { assignmentClassIds, assignmentTeacherIds } from '../lib/smartTimetableResources';
 
 interface ScenarioProps { scenario: TimetableScenario; onChange: (next: TimetableScenario) => void }
 const inputClass = 'rounded-md border border-slate-200 bg-white px-3 py-2 text-sm';
@@ -37,9 +38,9 @@ export function TimetableCatalogPanel({ scenario, kind, onChange }: ScenarioProp
     setName(''); setError('');
   };
   const remove = (id: string) => {
-    const used = scenario.assignments.some(item => kind === 'teacher' ? item.teacherId === id : kind === 'class' ? item.classId === id : kind === 'subject' ? item.subjectId === id : item.roomId === id);
+    const used = scenario.assignments.some(item => kind === 'teacher' ? assignmentTeacherIds(item).includes(id) : kind === 'class' ? assignmentClassIds(item).includes(id) : kind === 'subject' ? item.subjectId === id : item.roomId === id);
     if (used) { setError(`Đang có phân công sử dụng ${names[kind]} này. Hãy sửa hoặc xóa phân công liên quan trước.`); return; }
-    const next = { ...scenario, [key]: items.filter(item => item.id !== id) };
+    const next = { ...scenario, [key]: items.filter(item => item.id !== id), ...(kind === 'class' ? { studentGroups: scenario.studentGroups?.filter(g => g.classId !== id) } : {}) };
     if (kind === 'class') next.teachers = next.teachers.map(item => item.homeroomClassId === id ? { ...item, homeroomClassId: undefined } : item);
     if (kind === 'teacher') next.classes = next.classes.map(item => item.homeroomTeacherId === id ? { ...item, homeroomTeacherId: undefined } : item);
     onChange(next);
@@ -157,19 +158,4 @@ export function TimetableBackupPanel({ solution, versions, onBackup, onRestore, 
     <section className="tt-panel"><h3>Các phương án đã lưu</h3>{versions.length ? <div className="mt-4 flex flex-wrap gap-3">{versions.map((version, index) => <button type="button" key={`${version.generatedAt}-${index}`} className="tt-button flex-col !items-start" onClick={() => onVersion(version)}><b>Phương án {index + 1} · {version.entries.length} tiết</b><small>{new Date(version.generatedAt).toLocaleString('vi-VN')}</small><small>{version.diagnostics.unscheduled.reduce((sum, item) => sum + item.remaining, 0)} tiết chưa xếp</small></button>)}</div> : <p>Chưa có phương án. Chạy Xếp tự động để tạo lịch.</p>}</section>
     <section className="tt-panel"><h3>Dữ liệu mẫu liên cấp</h3><p>Thay bộ dữ liệu hiện tại bằng mẫu để trải nghiệm. Hãy sao lưu JSON trước khi dùng.</p><button type="button" className="tt-button mt-4 text-rose-700" onClick={onReset}>Khôi phục dữ liệu mẫu</button></section>
   </div>;
-}
-
-const advancedMessages: Record<string, { title: string; detail: string; action: string; page: string }> = {
-  campuses: { title: 'Chưa hỗ trợ nhiều cơ sở và thời gian di chuyển', detail: 'Hiện tại các lớp dùng chung một khung giờ của trường. Có thể khai báo phòng và giờ bận; chưa có ràng buộc di chuyển giữa các cơ sở.', action: 'Quản lý phòng học', page: 'rooms' },
-  'same-session': { title: 'Chưa hỗ trợ nhóm nhiều môn bắt buộc cùng buổi', detail: 'Có thể đặt từng phân công chỉ học sáng hoặc chiều và khai báo tiết đôi/ba. Chưa có ràng buộc buộc nhiều môn khác nhau cùng một buổi trong cùng ngày.', action: 'Cấu hình buổi cho phân công', page: 'class-session' },
-  concurrency: { title: 'Chưa hỗ trợ giới hạn đồng thời theo môn', detail: 'Bộ xếp lịch kiểm tra trùng phòng. Với môn cần một phòng chuyên biệt, gán cùng phòng cho các phân công để tránh trùng tài nguyên; giới hạn nhiều lớp đồng thời theo môn chưa được hỗ trợ.', action: 'Gán phòng cho phân công', page: 'curriculum' },
-  merge: { title: 'Chưa hỗ trợ ghép nhiều lớp học đồng thời', detail: 'Mỗi phân công hiện thuộc một lớp. Không thể dùng cùng giáo viên dạy nhiều lớp ở cùng tiết bằng cách ghép nhóm; thao tác đó sẽ bị phát hiện là trùng lịch.', action: 'Xem phân công hiện có', page: 'assignments' },
-  split: { title: 'Chưa hỗ trợ tách nhóm học song song', detail: 'Hiện tại một lớp chỉ có một tiết tại mỗi thời điểm. Chưa thể chia cùng lớp thành nhiều nhóm học các môn khác nhau đồng thời.', action: 'Xem danh mục lớp', page: 'classes' },
-  'public-links': { title: 'Chưa có liên kết công khai thời khóa biểu', detail: 'Dữ liệu thời khóa biểu được lưu theo tài khoản và trên thiết bị. Thầy cô có thể kiểm tra rồi chia sẻ file Excel hoặc PDF; bản này chưa tạo trang tra cứu công khai cho học sinh.', action: 'Kiểm tra trước khi chia sẻ', page: 'publication' },
-  'exam-rooms': { title: 'Chia phòng thi thuộc nghiệp vụ kỳ thi', detail: 'Màn hình này quản lý phòng trong phân công giảng dạy và lịch sử dụng phòng. Việc chia học sinh vào phòng thi chưa có trong bộ xếp thời khóa biểu.', action: 'Xem lịch phòng giảng dạy', page: 'room-schedule' },
-};
-
-export function TimetableAdvancedPanel({ pageId, navigate }: { pageId: string; navigate: (id: string) => void }) {
-  const info = advancedMessages[pageId] || advancedMessages.campuses;
-  return <section className="tt-panel"><div className="tt-capability-note"><b>{info.title}</b><p className="!text-amber-800 mt-2">{info.detail}</p></div><button type="button" className="tt-button mt-5" onClick={() => navigate(info.page)}>{info.action}<ChevronRight size={14} /></button></section>;
 }

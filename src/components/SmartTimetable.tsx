@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import TimetableAgentPanel from './TimetableAgentPanel';
 import TimetableAdminShell from './TimetableAdminShell';
-import { TimetableAdvancedPanel, TimetableAvailabilityPanel, TimetableBackupPanel, TimetableCatalogPanel, TimetableCurriculumPanel, TimetableGradesPanel, TimetableHomeroomPanel, TimetableOverviewPanel, TimetableSettingsPanel } from './TimetableAdminPanels';
+import { TimetableAvailabilityPanel, TimetableBackupPanel, TimetableCatalogPanel, TimetableCurriculumPanel, TimetableGradesPanel, TimetableHomeroomPanel, TimetableOverviewPanel, TimetableSettingsPanel } from './TimetableAdminPanels';
+import { TimetableAssignmentResources, TimetableCampusPanel, TimetableConcurrencyPanel, TimetableMergePanel, TimetableResourceDetails, TimetableSameSessionPanel, TimetableSplitPanel, TimetableTeacherDaysPanel } from './TimetableAdvancedPanels';
+import TimetablePublicationPanel from './TimetablePublicationPanel';
+import TimetableExamRoomsPanel from './TimetableExamRoomsPanel';
+import TimetableSchoolBoard from './TimetableSchoolBoard';
+import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from '../lib/smartTimetableResources';
+import { createTimetableWorkbook } from '../lib/timetableExcel';
 import { TIMETABLE_ADMIN_PAGES, type TimetableWorkspaceTab } from '../lib/timetableNavigation';
-import { moveTimetableBlock } from '../lib/timetableAdmin';
+import { moveTimetableBlock, swapTimetableBlocks } from '../lib/timetableAdmin';
 import { auditTimetableSolution } from '../lib/smartTimetableAudit';
 import { printTimetableView } from '../lib/timetablePrint';
 import {
@@ -17,6 +23,8 @@ import {
   Trash2,
   Unlock,
   WandSparkles,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -131,6 +139,9 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   const [selectedEntryId, setSelectedEntryId] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [undoHistory, setUndoHistory] = useState<PersistedWorkspace[]>([]);
+  const [redoHistory, setRedoHistory] = useState<PersistedWorkspace[]>([]);
+  const [pendingImport, setPendingImport] = useState<{ scenario: TimetableScenario; rows: number; ignored: number; issues: string[] } | null>(null);
 
   const [catalogKind, setCatalogKind] = useState<CatalogKind>('teacher');
 
@@ -165,6 +176,9 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   const excelInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const workerRef = useRef<Worker | null>(null);
+  const optimizerGeneration = useRef(0);
+  const cancelOptimizer = () => { optimizerGeneration.current++; workerRef.current?.terminate(); workerRef.current = null; setBusy(false); };
+  useEffect(() => { const title = document.title; document.title = 'AITHEROVA · Xếp thời khóa biểu'; return () => { document.title = title; }; }, []);
 
   useEffect(() => {
     try {
@@ -175,6 +189,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   }, [scenario, solution, storageKey, versions]);
 
   useEffect(() => () => {
+    optimizerGeneration.current++;
     workerRef.current?.terminate();
     workerRef.current = null;
   }, []);
@@ -219,14 +234,27 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   }, [scenario.classes, scenario.rooms, scenario.teachers, scheduleResourceId, scheduleView]);
 
   const resetSolution = () => {
+    cancelOptimizer();
     setSolution(null);
     setSelectedEntryId('');
     setMessage('Dữ liệu đã thay đổi. Hãy xếp lại để cập nhật phương án.');
   };
 
   const changeScenario = (next: TimetableScenario) => {
+    setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20));
+    setRedoHistory([]);
     setScenario(next);
     resetSolution();
+  };
+
+  const restoreWorkspace = (workspace: PersistedWorkspace) => { cancelOptimizer(); setScenario(workspace.scenario); setSolution(workspace.solution); setVersions(workspace.versions); setSelectedEntryId(''); };
+  const undo = () => {
+    const previous = undoHistory[undoHistory.length - 1]; if (!previous) return;
+    setRedoHistory(history => [...history, { scenario, solution, versions }].slice(-20)); setUndoHistory(history => history.slice(0, -1)); restoreWorkspace(previous); setMessage('Đã hoàn tác thay đổi dữ liệu.');
+  };
+  const redo = () => {
+    const next = redoHistory[redoHistory.length - 1]; if (!next) return;
+    setUndoHistory(history => [...history, { scenario, solution, versions }].slice(-20)); setRedoHistory(history => history.slice(0, -1)); restoreWorkspace(next); setMessage('Đã áp dụng lại thay đổi.');
   };
 
   const restoreVersion = (version: TimetableSolution) => {
@@ -242,15 +270,18 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
   const moveEntry = (id: string, dayIndex: number, period: number) => {
     if (!solution || busy) return;
-    const result = moveTimetableBlock(scenario, solution, id, dayIndex, period);
+    const target = visibleEntries.find(e => e.dayIndex === dayIndex && e.period === period && e.id !== id);
+    const result = target ? swapTimetableBlocks(scenario, solution, id, target.id) : moveTimetableBlock(scenario, solution, id, dayIndex, period);
     if (!result.solution) { setMessage(`Không thể chuyển tiết: ${result.errors.slice(0, 3).join(' ')}`); return; }
+    setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20)); setRedoHistory([]);
     setSolution(result.solution);
     setVersions(previous => [result.solution!, ...previous].slice(0, 8));
     setSelectedEntryId('');
     setMessage('Đã chuyển toàn bộ block và kiểm tra độc lập: đủ tiết, không trùng lớp, giáo viên hoặc phòng.');
   };
 
-  const acceptSolution = (next: TimetableSolution) => {
+  const acceptSolution = (next: TimetableSolution, generation: number) => {
+    if (generation !== optimizerGeneration.current) return;
     setSolution(next);
     setVersions(previous => [next, ...previous].slice(0, 8));
     setBusy(false);
@@ -258,6 +289,8 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   };
 
   const runOptimizer = () => {
+    if (preflight.length) { setMessage('Cần xử lý cảnh báo dữ liệu trước khi xếp lịch.'); navigatePage('analysis'); return; }
+    const generation = ++optimizerGeneration.current;
     setBusy(true);
     setMessage('');
     workerRef.current?.terminate();
@@ -265,7 +298,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     const iterations = trialMode ? 80 : 320;
 
     if (typeof Worker === 'undefined') {
-      window.setTimeout(() => acceptSolution(optimizeTimetable(scenario, lockedEntries, trialMode ? 60 : 140)), 20);
+      window.setTimeout(() => acceptSolution(optimizeTimetable(scenario, lockedEntries, trialMode ? 60 : 140), generation), 20);
       return;
     }
 
@@ -274,16 +307,16 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       workerRef.current = worker;
       let settled = false;
       const fallback = (reason: string) => {
-        if (settled) return;
+        if (settled || generation !== optimizerGeneration.current) return;
         settled = true;
         worker.terminate();
         workerRef.current = null;
         setMessage(`${reason} Hệ thống đã chuyển sang bộ tối ưu dự phòng.`);
-        window.setTimeout(() => acceptSolution(optimizeTimetable(scenario, lockedEntries, trialMode ? 60 : 140)), 20);
+        window.setTimeout(() => acceptSolution(optimizeTimetable(scenario, lockedEntries, trialMode ? 60 : 140), generation), 20);
       };
 
       worker.onmessage = (event: MessageEvent<TimetableWorkerResponse>) => {
-        if (settled) return;
+        if (settled || generation !== optimizerGeneration.current) return;
         if (!event.data.ok || !event.data.solution) {
           fallback(event.data.error || 'Web Worker không trả về phương án hợp lệ.');
           return;
@@ -291,21 +324,22 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
         settled = true;
         worker.terminate();
         workerRef.current = null;
-        acceptSolution(event.data.solution);
+        acceptSolution(event.data.solution, generation);
       };
       worker.onerror = () => fallback('Không thể chạy bộ tối ưu nền trên thiết bị này.');
       worker.postMessage({ scenario, lockedEntries, iterations });
     } catch {
-      window.setTimeout(() => acceptSolution(optimizeTimetable(scenario, lockedEntries, trialMode ? 60 : 140)), 20);
+      window.setTimeout(() => acceptSolution(optimizeTimetable(scenario, lockedEntries, trialMode ? 60 : 140), generation), 20);
     }
   };
 
   const toggleEntryLock = (entry: ScheduleEntry) => {
     if (entry.fixed) return;
+    setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20)); setRedoHistory([]);
     const nextLocked = !entry.locked;
     setSolution(previous => previous ? {
       ...previous,
-      entries: previous.entries.map(item => (entry.blockId && item.blockId === entry.blockId) || (!entry.blockId && item.id === entry.id)
+      entries: previous.entries.map(item => (entry.parallelEventId ? item.parallelEventId === entry.parallelEventId : (entry.blockId && item.blockId === entry.blockId) || (!entry.blockId && item.id === entry.id))
         ? { ...item, locked: nextLocked }
         : item),
     } : previous);
@@ -328,11 +362,11 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       avoidLastPeriod: Boolean(draft.avoidLastPeriod),
       fixedStartSlots,
     };
-    setScenario(previous => ({ ...previous, assignments: [...previous.assignments, item] }));
-    resetSolution();
+    changeScenario({ ...scenario, assignments: [...scenario.assignments, item] });
   };
 
   const resetWorkspace = () => {
+    setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20)); setRedoHistory([]);
     workerRef.current?.terminate();
     workerRef.current = null;
     setBusy(false);
@@ -350,19 +384,15 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   const importExcel = async (file: File) => {
     try {
       const workbook = XLSX.read(await file.arrayBuffer());
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const firstSheet = workbook.Sheets[workbook.SheetNames.find(name => name === 'Phan cong') || workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<TimetableImportRow>(firstSheet, { defval: '' });
       const next = scenarioFromAssignmentRows(rows, {
         ...scenario,
         teachers: [], classes: [], subjects: [], rooms: [], assignments: [],
+        grades: [], campuses: [], studentGroups: [], lessonGroups: [], examRoomPlan: undefined,
       });
       if (!next.assignments.length) throw new Error('Không tìm thấy các cột Lớp, Môn và Giáo viên trong sheet đầu tiên.');
-      setScenario(next);
-      setSolution(null);
-      setVersions([]);
-      setScheduleResourceId(next.classes[0]?.id || '');
-        setMessage(`Đã nhập ${next.assignments.length} phân công, ${next.teachers.length} giáo viên và ${next.classes.length} lớp từ Excel.`);
-      setActiveTab('overview');
+      setPendingImport({ scenario: next, rows: rows.length, ignored: Math.max(0, rows.length - next.assignments.length), issues: analyzeTimetableScenario(next) });
     } catch (error) {
       setMessage(error instanceof Error ? `Không thể nhập Excel: ${error.message}` : 'Không thể nhập Excel.');
     } finally {
@@ -393,7 +423,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
   const exportBackup = () => downloadBlob(
     `Sao-luu-TKB-${new Date().toISOString().slice(0, 10)}.json`,
-    JSON.stringify({ version: 2, scenario, solution, versions }, null, 2),
+    JSON.stringify({ version: 3, scenario, solution, versions }, null, 2),
     'application/json;charset=utf-8',
   );
 
@@ -402,6 +432,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       const parsed = JSON.parse(await file.text()) as Partial<PersistedWorkspace> & { scenario?: TimetableScenario };
       if (!parsed.scenario?.teachers || !parsed.scenario.classes || !parsed.scenario.assignments) throw new Error('Tệp sao lưu không đúng cấu trúc.');
       const nextScenario = normalizeTimetableScenario(parsed.scenario);
+      setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20)); setRedoHistory([]);
       setScenario(nextScenario);
       setSolution(normalizeSolution(parsed.solution));
       setVersions(Array.isArray(parsed.versions) ? parsed.versions.map(normalizeSolution).filter(Boolean).slice(0, 8) as TimetableSolution[] : []);
@@ -415,48 +446,11 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
   const exportExcel = () => {
     if (!solution) return;
-    const workbook = XLSX.utils.book_new();
-    const summaryRows: (string | number)[][] = [
-      ['TRƯỜNG', scenario.name],
-      ['Số ngày học/tuần', days.length],
-      ['Số tiết/ngày', scenario.periodsPerDay],
-      ['Tổng tiết yêu cầu', totalRequiredPeriods],
-      ['Đã xếp', solution.entries.length],
-      ['Chưa xếp', unscheduledPeriods],
-      ['Điểm phạt', solution.score],
-      [],
-      ['Lớp', 'Cấp', 'Số tiết'],
-      ...scenario.classes.map(classroom => [classroom.name, classroom.level, solution.entries.filter(item => item.classId === classroom.id).length]),
-    ];
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Tong hop');
-
-    const appendScheduleSheet = (name: string, predicate: (entry: ScheduleEntry) => boolean, mode: ScheduleView) => {
-      const rows: (string | number)[][] = [['Tiết', ...days]];
-      for (let period = 1; period <= scenario.periodsPerDay; period += 1) {
-        const row: (string | number)[] = [period];
-        for (let dayIndex = 0; dayIndex < days.length; dayIndex += 1) {
-          const entry = solution.entries.find(item => predicate(item) && item.dayIndex === dayIndex && item.period === period);
-          if (!entry) { row.push(''); continue; }
-          const subject = lookup.subjects.get(entry.subjectId)?.name || entry.subjectId;
-          const teacher = lookup.teachers.get(entry.teacherId)?.name || entry.teacherId;
-          const classroom = lookup.classes.get(entry.classId)?.name || entry.classId;
-          const room = entry.roomId ? lookup.rooms.get(entry.roomId)?.name || entry.roomId : '';
-          row.push(mode === 'class' ? [subject, teacher, room].filter(Boolean).join(' - ') : mode === 'teacher' ? [classroom, subject, room].filter(Boolean).join(' - ') : [classroom, subject, teacher].filter(Boolean).join(' - '));
-        }
-        rows.push(row);
-      }
-      const sheet = XLSX.utils.aoa_to_sheet(rows);
-      sheet['!cols'] = [{ wch: 8 }, ...days.map(() => ({ wch: 28 }))];
-      XLSX.utils.book_append_sheet(workbook, sheet, safeSheetName(name));
-    };
-
-    scenario.classes.forEach(item => appendScheduleSheet(`Lop ${item.name}`, entry => entry.classId === item.id, 'class'));
-    scenario.teachers.forEach(item => appendScheduleSheet(`GV ${item.name}`, entry => entry.teacherId === item.id, 'teacher'));
-    XLSX.writeFile(workbook, `Thoi-khoa-bieu-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(createTimetableWorkbook(scenario, solution), `Thoi-khoa-bieu-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const visibleEntries = solution?.entries.filter(entry =>
-    scheduleView === 'class' ? entry.classId === scheduleResourceId : scheduleView === 'teacher' ? entry.teacherId === scheduleResourceId : entry.roomId === scheduleResourceId,
+    scheduleView === 'class' ? assignmentClassIds(entry).includes(scheduleResourceId) : scheduleView === 'teacher' ? assignmentTeacherIds(entry).includes(scheduleResourceId) : entry.roomId === scheduleResourceId,
   ) || [];
 
   return (
@@ -467,6 +461,9 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       onNavigate={navigatePage}
       onBack={onBack}
       actions={<>
+        {busy && <button type="button" className="tt-action-export" onClick={() => { cancelOptimizer(); setMessage('Đã dừng lượt xếp. Dữ liệu và phương án trước vẫn được giữ.'); }}>Dừng xếp</button>}
+        <button type="button" onClick={undo} disabled={busy || !undoHistory.length} className="tt-action-export" aria-label="Hoàn tác thay đổi"><Undo2 size={14} />Hoàn tác</button>
+        <button type="button" onClick={redo} disabled={busy || !redoHistory.length} className="tt-action-export" aria-label="Làm lại thay đổi"><Redo2 size={14} />Làm lại</button>
         <button type="button" onClick={exportExcel} disabled={!solution || busy} className="tt-action-export"><Download size={15} />Xuất Excel</button>
         <button type="button" onClick={runOptimizer} disabled={busy || !scenario.assignments.length} className="tt-action-run"><WandSparkles size={15} />{busy ? 'Đang xếp lịch...' : 'Xếp tự động'}</button>
       </>}
@@ -475,20 +472,33 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       <input ref={jsonInputRef} type="file" accept="application/json,.json" className="hidden" onChange={event => event.target.files?.[0] && void importBackup(event.target.files[0])} />
       {message && <div role="status" className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm leading-6 text-indigo-800">{message}</div>}
       {busy && <div role="status" className="mb-4 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800">Đang xếp toàn trường. Các ô nhập tạm khóa để giữ nhất quán dữ liệu.</div>}
+      {pendingImport && <section role="dialog" aria-modal="true" aria-label="Xem trước dữ liệu nhập Excel" className="tt-panel mb-5 border-indigo-300">
+        <h3>Xem trước nhập Excel · chưa thay đổi dữ liệu hiện tại</h3>
+        <p>{pendingImport.rows} dòng đọc được · {pendingImport.scenario.assignments.length} phân công · {pendingImport.scenario.classes.length} lớp · {pendingImport.scenario.teachers.length} giáo viên. {pendingImport.ignored} dòng trống hoặc thiếu cột bắt buộc sẽ bỏ qua.</p>
+        {pendingImport.issues.map(issue => <p key={issue} className="!text-amber-700">{issue}</p>)}
+        <div className="mt-4 flex flex-wrap gap-2"><button type="button" className="tt-button green" onClick={() => { changeScenario(pendingImport.scenario); setVersions([]); setPendingImport(null); navigatePage('analysis'); setMessage('Đã áp dụng dữ liệu nhập. Có thể hoàn tác nếu cần khôi phục dữ liệu trước.'); }}>Áp dụng nhập và thay dữ liệu hiện tại</button><button type="button" className="tt-button" onClick={() => setPendingImport(null)}>Hủy nhập</button></div>
+      </section>}
       <fieldset disabled={busy} className="min-w-0 space-y-4">
+        {activeTab === 'schoolboard' && <TimetableSchoolBoard scenario={scenario} solution={solution} />}
         {activeTab === 'overview' && <TimetableOverviewPanel scenario={scenario} solution={solution} navigate={navigatePage} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} />}
-        {activeTab === 'catalog' && <TimetableCatalogPanel key={catalogKind} scenario={scenario} kind={catalogKind} onChange={changeScenario} />}
+        {activeTab === 'catalog' && <><TimetableCatalogPanel key={catalogKind} scenario={scenario} kind={catalogKind} onChange={changeScenario} />{(catalogKind === 'class' || catalogKind === 'room') && <TimetableResourceDetails scenario={scenario} onChange={changeScenario} />}</>}
         {activeTab === 'grades' && <TimetableGradesPanel scenario={scenario} onChange={changeScenario} />}
         {activeTab === 'homeroom' && <TimetableHomeroomPanel scenario={scenario} onChange={changeScenario} />}
-        {activeTab === 'curriculum' && <TimetableCurriculumPanel scenario={scenario} onChange={changeScenario} />}
-        {activeTab === 'settings' && <TimetableSettingsPanel pageId={pageId} scenario={scenario} onChange={changeScenario} />}
-        {activeTab === 'advanced' && <TimetableAdvancedPanel pageId={pageId} navigate={navigatePage} />}
+        {activeTab === 'curriculum' && <><TimetableCurriculumPanel scenario={scenario} onChange={changeScenario} /><TimetableAssignmentResources scenario={scenario} onChange={changeScenario} /></>}
+        {activeTab === 'settings' && <><TimetableSettingsPanel pageId={pageId} scenario={scenario} onChange={changeScenario} />{pageId === 'limits' && <TimetableTeacherDaysPanel scenario={scenario} onChange={changeScenario} />}</>}
+        {activeTab === 'advanced' && pageId === 'campuses' && <TimetableCampusPanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'advanced' && pageId === 'merge' && <TimetableMergePanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'advanced' && pageId === 'split' && <TimetableSplitPanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'advanced' && pageId === 'same-session' && <TimetableSameSessionPanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'advanced' && pageId === 'concurrency' && <TimetableConcurrencyPanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'advanced' && pageId === 'exam-rooms' && <TimetableExamRoomsPanel scenario={scenario} onChange={changeScenario} />}
+        {activeTab === 'advanced' && pageId === 'public-links' && <TimetablePublicationPanel scenario={scenario} solution={solution} storageKey={storageKey} />}
         {activeTab === 'backup' && <TimetableBackupPanel solution={solution} versions={versions} onBackup={exportBackup} onRestore={() => jsonInputRef.current?.click()} onExcel={exportExcel} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} onVersion={restoreVersion} onReset={() => { if (window.confirm('Thay dữ liệu hiện tại bằng dữ liệu mẫu? Hãy sao lưu JSON trước khi tiếp tục.')) resetWorkspace(); }} />}
 
         {activeTab === 'assignments' && (
           <div className="grid gap-5 lg:grid-cols-[390px_1fr]">
             <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-extrabold">Thêm phân công</h2><p className="mt-1 text-sm text-slate-500">Hỗ trợ tiết đôi, buổi học và một ô cố định.</p><div className="mt-5 space-y-3"><select value={draft.classId || ''} onChange={event => setDraft(previous => ({ ...previous, classId: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">{scenario.classes.map(item => <option key={item.id} value={item.id}>{item.name} · {item.level}</option>)}</select><select value={draft.subjectId || ''} onChange={event => setDraft(previous => ({ ...previous, subjectId: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">{scenario.subjects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={draft.teacherId || ''} onChange={event => setDraft(previous => ({ ...previous, teacherId: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">{scenario.teachers.map(item => <option key={item.id} value={item.id}>{item.name} · {item.level}</option>)}</select><select value={draft.roomId || ''} onChange={event => setDraft(previous => ({ ...previous, roomId: event.target.value || undefined }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">Phòng thường / không khóa phòng</option>{scenario.rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><div className="grid grid-cols-3 gap-2"><label className="text-[11px] font-bold text-slate-600">Tiết/tuần<input type="number" min={1} max={30} value={draft.periodsPerWeek || 1} onChange={event => setDraft(previous => ({ ...previous, periodsPerWeek: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2.5 text-sm" /></label><label className="text-[11px] font-bold text-slate-600">Tối đa/ngày<input type="number" min={1} max={8} value={draft.maxPerDay || 1} onChange={event => setDraft(previous => ({ ...previous, maxPerDay: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2.5 text-sm" /></label><label className="text-[11px] font-bold text-slate-600">Block<select value={draft.blockSize || 1} onChange={event => setDraft(previous => ({ ...previous, blockSize: Number(event.target.value) as 1 | 2 | 3 }))} className="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2.5 text-sm"><option value={1}>1 tiết</option><option value={2}>2 tiết liền</option><option value={3}>3 tiết liền</option></select></label></div><select value={draft.session || 'any'} onChange={event => setDraft(previous => ({ ...previous, session: event.target.value as TeachingAssignment['session'] }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="any">Bất kỳ buổi nào</option><option value="morning">Chỉ buổi sáng</option><option value="afternoon">Chỉ buổi chiều</option></select><div className="rounded-2xl bg-slate-50 p-3"><div className="mb-2 text-xs font-bold text-slate-600">Ô cố định (không bắt buộc)</div><div className="grid grid-cols-2 gap-2"><select value={fixedDay} onChange={event => setFixedDay(Number(event.target.value))} className="rounded-xl border border-slate-200 px-2 py-2 text-sm"><option value={-1}>Không cố định</option>{days.map((day, index) => <option key={day} value={index}>{day}</option>)}</select><select value={fixedPeriod} onChange={event => setFixedPeriod(Number(event.target.value))} disabled={fixedDay < 0} className="rounded-xl border border-slate-200 px-2 py-2 text-sm disabled:opacity-50">{Array.from({ length: scenario.periodsPerDay }, (_, index) => index + 1).map(period => <option key={period} value={period}>Tiết {period}</option>)}</select></div></div><label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={Boolean(draft.avoidLastPeriod)} onChange={event => setDraft(previous => ({ ...previous, avoidLastPeriod: event.target.checked }))} />Hạn chế tiết cuối buổi/ngày</label><button type="button" onClick={addAssignment} disabled={!scenario.classes.length || !scenario.subjects.length || !scenario.teachers.length} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-bold text-white disabled:opacity-40"><Plus className="h-4 w-4" />Thêm phân công</button></div></section>
-            <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white"><div className="border-b border-slate-200 px-5 py-4"><h2 className="font-extrabold">Danh sách phân công</h2><p className="text-sm text-slate-500">{scenario.assignments.length} yêu cầu · {totalRequiredPeriods} tiết/tuần</p></div><div className="max-h-[680px] divide-y divide-slate-100 overflow-auto">{scenario.assignments.map(item => <div key={item.id} className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><div className="font-bold text-slate-800">{lookup.classes.get(item.classId)?.name} · {lookup.subjects.get(item.subjectId)?.name}</div><div className="mt-1 text-xs leading-5 text-slate-500">{lookup.teachers.get(item.teacherId)?.name} · {item.roomId ? lookup.rooms.get(item.roomId)?.name : 'Phòng thường'} · {item.periodsPerWeek} tiết/tuần · block {item.blockSize || 1}{item.session && item.session !== 'any' ? ` · ${item.session === 'morning' ? 'sáng' : 'chiều'}` : ''}{item.fixedStartSlots?.length ? ` · cố định ${item.fixedStartSlots.map(slot => { const parsed = parseTimetableSlot(slot); return parsed ? `${TIMETABLE_DAYS[parsed.dayIndex]} tiết ${parsed.period}` : slot; }).join(', ')}` : ''}</div></div><button type="button" onClick={() => { setScenario(previous => ({ ...previous, assignments: previous.assignments.filter(value => value.id !== item.id) })); resetSolution(); }} className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"><Trash2 className="h-4 w-4" /></button></div>)}</div></section>
+            <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white"><div className="border-b border-slate-200 px-5 py-4"><h2 className="font-extrabold">Danh sách phân công</h2><p className="text-sm text-slate-500">{scenario.assignments.length} yêu cầu · {totalRequiredPeriods} tiết/tuần</p></div><div className="max-h-[680px] divide-y divide-slate-100 overflow-auto">{scenario.assignments.map(item => <div key={item.id} className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><div className="font-bold text-slate-800">{assignmentClassIds(item).map(id => lookup.classes.get(id)?.name).join(' + ')} · {lookup.subjects.get(item.subjectId)?.name}</div><div className="mt-1 text-xs leading-5 text-slate-500">{lookup.teachers.get(item.teacherId)?.name} · {item.roomId ? lookup.rooms.get(item.roomId)?.name : 'Phòng thường'} · {item.periodsPerWeek} tiết/tuần · block {item.blockSize || 1}{item.session && item.session !== 'any' ? ` · ${item.session === 'morning' ? 'sáng' : 'chiều'}` : ''}{item.fixedStartSlots?.length ? ` · cố định ${item.fixedStartSlots.map(slot => { const parsed = parseTimetableSlot(slot); return parsed ? `${TIMETABLE_DAYS[parsed.dayIndex]} tiết ${parsed.period}` : slot; }).join(', ')}` : ''}</div></div><button type="button" onClick={() => { changeScenario({ ...scenario, assignments: scenario.assignments.filter(value => value.id !== item.id), lessonGroups: scenario.lessonGroups?.map(g => ({ ...g, assignmentIds: g.assignmentIds.filter(id => id !== item.id) })).filter(g => g.assignmentIds.length >= 2) }); }} className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"><Trash2 className="h-4 w-4" /></button></div>)}</div></section>
           </div>
         )}
 
@@ -497,11 +507,11 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
         {activeTab === 'schedule' && (
           <div className="space-y-4">
             <div className="tt-panel flex flex-wrap items-center justify-between gap-3">
-              <div><h3>Thời khóa biểu · {solution?.entries.length || 0}/{totalRequiredPeriods} tiết</h3><p>Chọn tiết rồi bấm ô đích để chuyển, hoặc kéo thả. Khóa block để giữ nguyên khi tối ưu lại.</p></div>
+              <div><h3>Thời khóa biểu · {solution?.entries.length || 0}/{totalRequiredPeriods} tiết</h3><p>Chọn tiết rồi bấm ô trống để chuyển, ô có tiết để đổi chỗ; hỗ trợ kéo thả. Mọi thay đổi được kiểm tra độc lập.</p></div>
               <div className="flex flex-wrap gap-2">
                 <select aria-label="Chế độ xem thời khóa biểu" value={scheduleView} onChange={event => { setScheduleView(event.target.value as ScheduleView); setSelectedEntryId(''); }} className="rounded-md border border-slate-200 px-3 py-2 text-sm"><option value="class">Theo lớp</option><option value="teacher">Theo giáo viên</option><option value="room">Theo phòng</option></select>
                 <select aria-label="Chọn đối tượng xem lịch" value={scheduleResourceId} onChange={event => { setScheduleResourceId(event.target.value); setSelectedEntryId(''); }} className="rounded-md border border-slate-200 px-3 py-2 text-sm">{scheduleResources.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-                <button type="button" className="tt-button" onClick={() => { if (!solution) return; try { printTimetableView(scenario, solution, scheduleView, scheduleResourceId); } catch (error) { setMessage(error instanceof Error ? error.message : 'Không thể in thời khóa biểu.'); } }} disabled={!solution || !scheduleResourceId}><FileDown size={15} />In / PDF</button>
+                <button type="button" className="tt-button" onClick={() => { if (!solution) return; try { printTimetableView(scenario, solution, scheduleView, scheduleResourceId); } catch (error) { setMessage(error instanceof Error ? error.message : 'Không thể in thời khóa biểu.'); } }} disabled={!solution || !scheduleResourceId}><FileDown size={15} />In / PDF</button><button type="button" className="tt-button" disabled={!solution || !scheduleResources.length} onClick={() => { if (solution) { try { printTimetableView(scenario, solution, scheduleView, '*'); } catch (e) { setMessage(e instanceof Error ? e.message : 'Không thể in.'); } } }}>In tất cả</button>
               </div>
             </div>
             {selectedEntryId && <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Đã chọn tiết. Bấm ô đích để chuyển cả block.<button type="button" className="tt-button" onClick={() => setSelectedEntryId('')}>Hủy chọn</button></div>}
@@ -510,13 +520,13 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
               <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table className="w-full min-w-[820px] border-collapse text-sm"><thead><tr className="bg-[#293c83] text-white"><th className="w-16 border-r border-white/15 p-3">Tiết</th>{days.map(day => <th key={day} className="border-r border-white/15 p-3">{day}</th>)}</tr></thead><tbody>
                 {Array.from({ length: scenario.periodsPerDay }, (_, index) => index + 1).map(period => <React.Fragment key={period}><tr><th className="border-r border-t border-slate-200 bg-slate-50 p-3 text-slate-500">{period}<div className="mt-1 text-[9px] font-normal text-slate-400">{period <= (scenario.morningPeriods || 5) ? 'Sáng' : 'Chiều'}</div></th>
                   {days.map((day, dayIndex) => {
-                    const entry = visibleEntries.find(item => item.dayIndex === dayIndex && item.period === period);
+                    const cellEntries = visibleEntries.filter(item => item.dayIndex === dayIndex && item.period === period);
                     return <td key={day} className="h-24 border-r border-t border-slate-200 p-1.5 align-top" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const id = event.dataTransfer.getData('text/timetable-entry'); if (id) moveEntry(id, dayIndex, period); }}>
-                      {entry ? <div draggable={!entry.fixed && !entry.locked} onDragStart={event => event.dataTransfer.setData('text/timetable-entry', entry.id)} className={`h-full rounded-md border p-2 ${entryTone(entry, scenario)} ${selectedEntryId === entry.id ? 'ring-2 ring-blue-500' : ''}`}>
+                      {cellEntries.length ? cellEntries.map(entry => <div key={entry.id} draggable={!entry.fixed && !entry.locked} onDragStart={event => event.dataTransfer.setData('text/timetable-entry', entry.id)} className={`h-full rounded-md border p-2 ${entryTone(entry, scenario)} mb-1 ${selectedEntryId === entry.id ? 'ring-2 ring-blue-500' : ''}`}>
                         <div className="flex items-start justify-between gap-1"><button type="button" className="flex-1 text-left text-xs font-bold leading-5" aria-label={`Chọn ${lookup.subjects.get(entry.subjectId)?.name} ${day} tiết ${period}`} onClick={() => { if (selectedEntryId && selectedEntryId !== entry.id) moveEntry(selectedEntryId, dayIndex, period); else if (entry.fixed || entry.locked) setMessage('Tiết cố định hoặc đang khóa. Mở khóa trước khi chuyển.'); else setSelectedEntryId(selectedEntryId === entry.id ? '' : entry.id); }}>{lookup.subjects.get(entry.subjectId)?.name}</button><button type="button" onClick={() => toggleEntryLock(entry)} disabled={entry.fixed} className="rounded p-1 text-slate-500 hover:bg-white" aria-label={entry.fixed ? 'Tiết cố định' : entry.locked ? 'Bỏ khóa block' : 'Khóa block'}>{entry.locked || entry.fixed ? <Lock size={12} /> : <Unlock size={12} />}</button></div>
-                        <div className="mt-1 text-[10px] leading-5 text-slate-600">{scheduleView !== 'class' && `${lookup.classes.get(entry.classId)?.name} · `}{lookup.teachers.get(entry.teacherId)?.name}</div>
-                        {entry.roomId && <div className="text-[10px] text-slate-500">{lookup.rooms.get(entry.roomId)?.name}</div>}{entry.fixed && <div className="text-[9px] font-bold text-amber-700">CỐ ĐỊNH</div>}
-                      </div> : <button type="button" className="flex min-h-20 w-full items-center justify-center rounded-md text-[10px] text-slate-300 hover:bg-blue-50 hover:text-blue-600" aria-label={`${day} tiết ${period} trống`} onClick={() => { if (selectedEntryId) moveEntry(selectedEntryId, dayIndex, period); }}>{selectedEntryId ? 'Chuyển vào đây' : '—'}</button>}
+                        <div className="mt-1 text-[10px] leading-5 text-slate-600">{scheduleView !== 'class' && `${assignmentClassIds(entry).map(id => lookup.classes.get(id)?.name).join(' + ')} · `}{assignmentTeacherIds(entry).map(id => lookup.teachers.get(id)?.name).join(' + ')}</div>
+                        {assignmentStudentGroupIds(entry).length > 0 && <div className="text-[10px] font-semibold text-indigo-700">{assignmentStudentGroupIds(entry).map(id => scenario.studentGroups?.find(g => g.id === id)?.name).join(' + ')}</div>}{entry.roomId && <div className="text-[10px] text-slate-500">{lookup.rooms.get(entry.roomId)?.name}</div>}{entry.fixed && <div className="text-[9px] font-bold text-amber-700">CỐ ĐỊNH</div>}
+                      </div>) : <button type="button" className="flex min-h-20 w-full items-center justify-center rounded-md text-[10px] text-slate-300 hover:bg-blue-50 hover:text-blue-600" aria-label={`${day} tiết ${period} trống`} onClick={() => { if (selectedEntryId) moveEntry(selectedEntryId, dayIndex, period); }}>{selectedEntryId ? 'Chuyển vào đây' : '—'}</button>}
                     </td>;
                   })}</tr>{period === (scenario.morningPeriods || 5) && period < scenario.periodsPerDay && <tr><td colSpan={days.length + 1} className="bg-amber-50 p-1 text-center text-[9px] font-semibold uppercase tracking-widest text-amber-700">Nghỉ giữa buổi</td></tr>}</React.Fragment>)}
               </tbody></table></div>
@@ -531,8 +541,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
             solution={solution}
             busy={busy}
             onApply={nextScenario => {
-              setScenario(nextScenario);
-              setSolution(null);
+              changeScenario(nextScenario);
               setMessage('Đã áp dụng ràng buộc do AI Agent đề xuất. Chưa xếp lại thời khóa biểu.');
             }}
             onRunOptimizer={runOptimizer}
@@ -541,7 +550,8 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
         {activeTab === 'diagnostics' && (
           <div className="grid gap-5 lg:grid-cols-2">
-            <section className="tt-panel lg:col-span-2"><h3>Kiểm tra độc lập trước khi công bố</h3>{!solution ? <p>Chưa chạy xếp lịch. Có {totalRequiredPeriods} tiết cần xếp.</p> : <><div className={`my-3 rounded-md px-4 py-3 text-sm ${audit.valid && audit.complete ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>{audit.valid && audit.complete ? 'Đủ tiết, không phát hiện xung đột qua kiểm tra độc lập.' : `Bản nháp: ${audit.placedPeriods}/${audit.expectedPeriods} tiết, ${audit.errors.length} vấn đề cần xử lý.`}</div>{audit.errors.map(item => <p key={item} className="!text-rose-700">• {item}</p>)}{audit.warnings.map(item => <p key={item}>• {item}</p>)}</>}<div className="mt-4 tt-table-wrap"><table className="tt-table"><thead><tr><th>Giáo viên</th><th>Phân công</th><th>Tiết/tuần</th><th>Đã xếp</th><th>Giới hạn/ngày</th></tr></thead><tbody>{scenario.teachers.map(teacher => <tr key={teacher.id}><td>{teacher.name}</td><td>{scenario.assignments.filter(item => item.teacherId === teacher.id).length}</td><td>{scenario.assignments.filter(item => item.teacherId === teacher.id).reduce((sum, item) => sum + item.periodsPerWeek, 0)}</td><td>{solution ? solution.entries.filter(item => item.teacherId === teacher.id).length : '—'}</td><td>{teacher.maxPeriodsPerDay || 'Chưa đặt'}</td></tr>)}</tbody></table></div></section>
+            <div className="lg:col-span-2"><button type="button" className="tt-button green" disabled={!solution || !audit.valid || !audit.complete} onClick={() => navigatePage('public-links')}>Mở bước công bố / xuất trang tra cứu</button></div>
+            <section className="tt-panel lg:col-span-2"><h3>Kiểm tra độc lập trước khi công bố</h3>{!solution ? <p>Chưa chạy xếp lịch. Có {totalRequiredPeriods} tiết cần xếp.</p> : <><div className={`my-3 rounded-md px-4 py-3 text-sm ${audit.valid && audit.complete ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>{audit.valid && audit.complete ? 'Đủ tiết, không phát hiện xung đột qua kiểm tra độc lập.' : `Bản nháp: ${audit.placedPeriods}/${audit.expectedPeriods} tiết, ${audit.errors.length} vấn đề cần xử lý.`}</div>{audit.errors.map(item => <p key={item} className="!text-rose-700">• {item}</p>)}{audit.warnings.map(item => <p key={item}>• {item}</p>)}</>}<div className="mt-4 tt-table-wrap"><table className="tt-table"><thead><tr><th>Giáo viên</th><th>Phân công</th><th>Tiết/tuần</th><th>Đã xếp</th><th>Giới hạn/ngày</th></tr></thead><tbody>{scenario.teachers.map(teacher => <tr key={teacher.id}><td>{teacher.name}</td><td>{scenario.assignments.filter(item => assignmentTeacherIds(item).includes(teacher.id)).length}</td><td>{scenario.assignments.filter(item => assignmentTeacherIds(item).includes(teacher.id)).reduce((sum, item) => sum + item.periodsPerWeek, 0)}</td><td>{solution ? solution.entries.filter(item => assignmentTeacherIds(item).includes(teacher.id)).length : '—'}</td><td>{teacher.maxPeriodsPerDay || 'Chưa đặt'}</td></tr>)}</tbody></table></div></section>
 
             <section className="rounded-3xl border border-slate-200 bg-white p-5"><div className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-amber-500" /><h2 className="font-extrabold">Xung đột & cảnh báo</h2></div>{!solution ? <p className="mt-4 text-sm text-slate-500">Chưa có phương án. Kiểm tra khả thi hiện có {preflight.length} cảnh báo.</p> : <div className="mt-4 space-y-3"><div className={`rounded-2xl p-4 ${solution.diagnostics.hardConflicts.length ? 'bg-rose-50 text-rose-800' : 'bg-emerald-50 text-emerald-800'}`}><b>{solution.diagnostics.hardConflicts.length ? `${solution.diagnostics.hardConflicts.length} xung đột cứng` : 'Không có xung đột cứng'}</b>{solution.diagnostics.hardConflicts.map(item => <p key={item} className="mt-1 text-sm">• {item}</p>)}</div>{solution.diagnostics.warnings.map(item => <div key={item} className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{item}</div>)}</div>}</section>
             <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="font-extrabold">Chỉ số chất lượng</h2><div className="mt-4 grid grid-cols-2 gap-3">{[

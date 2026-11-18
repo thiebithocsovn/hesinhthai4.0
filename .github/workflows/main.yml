@@ -162,6 +162,9 @@ jobs:
           npm run test:auth-flow
           npm run test:teacher-password
           npm run test:smart-timetable
+          npm run test:timetable-agent
+          npm run test:timetable-admin
+          npm run test:timetable-advanced
           npm run test:question-engine
           npm run test:question-pptx
           npm run test:plicker-student-sync

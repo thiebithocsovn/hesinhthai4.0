@@ -1,4 +1,4 @@
-export type TimetableWorkspaceTab = 'overview' | 'catalog' | 'assignments' | 'constraints' | 'schedule' | 'diagnostics' | 'agent' | 'grades' | 'homeroom' | 'curriculum' | 'settings' | 'backup' | 'advanced';
+export type TimetableWorkspaceTab = 'overview' | 'catalog' | 'assignments' | 'constraints' | 'schedule' | 'diagnostics' | 'agent' | 'grades' | 'homeroom' | 'curriculum' | 'settings' | 'backup' | 'advanced' | 'schoolboard';
 
 export interface TimetableAdminPage {
   id: string;
@@ -24,24 +24,25 @@ export const TIMETABLE_ADMIN_GROUPS: { title: string; pages: TimetableAdminPage[
     { id: 'curriculum', label: 'Khối - môn - số tiết', tab: 'curriculum', description: 'Kiểm tra và điều chỉnh số tiết mỗi tuần theo lớp và môn.' },
     { id: 'analysis', label: 'Phân tích PCCM', tab: 'diagnostics', description: 'Kiểm tra tải giảng dạy và tính khả thi của phân công.' },
     { id: 'schedule', label: 'Xếp thời khóa biểu', tab: 'schedule', description: 'Xếp tự động, xem lịch lớp, giáo viên và phòng học.' },
+    { id: 'schoolboard', label: 'Bảng lịch toàn trường', tab: 'schoolboard', description: 'Xem tất cả lớp trên cùng một bảng, lọc theo ngày và cấp học.' },
     { id: 'refine', label: 'Tinh chỉnh TKB', tab: 'schedule', description: 'Chọn tiết rồi chuyển sang ô trống; mọi thay đổi được kiểm tra độc lập.' },
     { id: 'agent', label: 'Trợ lý thời khóa biểu', tab: 'agent', description: 'Nhập yêu cầu bằng tiếng Việt, xem trước rồi duyệt ràng buộc.' },
   ] },
   { title: 'Cấu hình', pages: [
-    { id: 'campuses', label: 'Cơ sở trường học', tab: 'advanced', description: 'Phạm vi hỗ trợ cơ sở và tài nguyên dùng chung.' },
+    { id: 'campuses', label: 'Cơ sở trường học', tab: 'advanced', description: 'Quản lý điểm trường, sĩ số, sức chứa phòng và khoảng nghỉ chuyển cơ sở.' },
     { id: 'sessions', label: 'Buổi học', tab: 'settings', description: 'Cấu hình số tiết sáng và chiều trong ngày.' },
     { id: 'days', label: 'Ngày học', tab: 'settings', description: 'Chọn tuần học 5 hoặc 6 ngày.' },
     { id: 'breaks', label: 'Tiết nghỉ / giờ bận', tab: 'constraints', constraint: 'class', description: 'Khóa các ô thời gian không học của từng lớp.' },
     { id: 'class-session', label: 'Lớp - môn - buổi', tab: 'curriculum', description: 'Chọn buổi sáng, chiều hoặc bất kỳ cho mỗi phân công.' },
     { id: 'teacher-session', label: 'Giáo viên - buổi dạy', tab: 'constraints', constraint: 'teacher', description: 'Đánh dấu giờ bận theo từng giáo viên.' },
-    { id: 'same-session', label: 'Môn cùng buổi', tab: 'advanced', description: 'Phạm vi hỗ trợ nhóm môn học cùng buổi.' },
+    { id: 'same-session', label: 'Môn cùng buổi', tab: 'advanced', description: 'Đồng bộ các buổi tương ứng của nhiều phân công trong cùng ngày và buổi.' },
     { id: 'fixed', label: 'Môn / tiết cố định', tab: 'curriculum', description: 'Đặt thời điểm bắt đầu cố định cho từng phân công.' },
     { id: 'limits', label: 'Giới hạn số tiết', tab: 'settings', description: 'Giới hạn tiết mỗi ngày, tiết liên tục của giáo viên.' },
-    { id: 'concurrency', label: 'Giới hạn số lớp', tab: 'advanced', description: 'Phạm vi giới hạn số lớp học cùng môn một lúc.' },
+    { id: 'concurrency', label: 'Giới hạn số lớp', tab: 'advanced', description: 'Giới hạn số lớp có thể học cùng một môn tại mỗi tiết.' },
   ] },
   { title: 'Ghép lớp / Tách lớp', pages: [
-    { id: 'merge', label: 'Ghép lớp', tab: 'advanced', description: 'Đối chiếu khả năng ghép các lớp học chung.' },
-    { id: 'split', label: 'Tách lớp', tab: 'advanced', description: 'Đối chiếu khả năng chia lớp thành nhóm học đồng thời.' },
+    { id: 'merge', label: 'Ghép lớp', tab: 'advanced', description: 'Ghép nhiều lớp học chung, giữ giờ cho toàn bộ giáo viên đồng giảng.' },
+    { id: 'split', label: 'Tách lớp', tab: 'advanced', description: 'Chia lớp thành các nhóm không trùng học sinh và đồng bộ lịch song song.' },
   ] },
   { title: 'Xuất Excel / In TKB', pages: [
     { id: 'export', label: 'Xuất Excel toàn trường', tab: 'backup', description: 'Xuất bảng tổng hợp và thời khóa biểu từng lớp, từng giáo viên.' },
@@ -50,7 +51,7 @@ export const TIMETABLE_ADMIN_GROUPS: { title: string; pages: TimetableAdminPage[
   ] },
   { title: 'Công khai TKB', pages: [
     { id: 'publication', label: 'Kiểm tra trước công bố', tab: 'diagnostics', description: 'Kiểm tra độc lập trước khi chia sẻ file Excel hoặc PDF.' },
-    { id: 'public-links', label: 'Liên kết tra cứu', tab: 'advanced', description: 'Phạm vi hỗ trợ liên kết tra cứu thời khóa biểu.' },
+    { id: 'public-links', label: 'Liên kết tra cứu', tab: 'advanced', description: 'Phát hành bản lịch được kiểm tra, tạo trang tra cứu hoặc xuất HTML độc lập.' },
   ] },
   { title: 'Sao lưu TKB', pages: [
     { id: 'backup', label: 'Sao lưu / Khôi phục', tab: 'backup', description: 'Sao lưu JSON, nhập Excel và phục hồi các phương án.' },
@@ -59,7 +60,7 @@ export const TIMETABLE_ADMIN_GROUPS: { title: string; pages: TimetableAdminPage[
     { id: 'rooms', label: 'Phòng học', tab: 'catalog', catalog: 'room', description: 'Khai báo phòng và tài nguyên dùng chung.' },
     { id: 'room-schedule', label: 'Thời khóa biểu phòng', tab: 'schedule', view: 'room', description: 'Xem lịch sử dụng và phòng đã được gán trong phân công.' },
     { id: 'room-availability', label: 'Phòng không khả dụng', tab: 'constraints', constraint: 'room', description: 'Khóa thời gian bảo trì hoặc phòng không thể sử dụng.' },
-    { id: 'exam-rooms', label: 'Chia phòng thi', tab: 'advanced', description: 'Phạm vi chia phòng thi trong bộ thời khóa biểu.' },
+    { id: 'exam-rooms', label: 'Chia phòng thi', tab: 'advanced', description: 'Chia thí sinh theo sức chứa phòng và xuất danh sách đã kiểm tra.' },
   ] },
 ];
 
