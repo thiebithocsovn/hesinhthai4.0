@@ -8,6 +8,20 @@ import { initializePwaInstallation, registerClassroomServiceWorker } from './lib
 
 initializePwaInstallation();
 
+// A direct timetable/public-link entry must not start unrelated game reporting or
+// learning-wall DOM observers. Both can be initialized normally after navigating back.
+function isTimetableEntry(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('app') === 'smart-timetable' || params.has('tkb')) return true;
+  try {
+    return JSON.parse(sessionStorage.getItem('currentView') || 'null') === 'smart-timetable';
+  } catch {
+    return false;
+  }
+}
+
+const timetableEntry = isTimetableEntry();
+
 function deferHeadShakeReporting(): void {
   const loadReporting = () => {
     void import('./lib/headShakeReportController')
@@ -22,7 +36,7 @@ function deferHeadShakeReporting(): void {
   }
 }
 
-deferHeadShakeReporting();
+if (!timetableEntry) deferHeadShakeReporting();
 
 if (import.meta.env.PROD) {
   registerClassroomServiceWorker(import.meta.env.BASE_URL);
@@ -73,4 +87,4 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-initializeLearningWallDashboardRename();
+if (!timetableEntry) initializeLearningWallDashboardRename();
