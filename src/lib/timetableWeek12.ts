@@ -20,7 +20,24 @@ export function week12TeacherNameIssues(s: TimetableScenario): string[] {
     'Tuần 12: chưa xác định duy nhất giáo viên ' + name + '. Kiểm tra danh mục giáo viên (tránh trùng tên).',
   ]);
 }
-export function replaceTeacherInWeek12(s: TimetableScenario, fromName = 'Biên', toName = 'Hồng'): {
+function captureMondayAfternoon(s: TimetableScenario, solution: { teachingWeek?: number; entries: ScheduleEntry[] }): Pick<TimetableScenario, 'week12MondayAfternoonSnapshot' | 'week12FrozenStarts'> {
+  const morning = s.morningPeriods ?? 5;
+  const pm = solution.entries.filter(e => e.dayIndex === 0 && e.period > morning);
+  const snapshot = pm.map(e => ({ assignmentId: e.assignmentId, period: e.period }));
+  const fixedByAssignment = new Map<string, Map<string, number>>();
+  for (const e of pm) {
+    const grouped = fixedByAssignment.get(e.assignmentId) || new Map<string, number>();
+    const blockKey = e.blockId || e.id;
+    grouped.set(blockKey, Math.min(e.period, grouped.get(blockKey) ?? Infinity));
+    fixedByAssignment.set(e.assignmentId, grouped);
+  }
+  const fixed: Record<string, string[]> = {};
+  for (const [assignmentId, grouped] of fixedByAssignment)
+    fixed[assignmentId] = [...new Set([...grouped.values()].map(period => '0:' + period))];
+  return { week12MondayAfternoonSnapshot: snapshot, week12FrozenStarts: fixed };
+}
+
+export function replaceTeacherInWeek12(s: TimetableScenario, fromName = 'Biên', toName = 'Hồng', solution: { teachingWeek?: number; entries: ScheduleEntry[] } | null = null): {
   next?: TimetableScenario; count: number; errors: string[];
 } {
   const from = matchingTeacher(s, fromName), to = matchingTeacher(s, toName);
@@ -35,6 +52,8 @@ export function replaceTeacherInWeek12(s: TimetableScenario, fromName = 'Biên',
   return { count, errors: [], next: {
     ...s,
     week12TeacherRemaps: { ...(s.week12TeacherRemaps || {}), [from.id]: to.id },
+    ...(solution && (solution.teachingWeek === undefined || solution.teachingWeek === 12)
+      && s.week12MondayAfternoonSnapshot === undefined ? captureMondayAfternoon(s, solution) : {}),
   } };
 }
 function isPhysicalEducation(s: TimetableScenario, subjectId: string): boolean {
@@ -130,20 +149,16 @@ export function enableWeek12Rules(s: TimetableScenario, solution: { teachingWeek
   if (!s.assignments.length) return { errors: ['Tuần 12 đang thiếu phân công. Hãy nhập bảng phân công giảng dạy trước.'], details: [] };
   const nameIssues = week12TeacherNameIssues({ ...s, week12RulesEnabled: true });
   if (nameIssues.length) return { errors: nameIssues, details: [] };
-  if (!solution || (solution.teachingWeek !== undefined && solution.teachingWeek !== 12)) return {
+  const hasSnapshot = Array.isArray(s.week12MondayAfternoonSnapshot) && Boolean(s.week12FrozenStarts);
+  if (!hasSnapshot && (!solution || (solution.teachingWeek !== undefined && solution.teachingWeek !== 12))) return {
     errors: ['Chưa có phương án tuần 12 để cố định chiều thứ Hai. Hãy nhập/mở bản TKB tuần 12 trước khi áp dụng.'], details: [],
   };
-  const morning = s.morningPeriods ?? 5;
-  const snapshot = solution.entries.filter(e => e.dayIndex === 0 && e.period > morning).map(e => ({ assignmentId: e.assignmentId, period: e.period }));
-  const fixedByAssignment = new Map<string, Map<string, number>>();
-  for (const e of solution.entries.filter(e => e.dayIndex === 0 && e.period > morning)) {
-    const grouped = fixedByAssignment.get(e.assignmentId) || new Map<string, number>();
-    const key = e.blockId || e.id;
-    grouped.set(key, Math.min(e.period, grouped.get(key) ?? Infinity));
-    fixedByAssignment.set(e.assignmentId, grouped);
-  }
-  const fixed: Record<string, string[]> = {};
-  for (const [assignmentId, grouped] of fixedByAssignment) fixed[assignmentId] = [...new Set([...grouped.values()].map(period => '0:' + period))];
+  const frozen = hasSnapshot ? {
+    week12MondayAfternoonSnapshot: s.week12MondayAfternoonSnapshot!,
+    week12FrozenStarts: s.week12FrozenStarts!,
+  } : captureMondayAfternoon(s, solution!);
+  const snapshot = frozen.week12MondayAfternoonSnapshot;
+  const fixed = frozen.week12FrozenStarts;
   return {
     next: {
       ...s, week12RulesEnabled: true,
