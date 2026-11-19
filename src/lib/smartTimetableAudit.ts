@@ -10,7 +10,7 @@ import {
 } from './smartTimetable.js';
 import { assignmentCampus, assignmentClassIds, assignmentStudentCount, assignmentStudentGroupIds, assignmentTeacherIds, classResourceAtoms } from './smartTimetableResources.js';
 
-import { week12PlacementProblems, week12SoftWarnings } from './timetableWeek12';
+import { week12PlacementProblems, week12SoftWarnings } from './timetableWeek12.js';
 
 export interface TimetableAuditReport {
   expectedPeriods: number;
