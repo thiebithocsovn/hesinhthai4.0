@@ -7,7 +7,7 @@ import {
   type TimetableSolution,
 } from './smartTimetable';
 import { assignmentClassIds } from './smartTimetableResources';
-import { enableWeek12Rules, replaceTeacherInWeek12 } from './timetableWeek12';
+import { enableWeek12Rules, replaceTeacherInWeek12 } from './timetableWeek12.js';
 
 export interface TimetableAgentProposal {
   status: 'ready' | 'information' | 'unsupported';
