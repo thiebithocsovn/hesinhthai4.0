@@ -1,5 +1,5 @@
 import TimetableEducationPanel, { TimetableEducationCatalogDetails, TimetableTeachingCalendarPanel } from './TimetableEducationPanel';
-import { educationLevels, entryClockLabel, scenarioForTeachingWeek, sessionForPeriod, SESSION_LABELS } from '../lib/timetableEducation';
+import { EDUCATION_PROFILES, educationLevels, entryClockLabel, inferEducationKind, scenarioForTeachingWeek, sessionForPeriod, SESSION_LABELS } from '../lib/timetableEducation';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import TimetableAgentPanel from './TimetableAgentPanel';
 import TimetableAdminShell from './TimetableAdminShell';
@@ -197,6 +197,9 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     workerRef.current = null;
   }, []);
 
+  const educationProfile = EDUCATION_PROFILES.find(profile => profile.id === inferEducationKind(scenario));
+  const educationName = educationProfile?.id === 'custom' ? educationLevels(scenario).join(' + ') || educationProfile.name : educationProfile?.name;
+  const timetableTitle = educationName ? `Thời khóa biểu ${educationName}` : 'Thời khóa biểu';
   const days = activeTimetableDays(scenario);
   const weeklyScenario = useMemo(() => scenarioForTeachingWeek(scenario), [scenario]);
   const totalRequiredPeriods = weeklyScenario.assignments.reduce((sum, item) => sum + item.periodsPerWeek, 0);
@@ -454,7 +457,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   return (
     <TimetableAdminShell
       pageId={pageId}
-      schoolName={scenario.name}
+      timetableTitle={timetableTitle}
       trialMode={trialMode}
       onNavigate={navigatePage}
       onBack={onBack}
