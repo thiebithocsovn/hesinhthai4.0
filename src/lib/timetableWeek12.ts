@@ -1,6 +1,6 @@
-import { assignmentActiveInWeek } from './timetableEducation';
-import { assignmentClassIds, assignmentTeacherIds } from './smartTimetableResources';
-import type { ScheduleEntry, TimetableScenario } from './smartTimetable';
+import { assignmentActiveInWeek } from './timetableEducation.js';
+import { assignmentClassIds, assignmentTeacherIds } from './smartTimetableResources.js';
+import type { ScheduleEntry, TimetableScenario } from './smartTimetable.js';
 
 /** All week-12 constraints are opt-in and leave earlier/later weeks unchanged. */
 export function teacherNameKey(name: string): string {
