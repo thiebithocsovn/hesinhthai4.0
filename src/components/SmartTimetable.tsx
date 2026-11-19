@@ -8,6 +8,8 @@ import { TimetableAssignmentResources, TimetableCampusPanel, TimetableConcurrenc
 import TimetablePublicationPanel from './TimetablePublicationPanel';
 import TimetableExamRoomsPanel from './TimetableExamRoomsPanel';
 import TimetableSchoolBoard from './TimetableSchoolBoard';
+import TimetableCoverPanel from './TimetableCoverPanel';
+import { timetableCoverSignature } from '../lib/timetableCover';
 import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from '../lib/smartTimetableResources';
 import { createTimetableWorkbook } from '../lib/timetableExcel';
 import { TIMETABLE_ADMIN_PAGES, type TimetableWorkspaceTab } from '../lib/timetableNavigation';
@@ -453,6 +455,24 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     }
   };
 
+  const downloadDiagnostics = () => {
+    const rows = constraintAlerts.map((item, index) => ({
+      STT: index + 1,
+      'Mã cảnh báo': item.code,
+      'Vấn đề': item.message,
+      'Hướng xử lý': item.remedy,
+      'Chức năng cần sửa': TIMETABLE_ADMIN_PAGES.find(page => page.id === item.pageId)?.label || item.pageId,
+    }));
+    const auditRows = [
+      ...audit.errors.map((item, index) => ({ STT: index + 1, 'Mức độ': 'Lỗi cứng', 'Mô tả': item })),
+      ...audit.warnings.map((item, index) => ({ STT: audit.errors.length + index + 1, 'Mức độ': 'Cảnh báo', 'Mô tả': item })),
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Kết quả': 'Không có lỗi khai báo được phát hiện' }]), 'Loi_khai_bao');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(auditRows.length ? auditRows : [{ 'Kết quả': solution ? 'Không có lỗi kiểm toán' : 'Chưa có phương án xếp lịch' }]), 'Kiem_toan_TKB');
+    XLSX.writeFile(wb, `Bao-cao-kiem-tra-TKB-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   const exportExcel = () => {
     if (!solution) return;
     const report = auditTimetableSolution(scenario, solution);
@@ -489,7 +509,10 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       {constraintAlerts.length > 0 && <section role="alert" aria-label="Cảnh báo ràng buộc thời khóa biểu" className="mb-4 rounded-xl border border-rose-300 bg-rose-50 p-4 text-rose-950">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><p className="font-extrabold"><AlertTriangle size={16} className="mr-2 inline" />{constraintAlerts.length} ràng buộc cần xử lý</p><p className="mt-1 text-xs">Phát hiện ngay khi khai báo. Chưa nên xếp lịch hoặc công bố cho tới khi sửa xong.</p></div>
-          <button type="button" className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-bold hover:bg-rose-100" onClick={() => navigatePage('analysis')}>Xem phân tích</button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-bold hover:bg-rose-100" onClick={downloadDiagnostics}><Download size={14} className="mr-1 inline" />Tải báo cáo lỗi Excel</button>
+            <button type="button" className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-bold hover:bg-rose-100" onClick={() => navigatePage('analysis')}>Xem phân tích</button>
+          </div>
         </div>
         <ol className="mt-3 space-y-2">
           {constraintAlerts.slice(0, 3).map((alert, index) => <li key={alert.code + alert.message} className="rounded-lg bg-white/85 px-3 py-2 text-xs leading-5">
@@ -510,6 +533,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
         {scenario.education && <div className="tt-panel flex flex-wrap items-center justify-between gap-3"><div className="text-sm"><b>{scenario.education.levels.join(' + ')}</b><span className="ml-3 text-slate-500">{scenario.education.academicYear} · {scenario.education.term}</span></div><label className="text-xs font-semibold">Tuần đang xếp <select aria-label="Chọn tuần xếp lịch" className="ml-2 rounded-md border px-3 py-2" value={scenario.education.activeWeek} onChange={e => changeScenario({ ...scenario, education: { ...scenario.education!, activeWeek: Number(e.target.value) } })}>{Array.from({ length: scenario.education.weekCount }, (_, i) => <option key={i} value={i + 1}>Tuần {i + 1} · {(i + 1) % 2 ? 'lẻ' : 'chẵn'}</option>)}</select></label></div>}
         {activeTab === 'education' && <TimetableEducationPanel key={JSON.stringify(scenario.education || null)} scenario={scenario} onChange={changeScenario} />}
         {activeTab === 'schoolboard' && <TimetableSchoolBoard scenario={scenario} solution={solution} />}
+        {activeTab === 'cover' && <TimetableCoverPanel key={timetableCoverSignature(scenario, solution)} scenario={scenario} solution={solution} storageKey={storageKey} />}
         {activeTab === 'overview' && <TimetableOverviewPanel scenario={scenario} solution={solution} navigate={navigatePage} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} />}
         {activeTab === 'catalog' && <><TimetableCatalogPanel key={catalogKind} scenario={scenario} kind={catalogKind} onChange={changeScenario} /><TimetableEducationCatalogDetails scenario={scenario} kind={catalogKind} onChange={changeScenario} />{(catalogKind === 'class' || catalogKind === 'room') && <TimetableResourceDetails scenario={scenario} onChange={changeScenario} />}</>}
         {activeTab === 'grades' && <TimetableGradesPanel scenario={scenario} onChange={changeScenario} />}
@@ -534,6 +558,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
         {activeTab === 'constraints' && <TimetableAvailabilityPanel key={constraintKind} scenario={scenario} kind={constraintKind} onKind={setConstraintKind} onChange={changeScenario} />}
 
+        {activeTab === 'diagnostics' && <div className="flex justify-end"><button type="button" className="tt-button" onClick={downloadDiagnostics}><Download size={15}/>Tải báo cáo kiểm tra Excel</button></div>}
         {activeTab === 'schedule' && (
           <div className="space-y-4">
             <div className="tt-panel flex flex-wrap items-center justify-between gap-3">
