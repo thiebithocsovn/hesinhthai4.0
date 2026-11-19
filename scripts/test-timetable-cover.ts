@@ -8,7 +8,7 @@ const scenario: TimetableScenario = {
   teachers: [
     { id: 't1', name: 'Giáo viên 1', level: 'THCS' },
     { id: 't2', name: 'Giáo viên 2', level: 'THCS' },
-    { id: 't3', name: 'Giáo viên 3', level: 'THCS', maxPeriodsPerDay: 2 },
+    { id: 't3', name: 'Giáo viên 3', level: 'THCS', maxPeriodsPerDay: 3 },
   ],
   classes: [
     { id: 'c1', name: '6A', level: 'THCS' }, { id: 'c2', name: '7A', level: 'THCS' },
@@ -40,7 +40,7 @@ const collision = { ...cover, substituteTeacherId: 't2' };
 assert.ok(validateTimetableCovers(scenario, solution, [collision]).some(x => x.includes('Trùng lịch')));
 const unavailable: TimetableScenario = { ...scenario, teachers: scenario.teachers.map(t => t.id === 't3' ? { ...t, unavailableSlots: ['0:1'] } : t) };
 assert.ok(validateTimetableCovers(unavailable, solution, [cover]).some(x => x.includes('đang bận')));
-const overloaded: TimetableScenario = { ...scenario, teachers: scenario.teachers.map(t => t.id === 't3' ? { ...t, maxPeriodsPerDay: 1 } : t) };
+const overloaded: TimetableScenario = { ...scenario, teachers: scenario.teachers.map(t => t.id === 't3' ? { ...t, maxPeriodsPerDay: 2 } : t) };
 assert.ok(validateTimetableCovers(overloaded, solution, [cover]).some(x => x.includes('tối đa/ngày')));
 const partial = { ...cover, entryIds: [selected[0].id] };
 assert.ok(validateTimetableCovers(scenario, solution, [partial]).some(x => x.includes('toàn bộ block')));
