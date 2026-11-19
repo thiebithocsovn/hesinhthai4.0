@@ -260,12 +260,14 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
   const loadSharedWorkspace = (incomingScenario: TimetableScenario, incomingSolution: TimetableSolution | null) => {
     const nextScenario = normalizeTimetableScenario(incomingScenario);
-    const nextSolution = normalizeSolution(incomingSolution);
+    let nextSolution = normalizeSolution(incomingSolution);
+    let incompleteDraft = false;
     if (nextSolution) {
       const report = auditTimetableSolution(nextScenario, nextSolution);
       if (!report.valid || !report.complete) {
-        setMessage('Không thể tải bản nhóm: lịch chưa khớp dữ liệu hoặc không đạt kiểm tra độc lập.');
-        return;
+        // Preserve the team's scenario while refusing to display an invalid solution as a valid timetable.
+        nextSolution = null;
+        incompleteDraft = true;
       }
     }
     setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20));
@@ -275,7 +277,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     setSolution(nextSolution);
     setVersions([]);
     setSelectedEntryId('');
-    setMessage('Đã nạp dữ liệu trường; có thể hoàn tác để về bản làm việc trước đó.');
+    setMessage(incompleteDraft ? 'Đã nạp dữ liệu khai báo của trường. Phương án chưa hợp lệ nên không được mở; hãy xếp và kiểm tra lại.' : 'Đã nạp dữ liệu trường; có thể hoàn tác để về bản làm việc trước đó.');
   };
   const restoreWorkspace = (workspace: PersistedWorkspace) => { cancelOptimizer(); setScenario(workspace.scenario); setSolution(workspace.solution); setVersions(workspace.versions); setSelectedEntryId(''); };
   const undo = () => {
