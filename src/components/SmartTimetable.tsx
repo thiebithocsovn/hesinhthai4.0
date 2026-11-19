@@ -9,6 +9,7 @@ import TimetablePublicationPanel from './TimetablePublicationPanel';
 import TimetableExamRoomsPanel from './TimetableExamRoomsPanel';
 import TimetableSchoolBoard from './TimetableSchoolBoard';
 import TimetableCoverPanel from './TimetableCoverPanel';
+import TimetableSchoolsPanel from './TimetableSchoolsPanel';
 import { timetableCoverSignature } from '../lib/timetableCover';
 import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from '../lib/smartTimetableResources';
 import { createTimetableWorkbook } from '../lib/timetableExcel';
@@ -257,6 +258,25 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     resetSolution();
   };
 
+  const loadSharedWorkspace = (incomingScenario: TimetableScenario, incomingSolution: TimetableSolution | null) => {
+    const nextScenario = normalizeTimetableScenario(incomingScenario);
+    const nextSolution = normalizeSolution(incomingSolution);
+    if (nextSolution) {
+      const report = auditTimetableSolution(nextScenario, nextSolution);
+      if (!report.valid || !report.complete) {
+        setMessage('Không thể tải bản nhóm: lịch chưa khớp dữ liệu hoặc không đạt kiểm tra độc lập.');
+        return;
+      }
+    }
+    setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20));
+    setRedoHistory([]);
+    cancelOptimizer();
+    setScenario(nextScenario);
+    setSolution(nextSolution);
+    setVersions([]);
+    setSelectedEntryId('');
+    setMessage('Đã nạp dữ liệu trường; có thể hoàn tác để về bản làm việc trước đó.');
+  };
   const restoreWorkspace = (workspace: PersistedWorkspace) => { cancelOptimizer(); setScenario(workspace.scenario); setSolution(workspace.solution); setVersions(workspace.versions); setSelectedEntryId(''); };
   const undo = () => {
     const previous = undoHistory[undoHistory.length - 1]; if (!previous) return;
@@ -534,6 +554,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
         {activeTab === 'education' && <TimetableEducationPanel key={JSON.stringify(scenario.education || null)} scenario={scenario} onChange={changeScenario} />}
         {activeTab === 'schoolboard' && <TimetableSchoolBoard scenario={scenario} solution={solution} />}
         {activeTab === 'cover' && <TimetableCoverPanel key={timetableCoverSignature(scenario, solution)} scenario={scenario} solution={solution} storageKey={storageKey} />}
+        {activeTab === 'schools' && <TimetableSchoolsPanel scenario={scenario} solution={solution} trialMode={trialMode} onLoad={loadSharedWorkspace} />}
         {activeTab === 'overview' && <TimetableOverviewPanel scenario={scenario} solution={solution} navigate={navigatePage} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} />}
         {activeTab === 'catalog' && <><TimetableCatalogPanel key={catalogKind} scenario={scenario} kind={catalogKind} onChange={changeScenario} /><TimetableEducationCatalogDetails scenario={scenario} kind={catalogKind} onChange={changeScenario} />{(catalogKind === 'class' || catalogKind === 'room') && <TimetableResourceDetails scenario={scenario} onChange={changeScenario} />}</>}
         {activeTab === 'grades' && <TimetableGradesPanel scenario={scenario} onChange={changeScenario} />}
