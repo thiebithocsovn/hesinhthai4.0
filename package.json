@@ -69,7 +69,7 @@
     "test:teacher-printing": "node --import tsx scripts/test-teacher-exam-printing.ts",
     "test:timetable-agent": "node --import tsx scripts/test-timetable-agent.ts",
     "test:timetable-admin": "node --import tsx scripts/test-timetable-admin.ts",
-    "test:timetable-advanced": "node --import tsx scripts/test-timetable-advanced.ts && node --import tsx scripts/test-timetable-publication.ts && npm run test:timetable-education",
+    "test:timetable-advanced": "node --import tsx scripts/test-timetable-advanced.ts && node --import tsx scripts/test-timetable-publication.ts && node --import tsx scripts/test-timetable-saas.ts && npm run test:timetable-education",
     "test:timetable-ui": "node scripts/test-timetable-ui.cjs",
     "test:timetable-education": "node --import tsx scripts/test-timetable-education.ts"
   },
