@@ -33,7 +33,6 @@ import * as XLSX from 'xlsx';
 import {
   TIMETABLE_DAYS,
   activeTimetableDays,
-  analyzeTimetableScenario,
   createDefaultTimetableScenario,
   normalizeTimetableScenario,
   optimizeTimetable,
