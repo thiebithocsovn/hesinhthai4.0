@@ -62,6 +62,7 @@ export interface TimetableSchoolsStore {
 export interface TimetableSchoolsDeps {
   ready(): boolean;
   verify(token: string): Promise<TimetableSchoolIdentity>;
+  canCreateSchool?: (actor: TimetableSchoolIdentity) => boolean;
   store: TimetableSchoolsStore;
   solver?: (scenario: TimetableScenario, locked: unknown[], timeLimitSeconds: number) => Promise<unknown>;
 }
@@ -120,6 +121,7 @@ export function createTimetableSchoolsApp(deps: TimetableSchoolsDeps, origins = 
       if (action === 'list' && req.method === 'GET') { res.json({ schools: await deps.store.list(actor.uid) }); return; }
       if (action === 'create' && req.method === 'POST') {
         const name = requiredString(body.name, 'Tên trường', 160);
+        if (deps.canCreateSchool && !deps.canCreateSchool(actor)) throw new SchoolError(403, 'Tài khoản chưa được cấp quyền mở trường trong giai đoạn thí điểm.');
         if ((await deps.store.list(actor.uid)).filter(s => s.ownerUid === actor.uid).length >= 3) throw new SchoolError(409, 'Mỗi tài khoản được tạo tối đa 3 trường trong giai đoạn thí điểm.');
         const school: TimetableSchool = { id: 's' + randomBytes(12).toString('base64url'), name, ownerUid: actor.uid, plan: 'pilot', seatLimit: 10, createdAt: new Date().toISOString() };
         await deps.store.create(school, actor); res.status(201).json({ school }); return;
