@@ -177,6 +177,7 @@ export function createFirebaseTimetableSchoolsApp() {
       return { uid: user.uid, email: user.email, emailVerified: true };
     },
     store: new FirebaseSchoolStore(),
+    canCreateSchool(actor) { const allowlist = (process.env.TIMETABLE_SAAS_CREATORS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean); return allowlist.includes(actor.email.toLowerCase()); },
     solver,
   }, new Set((process.env.ALLOWED_ORIGINS || 'https://thiebithocsovn.github.io,https://hesinhthai4-0.vercel.app,https://hesinhthai4-0-thietbihocso.vercel.app').split(',').map(x => x.trim()).filter(Boolean)));
 }
