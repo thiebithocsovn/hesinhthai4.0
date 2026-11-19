@@ -85,7 +85,7 @@ export function planTimetableAgentCommand(
     };
   }
   if (/(?:thay|doi) (?:(?:co|gv|giao vien) )?bien (?:bang|sang|cho) (?:(?:co|gv|giao vien) )?hong/.test(text)) {
-    const outcome = replaceTeacherInWeek12(scenario);
+    const outcome = replaceTeacherInWeek12(scenario, 'Biên', 'Hồng', solution);
     if (!outcome.next) return empty('Không thể thay phân công cô Biên', outcome.errors, 'information');
     return {
       status: 'ready',
