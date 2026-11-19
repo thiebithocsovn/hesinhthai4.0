@@ -26,8 +26,6 @@ export default function TimetableAgentPanel({ scenario, solution, busy, onApply,
     firstRoom + ' bận sáng thứ Tư',
     'Lớp ' + firstClass + ' không học thứ Sáu tiết 5',
     'Mở khóa ' + firstTeacher + ' thứ Ba tiết 2',
-    'Thay cô Biên bằng cô Hồng tuần 12',
-    'Áp dụng 10 ràng buộc tuần 12',
     'Thống kê thời khóa biểu',
   ];
 

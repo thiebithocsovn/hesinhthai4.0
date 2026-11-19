@@ -1,18 +1,11 @@
 import TimetableEducationPanel, { TimetableEducationCatalogDetails, TimetableTeachingCalendarPanel } from './TimetableEducationPanel';
 import { EDUCATION_PROFILES, educationLevels, entryClockLabel, inferEducationKind, scenarioForTeachingWeek, sessionForPeriod, SESSION_LABELS } from '../lib/timetableEducation';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import TimetableAgentPanel from './TimetableAgentPanel';
 import TimetableAdminShell from './TimetableAdminShell';
 import { TimetableAvailabilityPanel, TimetableBackupPanel, TimetableCatalogPanel, TimetableCurriculumPanel, TimetableGradesPanel, TimetableHomeroomPanel, TimetableOverviewPanel, TimetableSettingsPanel } from './TimetableAdminPanels';
 import { TimetableAssignmentResources, TimetableCampusPanel, TimetableConcurrencyPanel, TimetableMergePanel, TimetableResourceDetails, TimetableSameSessionPanel, TimetableSplitPanel, TimetableTeacherDaysPanel } from './TimetableAdvancedPanels';
-import TimetablePublicationPanel from './TimetablePublicationPanel';
-import TimetableExamRoomsPanel from './TimetableExamRoomsPanel';
-import TimetableSchoolBoard from './TimetableSchoolBoard';
-import TimetableCoverPanel from './TimetableCoverPanel';
-import TimetableSchoolsPanel from './TimetableSchoolsPanel';
 import { timetableCoverSignature } from '../lib/timetableCover';
 import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from '../lib/smartTimetableResources';
-import { createTimetableWorkbook } from '../lib/timetableExcel';
 import { TIMETABLE_ADMIN_PAGES, type TimetableWorkspaceTab } from '../lib/timetableNavigation';
 import { moveTimetableBlock, swapTimetableBlocks } from '../lib/timetableAdmin';
 import { auditTimetableSolution } from '../lib/smartTimetableAudit';
@@ -32,7 +25,6 @@ import {
   Undo2,
   Redo2,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import {
   TIMETABLE_DAYS,
   activeTimetableDays,
@@ -51,6 +43,15 @@ import {
   scenarioFromAssignmentRows,
   type TimetableImportRow,
 } from '../lib/smartTimetableImport';
+
+// Load infrequently used timetable workspaces only when their tab is opened.
+// This keeps the core assignment grid and scheduling interactions responsive on slow devices.
+const TimetableAgentPanel = React.lazy(() => import('./TimetableAgentPanel'));
+const TimetablePublicationPanel = React.lazy(() => import('./TimetablePublicationPanel'));
+const TimetableExamRoomsPanel = React.lazy(() => import('./TimetableExamRoomsPanel'));
+const TimetableSchoolBoard = React.lazy(() => import('./TimetableSchoolBoard'));
+const TimetableCoverPanel = React.lazy(() => import('./TimetableCoverPanel'));
+const TimetableSchoolsPanel = React.lazy(() => import('./TimetableSchoolsPanel'));
 
 interface SmartTimetableProps {
   onBack: () => void;
@@ -128,10 +129,6 @@ function downloadBlob(filename: string, data: BlobPart, type: string): void {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
-}
-
-function safeSheetName(name: string, suffix = ''): string {
-  return `${name}${suffix}`.replace(/[\\/?*\[\]:]/g, '-').slice(0, 31);
 }
 
 export default function SmartTimetable({ onBack, storageKey, trialMode = false }: SmartTimetableProps) {
@@ -422,6 +419,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
   const importExcel = async (file: File) => {
     try {
+      const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer());
       const firstSheet = workbook.Sheets[workbook.SheetNames.find(name => name === 'Phan cong') || workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<TimetableImportRow>(firstSheet, { defval: '' });
@@ -439,8 +437,10 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     }
   };
 
-  const downloadExcelTemplate = () => {
-    const classNames = { 'Tiểu học': '5A', 'THCS': '6A', 'THPT': '10A', 'GDTX THCS': 'GDTX 6A', 'GDTX THPT': 'GDTX 10A', 'Đại học': 'CNTT K26' };
+  const downloadExcelTemplate = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const classNames = { 'Tiểu học': '5A', 'THCS': '6A', 'THPT': '10A', 'GDTX THCS': 'GDTX 6A', 'GDTX THPT': 'GDTX 10A', 'Đại học': 'CNTT K26' };
     const sample = [Object.fromEntries(TIMETABLE_IMPORT_COLUMNS.map(column => [column, ''])), ...educationLevels(scenario).map((level, i) => ({
       'Cấp': level, 'Lớp': classNames[level], 'Môn': level === 'Đại học' ? 'Nhập môn lập trình' : 'Tin học', 'Giáo viên': `Giáo viên ${i + 1}`, 'Cấp GV': level,
       'Phòng': `Phòng ${i + 1}`, 'Tiết/tuần': 2, 'Tối đa/ngày': 2, 'Tiết đôi': 2, 'Buổi': level.startsWith('GDTX') ? 'Tối' : 'Bất kỳ',
@@ -452,6 +452,9 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, 'Phan cong');
     XLSX.writeFile(workbook, 'Mau-nhap-phan-cong-TKB.xlsx');
+    } catch (error) {
+      setMessage(error instanceof Error ? 'Không thể tải file mẫu Excel: ' + error.message : 'Không thể tải file mẫu Excel.');
+    }
   };
 
   const exportBackup = () => downloadBlob(
@@ -477,8 +480,10 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     }
   };
 
-  const downloadDiagnostics = () => {
-    const rows = constraintAlerts.map((item, index) => ({
+  const downloadDiagnostics = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const rows = constraintAlerts.map((item, index) => ({
       STT: index + 1,
       'Mã cảnh báo': item.code,
       'Vấn đề': item.message,
@@ -493,9 +498,12 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Kết quả': 'Không có lỗi khai báo được phát hiện' }]), 'Loi_khai_bao');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(auditRows.length ? auditRows : [{ 'Kết quả': solution ? 'Không có lỗi kiểm toán' : 'Chưa có phương án xếp lịch' }]), 'Kiem_toan_TKB');
     XLSX.writeFile(wb, `Bao-cao-kiem-tra-TKB-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (error) {
+      setMessage(error instanceof Error ? 'Không thể tải báo cáo lỗi Excel: ' + error.message : 'Không thể tải báo cáo lỗi Excel.');
+    }
   };
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
     if (!solution) return;
     const report = auditTimetableSolution(scenario, solution);
     if (!report.valid || !report.complete) {
@@ -503,7 +511,12 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       navigatePage('analysis');
       return;
     }
-    XLSX.writeFile(createTimetableWorkbook(scenario, solution), `Thoi-khoa-bieu-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    try {
+      const [XLSX, { createTimetableWorkbook }] = await Promise.all([import('xlsx'), import('../lib/timetableExcel')]);
+      XLSX.writeFile(createTimetableWorkbook(scenario, solution), `Thoi-khoa-bieu-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (error) {
+      setMessage(error instanceof Error ? 'Không thể xuất Excel: ' + error.message : 'Không thể xuất Excel.');
+    }
   };
 
   const visibleEntries = solution?.entries.filter(entry =>
@@ -553,6 +566,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       </section>}
       <fieldset disabled={busy} className="min-w-0 space-y-4">
         {scenario.education && <div className="tt-panel flex flex-wrap items-center justify-between gap-3"><div className="text-sm"><b>{scenario.education.levels.join(' + ')}</b><span className="ml-3 text-slate-500">{scenario.education.academicYear} · {scenario.education.term}</span></div><label className="text-xs font-semibold">Tuần đang xếp <select aria-label="Chọn tuần xếp lịch" className="ml-2 rounded-md border px-3 py-2" value={scenario.education.activeWeek} onChange={e => changeScenario({ ...scenario, education: { ...scenario.education!, activeWeek: Number(e.target.value) } })}>{Array.from({ length: scenario.education.weekCount }, (_, i) => <option key={i} value={i + 1}>Tuần {i + 1} · {(i + 1) % 2 ? 'lẻ' : 'chẵn'}</option>)}</select></label></div>}
+        <React.Suspense fallback={<div role="status" className="tt-panel py-8 text-center text-sm text-slate-600">Đang tải chức năng thời khóa biểu...</div>}>
         {activeTab === 'education' && <TimetableEducationPanel key={JSON.stringify(scenario.education || null)} scenario={scenario} onChange={changeScenario} />}
         {activeTab === 'schoolboard' && <TimetableSchoolBoard scenario={scenario} solution={solution} />}
         {activeTab === 'cover' && <TimetableCoverPanel key={timetableCoverSignature(scenario, solution)} scenario={scenario} solution={solution} storageKey={storageKey} />}
@@ -575,7 +589,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
         {activeTab === 'assignments' && (
           <div className="grid gap-5 lg:grid-cols-[390px_1fr]">
             <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-extrabold">Thêm phân công</h2><p className="mt-1 text-sm text-slate-500">Hỗ trợ tiết đôi, buổi học và một ô cố định.</p><div className="mt-5 space-y-3"><select value={draft.classId || ''} onChange={event => setDraft(previous => ({ ...previous, classId: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">{scenario.classes.map(item => <option key={item.id} value={item.id}>{item.name} · {item.level}</option>)}</select><select value={draft.subjectId || ''} onChange={event => setDraft(previous => ({ ...previous, subjectId: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">{scenario.subjects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={draft.teacherId || ''} onChange={event => setDraft(previous => ({ ...previous, teacherId: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">{scenario.teachers.map(item => <option key={item.id} value={item.id}>{item.name} · {item.level}</option>)}</select><select value={draft.roomId || ''} onChange={event => setDraft(previous => ({ ...previous, roomId: event.target.value || undefined }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">Phòng thường / không khóa phòng</option>{scenario.rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><div className="grid grid-cols-3 gap-2"><label className="text-[11px] font-bold text-slate-600">Tiết/tuần<input type="number" min={1} max={30} value={draft.periodsPerWeek || 1} onChange={event => setDraft(previous => ({ ...previous, periodsPerWeek: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2.5 text-sm" /></label><label className="text-[11px] font-bold text-slate-600">Tối đa/ngày<input type="number" min={1} max={8} value={draft.maxPerDay || 1} onChange={event => setDraft(previous => ({ ...previous, maxPerDay: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2.5 text-sm" /></label><label className="text-[11px] font-bold text-slate-600">Block<select value={draft.blockSize || 1} onChange={event => setDraft(previous => ({ ...previous, blockSize: Number(event.target.value) as 1 | 2 | 3 }))} className="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2.5 text-sm"><option value={1}>1 tiết</option><option value={2}>2 tiết liền</option><option value={3}>3 tiết liền</option></select></label></div><select value={draft.session || 'any'} onChange={event => setDraft(previous => ({ ...previous, session: event.target.value as TeachingAssignment['session'] }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="any">Bất kỳ buổi nào</option><option value="morning">Chỉ buổi sáng</option><option value="afternoon">Chỉ buổi chiều</option><option value="evening">Chỉ buổi tối</option></select><div className="rounded-2xl bg-slate-50 p-3"><div className="mb-2 text-xs font-bold text-slate-600">Ô cố định (không bắt buộc)</div><div className="grid grid-cols-2 gap-2"><select value={fixedDay} onChange={event => setFixedDay(Number(event.target.value))} className="rounded-xl border border-slate-200 px-2 py-2 text-sm"><option value={-1}>Không cố định</option>{days.map((day, index) => <option key={day} value={index}>{day}</option>)}</select><select value={fixedPeriod} onChange={event => setFixedPeriod(Number(event.target.value))} disabled={fixedDay < 0} className="rounded-xl border border-slate-200 px-2 py-2 text-sm disabled:opacity-50">{Array.from({ length: scenario.periodsPerDay }, (_, index) => index + 1).map(period => <option key={period} value={period}>Tiết {period}</option>)}</select></div></div><label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={Boolean(draft.avoidLastPeriod)} onChange={event => setDraft(previous => ({ ...previous, avoidLastPeriod: event.target.checked }))} />Hạn chế tiết cuối buổi/ngày</label><button type="button" onClick={addAssignment} disabled={!scenario.classes.length || !scenario.subjects.length || !scenario.teachers.length} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-bold text-white disabled:opacity-40"><Plus className="h-4 w-4" />Thêm phân công</button></div></section>
-            <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white"><div className="border-b border-slate-200 px-5 py-4"><h2 className="font-extrabold">Danh sách phân công</h2><p className="text-sm text-slate-500">{scenario.assignments.length} yêu cầu · {totalRequiredPeriods} tiết tuần đang chọn</p></div><div className="max-h-[680px] divide-y divide-slate-100 overflow-auto">{scenario.assignments.map(item => <div key={item.id} className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><div className="font-bold text-slate-800">{assignmentClassIds(item).map(id => lookup.classes.get(id)?.name).join(' + ')} · {lookup.subjects.get(item.subjectId)?.name}</div><div className="mt-1 text-xs leading-5 text-slate-500">{lookup.teachers.get((scenario.education?.activeWeek === 12 ? scenario.week12TeacherRemaps?.[item.teacherId] : undefined) || item.teacherId)?.name}{scenario.education?.activeWeek === 12 && scenario.week12TeacherRemaps?.[item.teacherId] ? ' · thay GV tuần 12' : ''} · {item.roomId ? lookup.rooms.get(item.roomId)?.name : 'Phòng thường'} · {item.periodsPerWeek} tiết/tuần · block {item.blockSize || 1}{item.session && item.session !== 'any' ? ` · ${SESSION_LABELS[item.session]}` : ''}{item.fixedStartSlots?.length ? ` · cố định ${item.fixedStartSlots.map(slot => { const parsed = parseTimetableSlot(slot); return parsed ? `${TIMETABLE_DAYS[parsed.dayIndex]} tiết ${parsed.period}` : slot; }).join(', ')}` : ''}</div></div><button type="button" onClick={() => { changeScenario({ ...scenario, assignments: scenario.assignments.filter(value => value.id !== item.id), lessonGroups: scenario.lessonGroups?.map(g => ({ ...g, assignmentIds: g.assignmentIds.filter(id => id !== item.id) })).filter(g => g.assignmentIds.length >= 2) }); }} className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"><Trash2 className="h-4 w-4" /></button></div>)}</div></section>
+            <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white"><div className="border-b border-slate-200 px-5 py-4"><h2 className="font-extrabold">Danh sách phân công</h2><p className="text-sm text-slate-500">{scenario.assignments.length} yêu cầu · {totalRequiredPeriods} tiết tuần đang chọn</p></div><div className="max-h-[680px] divide-y divide-slate-100 overflow-auto">{scenario.assignments.length === 0 && <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 px-6 py-10 text-center"><CalendarRange className="h-9 w-9 text-slate-400" /><h3 className="text-base font-bold text-slate-800">Chưa có phân công giảng dạy</h3><p className="max-w-md text-sm leading-6 text-slate-600">Khai báo lớp, môn học và giáo viên; sau đó thêm phân công ở biểu mẫu bên trái hoặc nhập từ tệp Excel.</p><div className="flex flex-wrap items-center justify-center gap-3"><button type="button" onClick={() => navigatePage('teachers')} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50">Khai báo giáo viên</button><button type="button" onClick={() => excelInputRef.current?.click()} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Nhập phân công Excel</button></div></div>}{scenario.assignments.map(item => <div key={item.id} className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><div className="font-bold text-slate-800">{assignmentClassIds(item).map(id => lookup.classes.get(id)?.name).join(' + ')} · {lookup.subjects.get(item.subjectId)?.name}</div><div className="mt-1 text-xs leading-5 text-slate-500">{lookup.teachers.get((scenario.education?.activeWeek === 12 ? scenario.week12TeacherRemaps?.[item.teacherId] : undefined) || item.teacherId)?.name}{scenario.education?.activeWeek === 12 && scenario.week12TeacherRemaps?.[item.teacherId] ? ' · thay GV tuần 12' : ''} · {item.roomId ? lookup.rooms.get(item.roomId)?.name : 'Phòng thường'} · {item.periodsPerWeek} tiết/tuần · block {item.blockSize || 1}{item.session && item.session !== 'any' ? ` · ${SESSION_LABELS[item.session]}` : ''}{item.fixedStartSlots?.length ? ` · cố định ${item.fixedStartSlots.map(slot => { const parsed = parseTimetableSlot(slot); return parsed ? `${TIMETABLE_DAYS[parsed.dayIndex]} tiết ${parsed.period}` : slot; }).join(', ')}` : ''}</div></div><button type="button" onClick={() => { changeScenario({ ...scenario, assignments: scenario.assignments.filter(value => value.id !== item.id), lessonGroups: scenario.lessonGroups?.map(g => ({ ...g, assignmentIds: g.assignmentIds.filter(id => id !== item.id) })).filter(g => g.assignmentIds.length >= 2) }); }} className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"><Trash2 className="h-4 w-4" /></button></div>)}</div></section>
           </div>
         )}
 
@@ -643,6 +657,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
             <section className="rounded-3xl border border-slate-200 bg-white p-5"><h2 className="font-extrabold">Khả thi của dữ liệu đầu vào</h2>{preflight.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">Không phát hiện bất khả thi rõ ràng trước khi xếp.</div> : <div className="mt-4 space-y-2">{preflight.map(item => <div key={item} className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800">• {item}</div>)}</div>}</section>
           </div>
         )}
+        </React.Suspense>
       </fieldset>
     </TimetableAdminShell>
   );

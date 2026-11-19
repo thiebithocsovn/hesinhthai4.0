@@ -1,4 +1,3 @@
-import { assignmentActiveInWeek } from './timetableEducation.js';
 import { assignmentClassIds, assignmentTeacherIds } from './smartTimetableResources.js';
 import type { ScheduleEntry, TimetableScenario } from './smartTimetable.js';
 
@@ -37,25 +36,6 @@ function captureMondayAfternoon(s: TimetableScenario, solution: { teachingWeek?:
   return { week12MondayAfternoonSnapshot: snapshot, week12FrozenStarts: fixed };
 }
 
-export function replaceTeacherInWeek12(s: TimetableScenario, fromName = 'Biên', toName = 'Hồng', solution: { teachingWeek?: number; entries: ScheduleEntry[] } | null = null): {
-  next?: TimetableScenario; count: number; errors: string[];
-} {
-  const from = matchingTeacher(s, fromName), to = matchingTeacher(s, toName);
-  if (!from || !to) return { count: 0, errors: [
-    ...(!from ? ['Không tìm thấy duy nhất cô ' + fromName + ' trong danh mục giáo viên.'] : []),
-    ...(!to ? ['Không tìm thấy duy nhất cô ' + toName + ' trong danh mục giáo viên; hãy khai báo giáo viên trước.'] : []),
-  ] };
-  if (from.id === to.id) return { count: 0, errors: ['Giáo viên nguồn và đích trùng nhau.'] };
-  const active = s.assignments.filter(a => assignmentActiveInWeek(a, 12, s.education?.weekCount || 18));
-  const count = active.filter(a => assignmentTeacherIds(a).includes(from.id)).length;
-  if (!count) return { count: 0, errors: ['Không có phân công của cô ' + fromName + ' trong tuần 12. Hãy kiểm tra bộ lọc tuần hoặc nhập dữ liệu phân công.'] };
-  return { count, errors: [], next: {
-    ...s,
-    week12TeacherRemaps: { ...(s.week12TeacherRemaps || {}), [from.id]: to.id },
-    ...(solution && (solution.teachingWeek === undefined || solution.teachingWeek === 12)
-      && s.week12MondayAfternoonSnapshot === undefined ? captureMondayAfternoon(s, solution) : {}),
-  } };
-}
 function isPhysicalEducation(s: TimetableScenario, subjectId: string): boolean {
   const subject = s.subjects.find(item => item.id === subjectId);
   const value = teacherNameKey((subject?.name || '') + ' ' + (subject?.code || ''));
