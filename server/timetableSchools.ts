@@ -142,7 +142,7 @@ export function createTimetableSchoolsApp(deps: TimetableSchoolsDeps, origins = 
         requireRole('invite');
         const email = requiredString(body.email, 'Email được mời', 254).toLowerCase();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new SchoolError(422, 'Email không hợp lệ.');
-        const role = body.role as SchoolRole;
+        const role = body.role as Exclude<SchoolRole, 'owner'>;
         if (!['admin', 'scheduler', 'reviewer', 'viewer'].includes(role)) throw new SchoolError(422, 'Vai trò không hợp lệ.');
         const members = await deps.store.members(schoolId);
         if (members.length >= school.seatLimit) throw new SchoolError(409, 'Trường đã đạt giới hạn ' + school.seatLimit + ' tài khoản trong gói thí điểm.');
