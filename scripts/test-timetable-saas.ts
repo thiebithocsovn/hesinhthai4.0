@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { transformSync } from 'esbuild';
 import { createDefaultTimetableScenario, optimizeTimetable } from '../src/lib/smartTimetable';
 import { auditTimetableSolution } from '../src/lib/smartTimetableAudit';
 import { createTimetableSchoolsApp, SchoolError, canSchoolRole, parseInvitationCode, verifyReviewSeparation, type TimetableSchool, type TimetableSchoolIdentity, type TimetableSchoolMembership, type TimetableSchoolInvite, type TimetableSchoolWorkspace, type TimetableSchoolReview, type TimetableSchoolPublicRecord, type TimetableSchoolAudit, type TimetableSchoolsStore } from '../server/timetableSchools';
@@ -124,4 +129,39 @@ try {
   console.log('Timetable SaaS: tenant isolation, identity, one-time invitation, roles, optimistic locking, 4-eyes approval, publish/revoke, no fake solver passed.');
 } finally {
   await new Promise<void>(resolve => server.close(() => resolve()));
+}
+
+
+// Vercel loads independently transformed ESM modules. This catches a route import
+// that works with a bundler but fails at runtime due to a wrong relative .js path.
+const folder = mkdtempSync(join(tmpdir(), 'timetable-saas-route-'));
+try {
+  const sources = [
+    'api/timetable/schools.ts', 'server/timetableSchoolsFirebase.ts', 'server/timetableSchools.ts',
+    'server/teacherAdminCredentials.ts', 'server/teacherAdminFederation.ts',
+    'src/lib/timetableEducation.ts', 'src/lib/smartTimetable.ts', 'src/lib/smartTimetableAdvanced.ts',
+    'src/lib/smartTimetableResources.ts', 'src/lib/smartTimetableAudit.ts', 'src/lib/timetablePublication.ts',
+  ];
+  for (const file of sources) {
+    const target = join(folder, file.replace(/\.ts$/, '.js'));
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, transformSync(readFileSync(file, 'utf8'), { loader: 'ts', format: 'esm', target: 'node24' }).code);
+  }
+  writeFileSync(join(folder, 'package.json'), '{"type":"module"}');
+  writeFileSync(join(folder, 'firebase-applet-config.json'), readFileSync('firebase-applet-config.json'));
+  symlinkSync(resolve('node_modules'), join(folder, 'node_modules'), 'dir');
+  const js = [
+    'import app from ' + JSON.stringify(join(folder, 'api/timetable/schools.js')) + ';',
+    "const server=app.listen(0,'127.0.0.1'); await new Promise(r=>server.once('listening',r));",
+    "try { const r=await fetch('http://127.0.0.1:'+server.address().port+'/api/timetable/schools?action=health');",
+    "const data=await r.json(); if(r.status!==200 || data.available!==false || data.service!=='timetable-schools') throw Error('Serverless route smoke test failed');",
+    "} finally {await new Promise(r=>server.close(r));}",
+  ].join('\n');
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', js], {
+    encoding: 'utf8', timeout: 20000, env: { ...process.env, VERCEL: '1', TIMETABLE_SAAS_ENABLED: 'false' },
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message || 'Serverless route failed');
+  console.log('Timetable SaaS Vercel route: isolated ESM modules initialize safely while pilot is disabled.');
+} finally {
+  rmSync(folder, { recursive: true, force: true });
 }
