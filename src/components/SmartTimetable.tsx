@@ -13,6 +13,7 @@ import { createTimetableWorkbook } from '../lib/timetableExcel';
 import { TIMETABLE_ADMIN_PAGES, type TimetableWorkspaceTab } from '../lib/timetableNavigation';
 import { moveTimetableBlock, swapTimetableBlocks } from '../lib/timetableAdmin';
 import { auditTimetableSolution } from '../lib/smartTimetableAudit';
+import { collectTimetableConstraintAlerts } from '../lib/timetableConstraintAlerts';
 import { printTimetableView } from '../lib/timetablePrint';
 import {
   AlertTriangle,
@@ -205,7 +206,8 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   const totalRequiredPeriods = weeklyScenario.assignments.reduce((sum, item) => sum + item.periodsPerWeek, 0);
   const unscheduledPeriods = solution?.diagnostics.unscheduled.reduce((sum, item) => sum + item.remaining, 0) || 0;
   const lockedEntries = solution?.entries.filter(item => item.locked && !item.fixed) || [];
-  const preflight = useMemo(() => analyzeTimetableScenario(scenario), [scenario]);
+  const constraintAlerts = useMemo(() => collectTimetableConstraintAlerts(scenario), [scenario]);
+  const preflight = constraintAlerts.map(alert => alert.message);
 
   const lookup = useMemo(() => ({
     teachers: new Map(scenario.teachers.map(item => [item.id, item])),
@@ -369,7 +371,14 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       avoidLastPeriod: Boolean(draft.avoidLastPeriod),
       fixedStartSlots,
     };
-    changeScenario({ ...scenario, assignments: [...scenario.assignments, item] });
+    const proposed = { ...scenario, assignments: [...scenario.assignments, item] };
+    const current = new Set(constraintAlerts.map(alert => alert.code + ':' + alert.message));
+    const newlyIntroduced = collectTimetableConstraintAlerts(proposed).filter(alert => !current.has(alert.code + ':' + alert.message));
+    if (newlyIntroduced.length) {
+      setMessage('Không thể thêm phân công vì vi phạm ràng buộc: ' + newlyIntroduced.slice(0, 2).map(alert => alert.message + ' ' + alert.remedy).join(' '));
+      return;
+    }
+    changeScenario(proposed);
   };
 
   const resetWorkspace = () => {
@@ -399,7 +408,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
         grades: [], campuses: [], studentGroups: [], lessonGroups: [], examRoomPlan: undefined,
       });
       if (!next.assignments.length) throw new Error('Không tìm thấy các cột Lớp, Môn và Giáo viên trong sheet đầu tiên.');
-      setPendingImport({ scenario: next, rows: rows.length, ignored: Math.max(0, rows.length - next.assignments.length), issues: analyzeTimetableScenario(next) });
+      setPendingImport({ scenario: next, rows: rows.length, ignored: Math.max(0, rows.length - next.assignments.length), issues: collectTimetableConstraintAlerts(next).map(alert => alert.message + ' ' + alert.remedy) });
     } catch (error) {
       setMessage(error instanceof Error ? `Không thể nhập Excel: ${error.message}` : 'Không thể nhập Excel.');
     } finally {
@@ -447,6 +456,12 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
   const exportExcel = () => {
     if (!solution) return;
+    const report = auditTimetableSolution(scenario, solution);
+    if (!report.valid || !report.complete) {
+      setMessage('Không thể xuất thời khóa biểu chưa hợp lệ. ' + (report.errors[0] || 'Hãy xếp đủ tiết và kiểm tra độc lập trước khi xuất.'));
+      navigatePage('analysis');
+      return;
+    }
     XLSX.writeFile(createTimetableWorkbook(scenario, solution), `Thoi-khoa-bieu-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
@@ -465,13 +480,26 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
         {busy && <button type="button" className="tt-action-export" onClick={() => { cancelOptimizer(); setMessage('Đã dừng lượt xếp. Dữ liệu và phương án trước vẫn được giữ.'); }}>Dừng xếp</button>}
         <button type="button" onClick={undo} disabled={busy || !undoHistory.length} className="tt-action-export" aria-label="Hoàn tác thay đổi"><Undo2 size={14} />Hoàn tác</button>
         <button type="button" onClick={redo} disabled={busy || !redoHistory.length} className="tt-action-export" aria-label="Làm lại thay đổi"><Redo2 size={14} />Làm lại</button>
-        <button type="button" onClick={exportExcel} disabled={!solution || busy} className="tt-action-export"><Download size={15} />Xuất Excel</button>
+        <button type="button" onClick={exportExcel} disabled={!solution || busy || !audit.valid || !audit.complete} className="tt-action-export"><Download size={15} />Xuất Excel</button>
         <button type="button" onClick={runOptimizer} disabled={busy || !scenario.assignments.length} className="tt-action-run"><WandSparkles size={15} />{busy ? 'Đang xếp lịch...' : 'Xếp tự động'}</button>
       </>}
     >
       <input ref={excelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={event => event.target.files?.[0] && void importExcel(event.target.files[0])} />
       <input ref={jsonInputRef} type="file" accept="application/json,.json" className="hidden" onChange={event => event.target.files?.[0] && void importBackup(event.target.files[0])} />
       {message && <div role="status" className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm leading-6 text-indigo-800">{message}</div>}
+      {constraintAlerts.length > 0 && <section role="alert" aria-label="Cảnh báo ràng buộc thời khóa biểu" className="mb-4 rounded-xl border border-rose-300 bg-rose-50 p-4 text-rose-950">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><p className="font-extrabold"><AlertTriangle size={16} className="mr-2 inline" />{constraintAlerts.length} ràng buộc cần xử lý</p><p className="mt-1 text-xs">Phát hiện ngay khi khai báo. Chưa nên xếp lịch hoặc công bố cho tới khi sửa xong.</p></div>
+          <button type="button" className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-bold hover:bg-rose-100" onClick={() => navigatePage('analysis')}>Xem phân tích</button>
+        </div>
+        <ol className="mt-3 space-y-2">
+          {constraintAlerts.slice(0, 3).map((alert, index) => <li key={alert.code + alert.message} className="rounded-lg bg-white/85 px-3 py-2 text-xs leading-5">
+            <b>{index + 1}. {alert.message}</b><p>{alert.remedy}</p>
+            <button type="button" className="mt-1 font-bold underline underline-offset-2" onClick={() => navigatePage(alert.pageId)}>Mở nơi cần sửa</button>
+          </li>)}
+        </ol>
+        {constraintAlerts.length > 3 && <details className="mt-2 text-xs"><summary className="cursor-pointer font-bold">Xem thêm {constraintAlerts.length - 3} cảnh báo</summary><ol className="mt-2 space-y-2">{constraintAlerts.slice(3).map((alert, index) => <li key={alert.code + alert.message} className="rounded bg-white/85 px-3 py-2"><b>{index + 4}. {alert.message}</b><p>{alert.remedy}</p><button type="button" className="mt-1 underline" onClick={() => navigatePage(alert.pageId)}>Mở nơi cần sửa</button></li>)}</ol></details>}
+      </section>
       {busy && <div role="status" className="mb-4 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800">Đang xếp toàn trường. Các ô nhập tạm khóa để giữ nhất quán dữ liệu.</div>}
       {pendingImport && <section role="dialog" aria-modal="true" aria-label="Xem trước dữ liệu nhập Excel" className="tt-panel mb-5 border-indigo-300">
         <h3>Xem trước nhập Excel · chưa thay đổi dữ liệu hiện tại</h3>
@@ -515,7 +543,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
                 <select aria-label="Cấp học xem lịch" value={scheduleLevel} onChange={e => { setScheduleLevel(e.target.value); setSelectedEntryId(''); }} className="rounded-md border px-3 py-2 text-sm"><option value="all">Tất cả cấp / hệ</option>{educationLevels(scenario).map(l => <option key={l}>{l}</option>)}</select>
                 <select aria-label="Chế độ xem thời khóa biểu" value={scheduleView} onChange={event => { setScheduleView(event.target.value as ScheduleView); setSelectedEntryId(''); }} className="rounded-md border border-slate-200 px-3 py-2 text-sm"><option value="class">Theo lớp</option><option value="teacher">Theo giáo viên</option><option value="room">Theo phòng</option></select>
                 <select aria-label="Chọn đối tượng xem lịch" value={scheduleResourceId} onChange={event => { setScheduleResourceId(event.target.value); setSelectedEntryId(''); }} className="rounded-md border border-slate-200 px-3 py-2 text-sm">{scheduleResources.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-                <button type="button" className="tt-button" onClick={() => { if (!solution) return; try { printTimetableView(scenario, solution, scheduleView, scheduleResourceId); } catch (error) { setMessage(error instanceof Error ? error.message : 'Không thể in thời khóa biểu.'); } }} disabled={!solution || !scheduleResourceId}><FileDown size={15} />In / PDF</button><button type="button" className="tt-button" disabled={!solution || !scheduleResources.length} onClick={() => { if (solution) { try { printTimetableView(scenario, solution, scheduleView, '*'); } catch (e) { setMessage(e instanceof Error ? e.message : 'Không thể in.'); } } }}>In tất cả</button>
+                <button type="button" className="tt-button" onClick={() => { if (!solution) return; if (!audit.valid || !audit.complete) { setMessage('Chưa thể in: thời khóa biểu chưa qua kiểm tra độc lập.'); navigatePage('analysis'); return; } try { printTimetableView(scenario, solution, scheduleView, scheduleResourceId); } catch (error) { setMessage(error instanceof Error ? error.message : 'Không thể in thời khóa biểu.'); } }} disabled={!solution || !scheduleResourceId || !audit.valid || !audit.complete}><FileDown size={15} />In / PDF</button><button type="button" className="tt-button" disabled={!solution || !scheduleResources.length || !audit.valid || !audit.complete} onClick={() => { if (solution && audit.valid && audit.complete) { try { printTimetableView(scenario, solution, scheduleView, '*'); } catch (e) { setMessage(e instanceof Error ? e.message : 'Không thể in.'); } } }}>In tất cả</button>
               </div>
             </div>
             {selectedEntryId && <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Đã chọn tiết. Bấm ô đích để chuyển cả block.<button type="button" className="tt-button" onClick={() => setSelectedEntryId('')}>Hủy chọn</button></div>}
