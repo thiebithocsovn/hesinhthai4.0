@@ -1,6 +1,6 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { FieldValue, getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 import { teacherAdminAppOptions } from './teacherAdminCredentials.js';
 import { SchoolError, createTimetableSchoolsApp, type TimetableSchool, type TimetableSchoolIdentity, type TimetableSchoolMembership, type TimetableSchoolInvite, type TimetableSchoolWorkspace, type TimetableSchoolReview, type TimetableSchoolPublicRecord, type TimetableSchoolAudit, type TimetableSchoolsStore } from './timetableSchools.js';
@@ -43,6 +43,17 @@ class FirebaseSchoolStore implements TimetableSchoolsStore {
   }
   async invite(id: string, invite: TimetableSchoolInvite): Promise<void> {
     await schools().doc(id).collection('invites').doc(invite.codeHash).create(invite);
+  }
+  async updateMember(id: string, targetUid: string, role: Exclude<TimetableSchoolMembership['role'], 'owner'> | null, actorUid: string): Promise<void> {
+    const reference = memberRef(id, targetUid), index = userRef(targetUid, id);
+    await firestore().runTransaction(async tx => {
+      const memberSnap = await tx.get(reference);
+      if (!memberSnap.exists || memberSnap.data()?.role === 'owner') throw new SchoolError(409, 'Không được thay đổi chủ trường hoặc thành viên đã bị xóa.');
+      const now = new Date().toISOString();
+      if (role === null) { tx.delete(reference); tx.delete(index); }
+      else { tx.update(reference, { role }); tx.update(index, { role }); }
+      tx.create(auditRef(id), { actor: actorUid, action: role ? 'member-role-changed' : 'member-removed', at: now, detail: targetUid.slice(0, 12) });
+    });
   }
   async join(id: string, hash: string, actor: TimetableSchoolIdentity): Promise<TimetableSchoolMembership> {
     const school = schools().doc(id), inv = school.collection('invites').doc(hash), member = memberRef(id, actor.uid), userIndex = userRef(actor.uid, id);
@@ -107,15 +118,22 @@ class FirebaseSchoolStore implements TimetableSchoolsStore {
       tx.create(auditRef(id), { actor, action: 'review-' + status, at: now, detail: reviewId });
     });
   }
-  async createPublication(id: string, publication: TimetableSchoolPublicRecord): Promise<void> {
+  async createPublication(id: string, publication: TimetableSchoolPublicRecord, actorUid: string): Promise<void> {
     const batch = firestore().batch();
     batch.create(schools().doc(id).collection('publications').doc(publication.id), publication);
-    batch.create(auditRef(id), { actor: 'school-admin', action: 'timetable-published', at: publication.createdAt, detail: publication.approvedReviewId });
+    batch.create(auditRef(id), { actor: actorUid, action: 'timetable-published', at: publication.createdAt, detail: publication.approvedReviewId });
     await batch.commit();
   }
   async publication(id: string, publicId: string): Promise<TimetableSchoolPublicRecord | null> {
     const snap = await schools().doc(id).collection('publications').doc(publicId).get();
     return snap.exists ? snap.data() as TimetableSchoolPublicRecord : null;
+  }
+  async publications(id: string): Promise<Omit<TimetableSchoolPublicRecord, 'snapshot'>[]> {
+    const snap = await schools().doc(id).collection('publications').orderBy('createdAt', 'desc').limit(30).get();
+    return snap.docs.map(x => {
+      const item = x.data() as TimetableSchoolPublicRecord;
+      return { id: item.id, schoolId: item.schoolId, status: item.status, approvedReviewId: item.approvedReviewId, createdAt: item.createdAt };
+    });
   }
   async revoke(id: string, publicId: string, actor: string): Promise<void> {
     const ref = schools().doc(id).collection('publications').doc(publicId);
