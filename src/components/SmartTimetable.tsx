@@ -498,7 +498,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
           </li>)}
         </ol>
         {constraintAlerts.length > 3 && <details className="mt-2 text-xs"><summary className="cursor-pointer font-bold">Xem thêm {constraintAlerts.length - 3} cảnh báo</summary><ol className="mt-2 space-y-2">{constraintAlerts.slice(3).map((alert, index) => <li key={alert.code + alert.message} className="rounded bg-white/85 px-3 py-2"><b>{index + 4}. {alert.message}</b><p>{alert.remedy}</p><button type="button" className="mt-1 underline" onClick={() => navigatePage(alert.pageId)}>Mở nơi cần sửa</button></li>)}</ol></details>}
-      </section>
+      </section>}
       {busy && <div role="status" className="mb-4 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800">Đang xếp toàn trường. Các ô nhập tạm khóa để giữ nhất quán dữ liệu.</div>}
       {pendingImport && <section role="dialog" aria-modal="true" aria-label="Xem trước dữ liệu nhập Excel" className="tt-panel mb-5 border-indigo-300">
         <h3>Xem trước nhập Excel · chưa thay đổi dữ liệu hiện tại</h3>
