@@ -157,8 +157,8 @@ export function enableWeek12Rules(s: TimetableScenario, solution: { teachingWeek
     week12MondayAfternoonSnapshot: s.week12MondayAfternoonSnapshot!,
     week12FrozenStarts: s.week12FrozenStarts!,
   } : captureMondayAfternoon(s, solution!);
-  const snapshot = frozen.week12MondayAfternoonSnapshot;
-  const fixed = frozen.week12FrozenStarts;
+  const snapshot = frozen.week12MondayAfternoonSnapshot || [];
+  const fixed = frozen.week12FrozenStarts || {};
   return {
     next: {
       ...s, week12RulesEnabled: true,
