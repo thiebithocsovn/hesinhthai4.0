@@ -6,7 +6,6 @@ import { TimetableAvailabilityPanel, TimetableBackupPanel, TimetableCatalogPanel
 import { TimetableAssignmentResources, TimetableCampusPanel, TimetableConcurrencyPanel, TimetableMergePanel, TimetableResourceDetails, TimetableSameSessionPanel, TimetableSplitPanel, TimetableTeacherDaysPanel } from './TimetableAdvancedPanels';
 import { timetableCoverSignature } from '../lib/timetableCover';
 import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from '../lib/smartTimetableResources';
-import { createTimetableWorkbook } from '../lib/timetableExcel';
 import { TIMETABLE_ADMIN_PAGES, type TimetableWorkspaceTab } from '../lib/timetableNavigation';
 import { moveTimetableBlock, swapTimetableBlocks } from '../lib/timetableAdmin';
 import { auditTimetableSolution } from '../lib/smartTimetableAudit';
@@ -26,7 +25,6 @@ import {
   Undo2,
   Redo2,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import {
   TIMETABLE_DAYS,
   activeTimetableDays,
@@ -131,10 +129,6 @@ function downloadBlob(filename: string, data: BlobPart, type: string): void {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
-}
-
-function safeSheetName(name: string, suffix = ''): string {
-  return `${name}${suffix}`.replace(/[\\/?*\[\]:]/g, '-').slice(0, 31);
 }
 
 export default function SmartTimetable({ onBack, storageKey, trialMode = false }: SmartTimetableProps) {
@@ -425,6 +419,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
 
   const importExcel = async (file: File) => {
     try {
+      const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer());
       const firstSheet = workbook.Sheets[workbook.SheetNames.find(name => name === 'Phan cong') || workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<TimetableImportRow>(firstSheet, { defval: '' });
@@ -442,8 +437,10 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     }
   };
 
-  const downloadExcelTemplate = () => {
-    const classNames = { 'Tiểu học': '5A', 'THCS': '6A', 'THPT': '10A', 'GDTX THCS': 'GDTX 6A', 'GDTX THPT': 'GDTX 10A', 'Đại học': 'CNTT K26' };
+  const downloadExcelTemplate = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const classNames = { 'Tiểu học': '5A', 'THCS': '6A', 'THPT': '10A', 'GDTX THCS': 'GDTX 6A', 'GDTX THPT': 'GDTX 10A', 'Đại học': 'CNTT K26' };
     const sample = [Object.fromEntries(TIMETABLE_IMPORT_COLUMNS.map(column => [column, ''])), ...educationLevels(scenario).map((level, i) => ({
       'Cấp': level, 'Lớp': classNames[level], 'Môn': level === 'Đại học' ? 'Nhập môn lập trình' : 'Tin học', 'Giáo viên': `Giáo viên ${i + 1}`, 'Cấp GV': level,
       'Phòng': `Phòng ${i + 1}`, 'Tiết/tuần': 2, 'Tối đa/ngày': 2, 'Tiết đôi': 2, 'Buổi': level.startsWith('GDTX') ? 'Tối' : 'Bất kỳ',
@@ -455,6 +452,9 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, 'Phan cong');
     XLSX.writeFile(workbook, 'Mau-nhap-phan-cong-TKB.xlsx');
+    } catch (error) {
+      setMessage(error instanceof Error ? 'Không thể tải file mẫu Excel: ' + error.message : 'Không thể tải file mẫu Excel.');
+    }
   };
 
   const exportBackup = () => downloadBlob(
@@ -480,8 +480,10 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     }
   };
 
-  const downloadDiagnostics = () => {
-    const rows = constraintAlerts.map((item, index) => ({
+  const downloadDiagnostics = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const rows = constraintAlerts.map((item, index) => ({
       STT: index + 1,
       'Mã cảnh báo': item.code,
       'Vấn đề': item.message,
@@ -496,9 +498,12 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Kết quả': 'Không có lỗi khai báo được phát hiện' }]), 'Loi_khai_bao');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(auditRows.length ? auditRows : [{ 'Kết quả': solution ? 'Không có lỗi kiểm toán' : 'Chưa có phương án xếp lịch' }]), 'Kiem_toan_TKB');
     XLSX.writeFile(wb, `Bao-cao-kiem-tra-TKB-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (error) {
+      setMessage(error instanceof Error ? 'Không thể tải báo cáo lỗi Excel: ' + error.message : 'Không thể tải báo cáo lỗi Excel.');
+    }
   };
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
     if (!solution) return;
     const report = auditTimetableSolution(scenario, solution);
     if (!report.valid || !report.complete) {
@@ -506,7 +511,12 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       navigatePage('analysis');
       return;
     }
-    XLSX.writeFile(createTimetableWorkbook(scenario, solution), `Thoi-khoa-bieu-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    try {
+      const [XLSX, { createTimetableWorkbook }] = await Promise.all([import('xlsx'), import('../lib/timetableExcel')]);
+      XLSX.writeFile(createTimetableWorkbook(scenario, solution), `Thoi-khoa-bieu-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (error) {
+      setMessage(error instanceof Error ? 'Không thể xuất Excel: ' + error.message : 'Không thể xuất Excel.');
+    }
   };
 
   const visibleEntries = solution?.entries.filter(entry =>
