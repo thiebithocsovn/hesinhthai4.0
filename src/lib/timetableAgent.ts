@@ -7,7 +7,7 @@ import {
   type TimetableSolution,
 } from './smartTimetable';
 import { assignmentClassIds } from './smartTimetableResources';
-import { enableWeek12Rules, replaceTeacherInWeek12 } from './timetableWeek12.js';
+import { enableWeek12Rules } from './timetableWeek12.js';
 
 export interface TimetableAgentProposal {
   status: 'ready' | 'information' | 'unsupported';
@@ -81,20 +81,6 @@ export function planTimetableAgentCommand(
       status: 'ready',
       title: 'Áp dụng 10 ràng buộc tuần 12',
       details: [...outcome.details, 'Chỉ ghi thay đổi sau khi bấm Xác nhận; cần xếp lại lịch.'],
-      nextScenario: outcome.next, affectedSlots: [], requiresReschedule: true,
-    };
-  }
-  if (/(?:thay|doi) (?:(?:co|gv|giao vien) )?bien (?:bang|sang|cho) (?:(?:co|gv|giao vien) )?hong/.test(text)) {
-    const outcome = replaceTeacherInWeek12(scenario, 'Biên', 'Hồng', solution);
-    if (!outcome.next) return empty('Không thể thay phân công cô Biên', outcome.errors, 'information');
-    return {
-      status: 'ready',
-      title: 'Thay cô Biên bằng cô Hồng – chỉ tuần 12',
-      details: [
-        'Có ' + outcome.count + ' phân công đang sử dụng cô Biên ở tuần 12 sẽ chuyển sang cô Hồng.',
-        'Môn, lớp, số tiết, thời gian, phân công các tuần khác giữ nguyên.',
-        'Hệ thống sẽ kiểm tra xung đột sau khi xếp lại lịch. Cần xác nhận để ghi thay đổi.',
-      ],
       nextScenario: outcome.next, affectedSlots: [], requiresReschedule: true,
     };
   }
