@@ -49,5 +49,5 @@ assert.ok(invalid([entry('hồng', 7, 0, 'van', 'a-bien')]).some(x => x.includes
 assert.equal(invalid([entry('hồng', 6, 0, 'van', 'a-bien')]).length, 0);
 assert.ok(week12SoftPenalty(s, [], [1, 2, 3, 4].map(p => entry('huế', p))) > 0);
 assert.equal(planTimetableAgentCommand('Thay cô Biên bằng cô Hồng tuần 12', scenario, null).status, 'unsupported', 'Hardcoded one-school teacher switch must not run in commercial mode.');
-assert.equal(planTimetableAgentCommand('Áp dụng 10 ràng buộc tuần 12', existingWorkspace, original).status, 'ready');
+assert.equal(planTimetableAgentCommand('Áp dụng 10 ràng buộc tuần 12', enabled.next!, null).status, 'ready');
 console.log('Week 12: legacy saved remap, frozen Monday afternoon, hard constraints and soft preferences verified.');
