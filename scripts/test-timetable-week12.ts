@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createEducationConfiguration, scenarioForTeachingWeek } from '../src/lib/timetableEducation';
 import { planTimetableAgentCommand } from '../src/lib/timetableAgent';
-import { enableWeek12Rules, replaceTeacherInWeek12, week12PlacementProblems, week12SoftPenalty } from '../src/lib/timetableWeek12';
+import { enableWeek12Rules, week12PlacementProblems, week12SoftPenalty } from '../src/lib/timetableWeek12';
 import type { ScheduleEntry, TimetableScenario } from '../src/lib/smartTimetable';
 
 const scenario: TimetableScenario = {
@@ -24,19 +24,15 @@ const entry = (teacherId: string, period: number, dayIndex = 0, subjectId = 'van
   assignmentId, classId: '6a', subjectId, teacherId, dayIndex, period,
 });
 const original = { teachingWeek: 12, entries: [entry('biên', 6, 0, 'van', 'a-bien')] };
-const replacement = replaceTeacherInWeek12(scenario, 'Biên', 'Hồng', original);
-assert.deepEqual(replacement.errors, []);
-assert.equal(replacement.count, 1);
-assert.equal(replacement.next?.week12TeacherRemaps?.['biên'], 'hồng');
-assert.equal(replacement.next?.week12MondayAfternoonSnapshot?.[0]?.period, 6);
-assert.equal(JSON.stringify(scenario), old, 'Preview must not edit original scenario.');
-
-assert.equal(scenarioForTeachingWeek(replacement.next!).assignments.find(a => a.id === 'a-bien')?.teacherId, 'hồng');
-const week11 = { ...replacement.next!, education: { ...replacement.next!.education!, activeWeek: 11 } };
+const existingWorkspace: TimetableScenario = { ...scenario, week12TeacherRemaps: { 'biên': 'hồng' } };
+assert.equal(scenarioForTeachingWeek(existingWorkspace).assignments.find(a => a.id === 'a-bien')?.teacherId, 'hồng', 'Old saved week-12 remaps remain readable.');
+const week11 = { ...existingWorkspace, education: { ...existingWorkspace.education!, activeWeek: 11 } };
 assert.equal(scenarioForTeachingWeek(week11).assignments.find(a => a.id === 'a-bien')?.teacherId, 'biên');
-const enabled = enableWeek12Rules(replacement.next!, null);
+const enabled = enableWeek12Rules(existingWorkspace, original);
 assert.deepEqual(enabled.errors, []);
+assert.equal(JSON.stringify(scenario), old, 'Week-12 rules must not mutate original scenario.');
 assert.equal(enabled.next?.week12RulesEnabled, true);
+assert.equal(enabled.next?.week12MondayAfternoonSnapshot?.[0]?.period, 6);
 assert.deepEqual(scenarioForTeachingWeek(enabled.next!).assignments.find(a => a.id === 'a-bien')?.fixedStartSlots, ['0:6']);
 const s = enabled.next!;
 const invalid = (entries: ScheduleEntry[]) => week12PlacementProblems(s, [], entries);
@@ -52,6 +48,6 @@ assert.ok(invalid([entry('hương', 5, 0, 'toan'), entry('hương', 6, 0, 'toan'
 assert.ok(invalid([entry('hồng', 7, 0, 'van', 'a-bien')]).some(x => x.includes('cố định')));
 assert.equal(invalid([entry('hồng', 6, 0, 'van', 'a-bien')]).length, 0);
 assert.ok(week12SoftPenalty(s, [], [1, 2, 3, 4].map(p => entry('huế', p))) > 0);
-assert.equal(planTimetableAgentCommand('Thay cô Biên bằng cô Hồng tuần 12', scenario, null).status, 'ready');
-assert.equal(planTimetableAgentCommand('Áp dụng 10 ràng buộc tuần 12', replacement.next!, null).status, 'ready');
-console.log('Week 12: teacher swap, frozen Monday afternoon, hard constraints and soft preferences verified.');
+assert.equal(planTimetableAgentCommand('Thay cô Biên bằng cô Hồng tuần 12', scenario, null).status, 'unsupported', 'Hardcoded one-school teacher switch must not run in commercial mode.');
+assert.equal(planTimetableAgentCommand('Áp dụng 10 ràng buộc tuần 12', existingWorkspace, original).status, 'ready');
+console.log('Week 12: legacy saved remap, frozen Monday afternoon, hard constraints and soft preferences verified.');
