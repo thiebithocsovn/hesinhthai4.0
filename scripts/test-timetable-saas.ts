@@ -139,7 +139,7 @@ try {
   const sources = [
     'api/timetable/schools.ts', 'server/timetableSchoolsFirebase.ts', 'server/timetableSchools.ts',
     'server/teacherAdminCredentials.ts', 'server/teacherAdminFederation.ts',
-    'src/lib/timetableEducation.ts', 'src/lib/smartTimetable.ts', 'src/lib/smartTimetableAdvanced.ts',
+    'src/lib/timetableEducation.ts', 'src/lib/timetableWeek12.ts', 'src/lib/smartTimetable.ts', 'src/lib/smartTimetableAdvanced.ts',
     'src/lib/smartTimetableResources.ts', 'src/lib/smartTimetableAudit.ts', 'src/lib/timetablePublication.ts',
   ];
   for (const file of sources) {
