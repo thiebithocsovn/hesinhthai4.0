@@ -113,7 +113,18 @@ export function assignmentActiveInWeek(a: TeachingAssignment, week: number, week
 }
 export function scenarioForTeachingWeek(s: TimetableScenario): TimetableScenario {
   if (!s.education) return s;
-  const assignments = s.assignments.filter(a => assignmentActiveInWeek(a, s.education!.activeWeek, s.education!.weekCount));
+  const isWeek12 = s.education.activeWeek === 12;
+  const remaps = isWeek12 ? (s.week12TeacherRemaps || {}) : {};
+  const assignments = s.assignments.filter(a => assignmentActiveInWeek(a, s.education!.activeWeek, s.education!.weekCount)).map(a => {
+    const frozen = isWeek12 ? (s.week12FrozenStarts?.[a.id] || []) : [];
+    const fixedStartSlots = [...new Set([...(a.fixedStartSlots || []), ...frozen])];
+    return {
+      ...a,
+      teacherId: remaps[a.teacherId] || a.teacherId,
+      additionalTeacherIds: a.additionalTeacherIds?.map(id => remaps[id] || id).filter((id, index, arr) => id !== (remaps[a.teacherId] || a.teacherId) && arr.indexOf(id) === index),
+      fixedStartSlots,
+    };
+  });
   const ids = new Set(assignments.map(a => a.id));
   return { ...s, assignments, lessonGroups: s.lessonGroups?.map(g => ({ ...g, assignmentIds: g.assignmentIds.filter(id => ids.has(id)) })).filter(g => g.assignmentIds.length >= 2) };
 }

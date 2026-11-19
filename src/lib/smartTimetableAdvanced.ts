@@ -2,6 +2,8 @@ import { classDailyLimit, classPeriodInterval, entryInterval, entryTimeAtoms, no
 import type { ScheduleEntry, TeachingAssignment, TimetableScenario, TimetableSolution } from './smartTimetable.js';
 import { advancedScenarioIssues, assignmentCampus, assignmentClassIds, assignmentStudentCount, assignmentStudentGroupIds, assignmentTeacherIds, classResourceAtoms, timetableMetrics } from './smartTimetableResources.js';
 
+import { week12PlacementProblems, week12SoftPenalty } from './timetableWeek12.js';
+
 interface Unit { assignment: TeachingAssignment; index: number; size: number; fixed?: { day: number; period: number }; locked?: ScheduleEntry[]; parallel?: string }
 interface Bundle { units: Unit[]; domain: { day: number; period: number }[]; priority: number }
 interface State { entries: ScheduleEntry[]; occupied: Set<string>; teacherDays: Map<string, Set<number>>; periods: Map<string, Set<number>>; locations: Map<string, ScheduleEntry[]>; subjects: Map<string, Set<string>>; anchors: Map<string, string> }
@@ -153,6 +155,7 @@ export function optimizeAdvancedTimetable(s: TimetableScenario, lockedEntries: S
       if (!a.campusId || !b.campusId || a.campusId === b.campusId) continue;
       if (resources(a).some(r => !r.startsWith('room:') && resources(b).includes(r)) && teachingGap(s, a, b) < travelMinimum(s)) return false;
     }
+    if (week12PlacementProblems(s, state.entries, proposed).length) return false;
     return true;
   };
 
@@ -185,6 +188,7 @@ export function optimizeAdvancedTimetable(s: TimetableScenario, lockedEntries: S
       }
       score += (state.periods.get(`class:${a.classId}:${day}`)?.size || 0) * 2;
     }
+    score += week12SoftPenalty(s, state.entries, makeEntries(bundle, day, p));
     return score;
   };
   let best = result([]);

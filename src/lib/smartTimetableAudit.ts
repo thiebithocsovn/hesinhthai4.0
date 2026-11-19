@@ -10,6 +10,8 @@ import {
 } from './smartTimetable.js';
 import { assignmentCampus, assignmentClassIds, assignmentStudentCount, assignmentStudentGroupIds, assignmentTeacherIds, classResourceAtoms } from './smartTimetableResources.js';
 
+import { week12PlacementProblems, week12SoftWarnings } from './timetableWeek12.js';
+
 export interface TimetableAuditReport {
   expectedPeriods: number;
   placedPeriods: number;
@@ -213,6 +215,8 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
     }
   }
 
+  errors.push(...week12PlacementProblems(scenario, [], entries));
+  warnings.push(...week12SoftWarnings(scenario, entries));
   const expectedPeriods = scenario.assignments.reduce((sum, item) => sum + item.periodsPerWeek, 0);
   const uniqueErrors = [...new Set(errors)];
   return {

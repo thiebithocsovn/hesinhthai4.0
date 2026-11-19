@@ -7,6 +7,7 @@ import {
   type TimetableSolution,
 } from './smartTimetable';
 import { assignmentClassIds } from './smartTimetableResources';
+import { enableWeek12Rules, replaceTeacherInWeek12 } from './timetableWeek12.js';
 
 export interface TimetableAgentProposal {
   status: 'ready' | 'information' | 'unsupported';
@@ -72,6 +73,31 @@ export function planTimetableAgentCommand(
   const empty = (title: string, details: string[], status: 'information' | 'unsupported' = 'unsupported'): TimetableAgentProposal =>
     ({ status, title, details, affectedSlots: [], requiresReschedule: false });
   if (!text) return empty('Chưa có yêu cầu', ['Hãy nhập một yêu cầu bằng tiếng Việt.']);
+  // Commands that affect many lessons require an explicit preview and approval.
+  if (/(?:ap dung|bat|cai dat|them) (?:(?:10|muoi) )?(?:(?:bo|cac) )?rang buoc (?:cho )?(?:tuan )?12(?: |$)/.test(text)) {
+    const outcome = enableWeek12Rules(scenario, solution);
+    if (!outcome.next) return empty('Chưa thể áp dụng bộ ràng buộc tuần 12', outcome.errors, 'information');
+    return {
+      status: 'ready',
+      title: 'Áp dụng 10 ràng buộc tuần 12',
+      details: [...outcome.details, 'Chỉ ghi thay đổi sau khi bấm Xác nhận; cần xếp lại lịch.'],
+      nextScenario: outcome.next, affectedSlots: [], requiresReschedule: true,
+    };
+  }
+  if (/(?:thay|doi) (?:(?:co|gv|giao vien) )?bien (?:bang|sang|cho) (?:(?:co|gv|giao vien) )?hong/.test(text)) {
+    const outcome = replaceTeacherInWeek12(scenario, 'Biên', 'Hồng', solution);
+    if (!outcome.next) return empty('Không thể thay phân công cô Biên', outcome.errors, 'information');
+    return {
+      status: 'ready',
+      title: 'Thay cô Biên bằng cô Hồng – chỉ tuần 12',
+      details: [
+        'Có ' + outcome.count + ' phân công đang sử dụng cô Biên ở tuần 12 sẽ chuyển sang cô Hồng.',
+        'Môn, lớp, số tiết, thời gian, phân công các tuần khác giữ nguyên.',
+        'Hệ thống sẽ kiểm tra xung đột sau khi xếp lại lịch. Cần xác nhận để ghi thay đổi.',
+      ],
+      nextScenario: outcome.next, affectedSlots: [], requiresReschedule: true,
+    };
+  }
   const namedTeacher = findNamed(text, scenario.teachers), namedSubject = findNamed(text, scenario.subjects);
   const maximum = text.match(/toi da (\d{1,2})/);
   const teachingDays = text.match(/(?:^| )toi da (\d{1,2}) ngay(?: |$)/);

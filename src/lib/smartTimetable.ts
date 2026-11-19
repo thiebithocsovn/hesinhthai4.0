@@ -3,6 +3,8 @@ import { advancedScenarioIssues, assignmentClassIds, assignmentStudentGroupIds, 
 import { classDailyLimit, classPeriodInterval, educationScenarioIssues, scenarioForTeachingWeek, EDUCATION_LEVELS, EDUCATION_PROFILES, type EducationLevel, type TimetableEducation } from './timetableEducation.js';
 import type { TimetableExamPlan } from './timetableExamRooms';
 
+import { week12PlacementProblems, week12SoftPenalty, week12TeacherNameIssues } from './timetableWeek12.js';
+
 export const TIMETABLE_DAYS = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'] as const;
 export type TimetableDay = (typeof TIMETABLE_DAYS)[number];
 export type SchoolLevel = EducationLevel | 'Liên cấp';
@@ -108,6 +110,12 @@ export interface TimetableScenario {
   lessonGroups?: TimetableLessonGroup[];
   campusTravelPeriods?: number;
   examRoomPlan?: TimetableExamPlan;
+  /** Opt-in rules for week 12 only; no change to other teaching weeks. */
+  week12RulesEnabled?: boolean;
+  /** Teacher substitution for week 12, keyed by original teacher ID. */
+  week12TeacherRemaps?: Record<string, string>;
+  week12MondayAfternoonSnapshot?: { assignmentId: string; period: number }[];
+  week12FrozenStarts?: Record<string, string[]>;
 }
 
 export interface ScheduleEntry {
@@ -328,7 +336,7 @@ function describeEntity<T extends { id: string; name: string }>(items: T[], id: 
 export function analyzeTimetableScenario(rawScenario: TimetableScenario): string[] {
   const normalized = normalizeTimetableScenario(rawScenario);
   const scenario = scenarioForTeachingWeek(normalized);
-  const issues: string[] = [...educationScenarioIssues(normalized), ...advancedScenarioIssues(scenario)];
+  const issues: string[] = [...educationScenarioIssues(normalized), ...advancedScenarioIssues(scenario), ...week12TeacherNameIssues(scenario)];
   const days = activeTimetableDays(scenario).length;
   const totalSlots = days * scenario.periodsPerDay;
   const teacherIds = new Set(scenario.teachers.map(item => item.id));
@@ -426,6 +434,7 @@ function validateEntries(scenario: TimetableScenario, entries: ScheduleEntry[]):
     if (placed.length > assignment.periodsPerWeek) conflicts.push(`Phân công ${assignment.id} bị xếp thừa tiết.`);
     for (let day = 0; day < days; day++) if (placed.filter(e => e.dayIndex === day).length > (assignment.maxPerDay || assignment.blockSize || 1)) conflicts.push(`Phân công ${assignment.id} vượt số tiết/ngày.`);
   }
+  conflicts.push(...week12PlacementProblems(scenario, [], entries));
   return [...new Set(conflicts)];
 }
 
@@ -485,6 +494,13 @@ function buildCandidate(rawScenario: TimetableScenario, lockedEntries: ScheduleE
       if (teacher?.unavailableSlots?.includes(slot) || classroom?.unavailableSlots?.includes(slot) || room?.unavailableSlots?.includes(slot)) return false;
       if (assignment.forbiddenSlots?.includes(slot)) return false;
     }
+    const preview = Array.from({ length: size }, (_, offset): ScheduleEntry => ({
+      id: 'preview-' + offset, assignmentId: assignment.id, classId: assignment.classId,
+      subjectId: assignment.subjectId, teacherId: assignment.teacherId, roomId: assignment.roomId,
+      dayIndex, period: startPeriod + offset, additionalTeacherIds: assignment.additionalTeacherIds,
+      additionalClassIds: assignment.additionalClassIds,
+    }));
+    if (week12PlacementProblems(scenario, entries, preview).length) return false;
     if (ignoreDailyLimits) return true;
     const assignmentDaily = assignmentDayCounts.get(`${assignment.id}:${dayIndex}`) || 0;
     if (assignmentDaily + size > (assignment.maxPerDay || Math.max(1, size))) return false;
@@ -604,6 +620,11 @@ function buildCandidate(rawScenario: TimetableScenario, lockedEntries: ScheduleE
           if (period <= 2) penalty -= 7;
           if (period > morningEnd) penalty += 5;
         }
+        penalty += week12SoftPenalty(scenario, entries, Array.from({ length: unit.size }, (_, offset): ScheduleEntry => ({
+          id: 'preview-' + offset, assignmentId: assignment.id, classId: assignment.classId,
+          subjectId: assignment.subjectId, teacherId: assignment.teacherId, dayIndex, period: period + offset,
+          additionalTeacherIds: assignment.additionalTeacherIds, additionalClassIds: assignment.additionalClassIds,
+        })));
         penalty += random() * 2.5;
         available.push({ dayIndex, period, penalty });
       }
@@ -665,7 +686,7 @@ export function optimizeTimetable(rawScenario: TimetableScenario, lockedEntries:
     const normalized = normalizeTimetableScenario(rawScenario);
     return optimizeAdvancedTimetable(scenarioForTeachingWeek(normalized), lockedEntries, iterations, educationScenarioIssues(normalized));
   }
-  const scenario = normalizeTimetableScenario(rawScenario);
+  const scenario = scenarioForTeachingWeek(normalizeTimetableScenario(rawScenario));
   const safeIterations = Math.max(1, Math.min(800, Math.floor(iterations)));
   let best = buildCandidate(scenario, lockedEntries, 1);
   for (let index = 2; index <= safeIterations; index += 1) {
