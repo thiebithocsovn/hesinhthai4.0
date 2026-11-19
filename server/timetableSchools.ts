@@ -196,6 +196,9 @@ export function createTimetableSchoolsApp(deps: TimetableSchoolsDeps, origins = 
         const raw = body.options || {};
         const options: TimetablePublicationOptions = { title: String(raw.title || 'Thời khóa biểu'), notes: String(raw.notes || ''), effectiveFrom: String(raw.effectiveFrom || ''), effectiveTo: String(raw.effectiveTo || ''), showTeacherNames: raw.showTeacherNames === true };
         makePublicTimetable(current.scenario, current.solution, options);
+        const outstanding = await deps.store.reviews(schoolId);
+        if (outstanding.some(r => r.sourceRevision === current.revision && r.status !== 'rejected')) throw new SchoolError(409, 'Phiên bản đã có phiếu chờ hoặc được duyệt. Chỉnh sửa và lưu phiên bản mới để gửi lại.');
+        if (outstanding.filter(r => r.status === 'pending').length >= 5) throw new SchoolError(409, 'Đã có 5 phiếu chờ duyệt; vui lòng xử lý trước khi gửi thêm.');
         const review: TimetableSchoolReview = { id: 'r' + randomBytes(12).toString('base64url'), sourceRevision: current.revision, scenario: current.scenario, solution: current.solution, options, status: 'pending', submittedAt: new Date().toISOString(), submittedBy: actor.uid };
         await deps.store.createReview(schoolId, review);
         res.status(201).json({ reviewId: review.id, status: 'pending' }); return;
@@ -222,6 +225,9 @@ export function createTimetableSchoolsApp(deps: TimetableSchoolsDeps, origins = 
         const reviewId = requestId(body.reviewId, 'Mã phiếu');
         const review = await deps.store.review(schoolId, reviewId);
         if (!review || review.status !== 'approved') throw new SchoolError(409, 'Chỉ công bố phiếu đã được người khác phê duyệt.');
+        const priorPublications = await deps.store.publications(schoolId);
+        if (priorPublications.some(p => p.status === 'published' && p.approvedReviewId === reviewId)) throw new SchoolError(409, 'Phiếu này đã có bản công bố còn hiệu lực.');
+        if (priorPublications.filter(p => p.status === 'published').length >= 20) throw new SchoolError(409, 'Trường đã có 20 liên kết đang công bố. Hãy thu hồi bản cũ trước.');
         const snapshot = makePublicTimetable(review.scenario, review.solution, review.options);
         if (Buffer.byteLength(JSON.stringify(snapshot)) > 700000) throw new SchoolError(413, 'Bản công bố vượt giới hạn kích thước.');
         const publicId = randomBytes(24).toString('base64url');
