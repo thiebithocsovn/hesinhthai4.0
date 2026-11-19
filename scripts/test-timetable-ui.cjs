@@ -71,7 +71,7 @@ const XLSX = require('xlsx');
     const data = await workspace(); const grouped = data.solution.entries.filter(e => e.classId === '6a');
     assert.equal(new Set(grouped.map(e => `${e.dayIndex}:${e.period}`)).size, 2, 'Both student groups share the same two clock slots.');
     await nav('Bảng lịch toàn trường').click();
-    await page.waitForFunction(() => document.querySelector('main')?.textContent?.includes('6B'));
+    await page.getByLabel('Ngày xem toàn trường').waitFor();
     await page.screenshot({ path: 'timetable-ui-results/school-board-desktop.png', fullPage: true });
     assert.ok((await page.getByRole('main').innerText()).includes('6B'));
     await page.setViewportSize({ width: 390, height: 844 });
