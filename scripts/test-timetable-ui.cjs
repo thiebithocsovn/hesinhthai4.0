@@ -16,7 +16,7 @@ const XLSX = require('xlsx');
     const button = name => page.getByRole('button', { name, exact: true });
     const workspace = () => page.evaluate(() => JSON.parse(localStorage.getItem('qa-aitherova-timetable-complete')));
     await nav('Trợ lý thời khóa biểu').click();
-    await page.getByRole('heading', { name: 'Trợ lý thời khóa biểu' }).waitFor();
+    await page.getByRole('heading', { name: 'Trợ lý thời khóa biểu' }).first().waitFor();
     assert.equal(await button('Thay cô Biên bằng cô Hồng tuần 12').count(), 0, 'No one-school teacher substitution preset in commercial UI.');
     await nav('Trường học & phân quyền').click();
     await page.getByRole('heading', { name: 'Không gian quản trị nhiều trường' }).waitFor();
