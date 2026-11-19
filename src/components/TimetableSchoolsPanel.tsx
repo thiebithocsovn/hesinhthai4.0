@@ -1,0 +1,89 @@
+import React, { useEffect, useState } from 'react';
+import { auth } from '../firebase';
+import { auditTimetableSolution } from '../lib/smartTimetableAudit';
+import type { TimetableScenario, TimetableSolution } from '../lib/smartTimetable';
+import { Building2, Cloud, KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react';
+
+const API = (import.meta.env.VITE_TEACHER_ADMIN_API_URL || 'https://hesinhthai4-0-thietbihocso.vercel.app').replace(/\/$/, '') + '/api/timetable/schools';
+type SchoolRole = 'owner' | 'admin' | 'scheduler' | 'reviewer' | 'viewer';
+type School = { id: string; name: string; plan: string; seatLimit: number };
+type Member = { uid: string; email: string; role: SchoolRole };
+type Shared = { revision: number; scenario: TimetableScenario; solution: TimetableSolution | null };
+type Review = { id: string; sourceRevision: number; options: { title: string }; status: 'pending' | 'approved' | 'rejected'; submittedBy: string };
+const roleName: Record<SchoolRole, string> = { owner: 'Chủ trường', admin: 'Quản trị trường', scheduler: 'Người xếp lịch', reviewer: 'Người duyệt', viewer: 'Chỉ xem' };
+const may = (role: SchoolRole | undefined, operation: 'write' | 'invite' | 'submit' | 'review' | 'publish' | 'audit') => role === 'owner' || role === 'admin' || (role === 'scheduler' && ['write', 'submit'].includes(operation)) || (role === 'reviewer' && ['review', 'audit'].includes(operation));
+const field = 'mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm';
+
+export default function TimetableSchoolsPanel({ scenario, solution, trialMode, onLoad }: { scenario: TimetableScenario; solution: TimetableSolution | null; trialMode: boolean; onLoad: (scenario: TimetableScenario, solution: TimetableSolution | null) => void }) {
+  const [available, setAvailable] = useState(false), [solverAvailable, setSolverAvailable] = useState(false);
+  const [schools, setSchools] = useState<School[]>([]), [schoolId, setSchoolId] = useState(''), [detail, setDetail] = useState<{ school: School; membership: Member; members?: Member[] } | null>(null);
+  const [shared, setShared] = useState<Shared | null>(null), [reviews, setReviews] = useState<Review[]>([]), [events, setEvents] = useState<{ action: string; at: string; actor: string; detail?: string }[]>([]);
+  const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [name, setName] = useState(''), [joinCode, setJoinCode] = useState(''), [email, setEmail] = useState(''), [roleChoice, setRoleChoice] = useState<SchoolRole>('scheduler'), [invitation, setInvitation] = useState('');
+  const [title, setTitle] = useState('Thời khóa biểu chính thức'), [effectiveFrom, setEffectiveFrom] = useState(''), [effectiveTo, setEffectiveTo] = useState(''), [notes, setNotes] = useState(''), [showTeacherNames, setShowTeacherNames] = useState(false);
+  const [publicCode, setPublicCode] = useState(''), [solverStatus, setSolverStatus] = useState(''), [candidate, setCandidate] = useState<TimetableSolution | null>(null);
+  const memberRole = detail?.membership.role;
+  const call = async (action: string, data?: Record<string, unknown>, targetSchoolId = schoolId) => {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw Error('Đăng nhập và xác minh email trước khi sử dụng trường học.');
+    const endpoint = new URL(API);
+    if (!data) { endpoint.searchParams.set('action', action); if (targetSchoolId) endpoint.searchParams.set('schoolId', targetSchoolId); }
+    const response = await fetch(endpoint.toString(), { method: data ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(data ? { body: JSON.stringify({ action, ...data }) } : {}), signal: AbortSignal.timeout(30000) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw Error(result.error || 'Dịch vụ trường học chưa xử lý được yêu cầu.');
+    return result;
+  };
+  const task = async (fn: () => Promise<void>) => {
+    setBusy(true); setMessage('');
+    try { await fn(); } catch (e) { setMessage(e instanceof Error ? e.message : 'Không thể kết nối. Dữ liệu cá nhân trên thiết bị không thay đổi.'); }
+    finally { setBusy(false); }
+  };
+  const reloadList = async () => { const result = await call('list'); setSchools(result.schools || []); };
+  const reloadSchool = async (id = schoolId) => {
+    if (!id) return;
+    const [info, data, list] = await Promise.all([call('detail', undefined, id), call('workspace', undefined, id), call('reviews', undefined, id)]);
+    setDetail(info); setShared(data.workspace); setReviews(list.reviews || []);
+  };
+  useEffect(() => {
+    let active = true;
+    void fetch(API + '?action=health', { signal: AbortSignal.timeout(12000) }).then(r => r.json()).then(x => {
+      if (active) { setAvailable(x.available === true); setSolverAvailable(x.solverConfigured === true); }
+    }).catch(() => { if (active) setAvailable(false); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => { if (available && !trialMode) void reloadList().catch(() => setMessage('Không thể tải danh sách trường; kiểm tra email đã xác minh.')); }, [available, trialMode]);
+  useEffect(() => { setDetail(null); setShared(null); setReviews([]); setPublicCode(''); setCandidate(null); if (schoolId) void reloadSchool(schoolId).catch(() => setMessage('Không thể truy cập dữ liệu trường.')); }, [schoolId]);
+  const publicUrl = publicCode ? API + '?action=public&code=' + encodeURIComponent(publicCode) : '';
+  return <div className="space-y-5">
+    <section className="tt-panel"><h3 className="flex items-center gap-2"><Building2 size={20}/>Không gian quản trị nhiều trường</h3><p>Quản lý thành viên, vai trò, bản dữ liệu dùng chung và quy trình duyệt độc lập. Trường không được phép đọc dữ liệu của trường khác.</p>
+      {!available && <p role="alert" className="mt-4 rounded-lg bg-amber-50 p-4 text-sm text-amber-800">Máy chủ cộng tác chưa được cấu hình hoặc chưa được triển khai. Dữ liệu thời khóa biểu cá nhân vẫn hoạt động.</p>}
+      {trialMode && <p className="mt-3 text-sm text-amber-800">Hãy đăng nhập tài khoản có email đã xác minh để sử dụng.</p>}
+      <fieldset disabled={!available || trialMode || busy} className="mt-4 grid gap-4 md:grid-cols-2">
+        <label className="text-xs font-semibold">Tên trường mới<input aria-label="Tên trường mới" className={field} maxLength={160} value={name} onChange={e => setName(e.target.value)} /><button type="button" className="tt-button mt-2" disabled={!name.trim()} onClick={() => void task(async () => { const x = await call('create', { name }); setName(''); await reloadList(); setSchoolId(x.school.id); setMessage('Đã tạo trường và tài khoản chủ trường.'); })}>Tạo trường</button></label>
+        <label className="text-xs font-semibold">Mã mời tham gia trường<input aria-label="Mã mời tham gia trường" className={field} value={joinCode} onChange={e => setJoinCode(e.target.value)} /><button type="button" className="tt-button mt-2" disabled={!joinCode.trim()} onClick={() => void task(async () => { const x = await call('join', { code: joinCode.trim() }); setJoinCode(''); await reloadList(); setSchoolId(x.school.id); setMessage('Đã tham gia trường đúng email được mời.'); })}>Gia nhập</button></label>
+      </fieldset>
+      {schools.length > 0 && <label className="mt-4 block text-sm font-semibold">Trường đang làm việc<select aria-label="Trường đang làm việc" className={field} value={schoolId} onChange={e => setSchoolId(e.target.value)}><option value="">Chọn trường</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
+      {message && <p role="status" className="mt-4 rounded-lg bg-slate-100 p-3 text-sm text-slate-800">{message}</p>}
+    </section>
+    {detail && <>
+      <section className="tt-panel"><h3>{detail.school.name} · {roleName[memberRole!]}</h3><p>Gói thí điểm: tối đa {detail.school.seatLimit} tài khoản; chưa có thanh toán hoặc tự động gia hạn.</p>
+        <p className="mt-3 text-sm">Lịch chung: {shared ? 'Phiên bản #' + shared.revision : 'Chưa có dữ liệu'}. Tải lên/xuống thủ công để tránh ghi đè bản làm việc trên máy.</p>
+        <div className="mt-4 flex flex-wrap gap-2"><button type="button" className="tt-button" disabled={!shared || busy} onClick={() => { if (shared && window.confirm('Thay thế lịch đang mở bằng bản chung? Nên sao lưu JSON trước khi tải.')) { onLoad(shared.scenario, shared.solution); setMessage('Đã tải lịch chung vào máy. Có thể hoàn tác thao tác.'); } }}><Cloud size={15}/>Tải lịch chung</button><button type="button" className="tt-button green" disabled={!may(memberRole, 'write') || busy} onClick={() => void task(async () => { const x = await call('save', { schoolId, scenario, solution, expectedRevision: shared?.revision || 0 }); setShared({ scenario, solution, revision: x.revision }); setMessage('Đã lưu phiên bản #' + x.revision + '. Hệ thống chặn ghi đè nếu có người sửa đồng thời.'); })}><Cloud size={15}/>Lưu lên trường</button><button type="button" className="tt-button" disabled={busy} onClick={() => void task(() => reloadSchool())}>Tải lại thông tin</button></div>
+      </section>
+      {may(memberRole, 'invite') && <section className="tt-panel"><h3 className="flex items-center gap-2"><KeyRound size={18}/>Mời thành viên</h3><p>Lời mời có hiệu lực 7 ngày, chỉ dành cho email được mời, sử dụng một lần.</p><div className="mt-3 grid gap-3 md:grid-cols-2"><label className="text-xs font-semibold">Email đã xác minh<input type="email" aria-label="Email được mời" className={field} value={email} onChange={e => setEmail(e.target.value)} /></label><label className="text-xs font-semibold">Vai trò<select className={field} value={roleChoice} onChange={e => setRoleChoice(e.target.value as SchoolRole)}><option value="scheduler">Người xếp lịch</option><option value="reviewer">Người duyệt</option><option value="viewer">Chỉ xem</option><option value="admin">Quản trị trường</option></select></label></div><button type="button" className="tt-button mt-3" disabled={busy || !email.trim()} onClick={() => void task(async () => { const x = await call('invite', { schoolId, email, role: roleChoice }); setInvitation(x.code); setEmail(''); setMessage('Đã tạo mã mời. Gửi mã này riêng cho đúng người nhận.'); })}>Tạo mã mời</button>
+        {invitation && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm"><b>Mã mời chỉ hiển thị một lần</b><p className="my-2 break-all font-mono">{invitation}</p><button type="button" className="tt-button" onClick={() => void navigator.clipboard.writeText(invitation)}>Sao chép</button></div>}
+        <div className="mt-4 overflow-x-auto"><table className="tt-table"><thead><tr><th>Thành viên</th><th>Vai trò</th></tr></thead><tbody>{detail.members?.map(m => <tr key={m.uid}><td>{m.email}</td><td>{roleName[m.role]}</td></tr>)}</tbody></table></div>
+      </section>}
+      <section className="tt-panel"><h3 className="flex items-center gap-2"><ShieldCheck size={18}/>Duyệt thời khóa biểu trước công bố</h3><p>Bản lưu chung phải đủ tiết và không có xung đột cứng. Người gửi không được tự duyệt bản của mình; chỉ quản trị mới có quyền công bố.</p>
+        {may(memberRole, 'submit') && <div className="mt-3 grid gap-3 md:grid-cols-2"><label className="text-xs font-semibold">Tên bản lịch<input className={field} value={title} onChange={e => setTitle(e.target.value)} /></label><label className="text-xs font-semibold">Ghi chú<input className={field} value={notes} onChange={e => setNotes(e.target.value)} /></label><label className="text-xs font-semibold">Hiệu lực từ<input type="date" className={field} value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)} /></label><label className="text-xs font-semibold">Hiệu lực đến<input type="date" className={field} value={effectiveTo} onChange={e => setEffectiveTo(e.target.value)} /></label><label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={showTeacherNames} onChange={e => setShowTeacherNames(e.target.checked)} />Hiển thị tên giáo viên công khai</label><button type="button" className="tt-button green" disabled={busy || !shared} onClick={() => void task(async () => { await call('submit', { schoolId, options: { title, notes, effectiveFrom, effectiveTo, showTeacherNames } }); await reloadSchool(); setMessage('Đã gửi bản lưu chung chờ người khác phê duyệt.'); })}>Gửi bản đã lưu để duyệt</button></div>}
+        <div className="mt-4 overflow-x-auto"><table className="tt-table"><thead><tr><th>Phiếu</th><th>Phiên bản</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{reviews.map(r => <tr key={r.id}><td>{r.options.title}</td><td>#{r.sourceRevision}</td><td>{r.status === 'pending' ? 'Chờ duyệt' : r.status === 'approved' ? 'Đã duyệt' : 'Từ chối'}</td><td><div className="flex flex-wrap gap-2">{r.status === 'pending' && may(memberRole, 'review') && r.submittedBy !== auth.currentUser?.uid && <><button type="button" className="tt-button" disabled={busy} onClick={() => void task(async () => { await call('decide', { schoolId, reviewId: r.id, decision: 'approved' }); await reloadSchool(); })}>Duyệt</button><button type="button" className="tt-button" disabled={busy} onClick={() => { const reason = window.prompt('Lý do từ chối phiếu:'); if (reason?.trim()) void task(async () => { await call('decide', { schoolId, reviewId: r.id, decision: 'rejected', reason: reason.trim() }); await reloadSchool(); }); }}>Từ chối</button></>}{r.status === 'approved' && may(memberRole, 'publish') && <button type="button" className="tt-button green" disabled={busy} onClick={() => { if (window.confirm('Công bố bản lịch đã được phê duyệt?')) void task(async () => { const x = await call('publish', { schoolId, reviewId: r.id }); setPublicCode(x.code); setMessage('Đã công bố bản duyệt. Sao chép liên kết bên dưới.'); }); }}>Công bố</button>}</div></td></tr>)}</tbody></table></div>
+        {!reviews.length && <p className="mt-2 text-sm">Chưa có bản gửi duyệt.</p>}
+        {publicUrl && <div className="mt-4 rounded-lg bg-indigo-50 p-4"><b>Liên kết thời khóa biểu chính thức</b><a className="mt-2 block break-all text-sm text-indigo-700 underline" href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a><button type="button" className="tt-button mt-2" onClick={() => { const publicId = publicCode.split('.').slice(-1)[0]; if (window.confirm('Thu hồi liên kết đã công bố?')) void task(async () => { await call('revoke', { schoolId, publicId }); setPublicCode(''); setMessage('Đã thu hồi liên kết.'); }); }}>Thu hồi liên kết</button></div>}
+      </section>
+      <section className="tt-panel"><h3>Bộ giải CP-SAT và gói dịch vụ</h3><p>{solverAvailable ? 'Đã cấu hình máy chủ CP-SAT.' : 'Chưa cấu hình máy chủ CP-SAT. Bộ giải trong trình duyệt vẫn hoạt động.'} Gói thí điểm không thu tiền và chưa có thanh toán thực tế.</p>
+        {may(memberRole, 'write') && <div className="mt-3 flex flex-wrap gap-2"><button type="button" className="tt-button" disabled={!solverAvailable || !shared || busy} onClick={() => void task(async () => { const x = await call('solve', { schoolId, timeLimitSeconds: 10 }); setSolverStatus(x.result.status); setCandidate(x.result.solution || null); setMessage(x.result.solution ? 'Có nghiệm CP-SAT đã kiểm tra; chưa ghi đè hay công bố.' : 'Bộ giải trả về ' + x.result.status + '.'); })}>Chạy CP-SAT từ dữ liệu trường</button>{candidate && <button type="button" className="tt-button green" onClick={() => { if (!shared) return; const audit = auditTimetableSolution(shared.scenario, candidate); if (!audit.valid || !audit.complete) { setMessage('Nghiệm chưa vượt kiểm tra độc lập trên trình duyệt.'); return; } if (window.confirm('Áp dụng nghiệm vào máy để xem trước? Chưa lưu hoặc công bố.')) onLoad(shared.scenario, candidate); }}>Áp dụng nghiệm đã kiểm tra</button>}</div>}
+        {solverStatus && <p className="mt-2 text-sm">Trạng thái: {solverStatus}</p>}
+      </section>
+      {may(memberRole, 'audit') && <section className="tt-panel"><h3 className="flex items-center gap-2"><LockKeyhole size={18}/>Nhật ký thay đổi</h3><button type="button" className="tt-button mt-2" disabled={busy} onClick={() => void task(async () => { const x = await call('activity'); setEvents(x.activity || []); })}>Xem 50 hoạt động mới nhất</button>{events.length > 0 && <div className="mt-3 overflow-x-auto"><table className="tt-table"><thead><tr><th>Thời gian</th><th>Hoạt động</th><th>Tài khoản</th></tr></thead><tbody>{events.map((e, i) => <tr key={e.at + i}><td>{new Date(e.at).toLocaleString('vi-VN')}</td><td>{e.action}</td><td>{e.actor.slice(0, 8)}…</td></tr>)}</tbody></table></div>}<p className="mt-2 text-xs">Đây là nhật ký sự kiện nghiệp vụ; chưa phải SIEM hoặc hệ thống sao lưu độc lập.</p></section>}
+    </>}
+  </div>;
+}
