@@ -44,6 +44,7 @@ export interface TimetableSchoolsStore {
   member(id: string, uid: string): Promise<TimetableSchoolMembership | null>;
   members(id: string): Promise<TimetableSchoolMembership[]>;
   invite(id: string, invite: TimetableSchoolInvite): Promise<void>;
+  updateMember(id: string, targetUid: string, role: Exclude<SchoolRole, 'owner'> | null, actorUid: string): Promise<void>;
   join(id: string, hash: string, actor: TimetableSchoolIdentity): Promise<TimetableSchoolMembership>;
   readWorkspace(id: string): Promise<TimetableSchoolWorkspace | null>;
   saveWorkspace(id: string, data: Omit<TimetableSchoolWorkspace, 'revision'>, expectedRevision: number): Promise<number>;
@@ -51,8 +52,9 @@ export interface TimetableSchoolsStore {
   reviews(id: string): Promise<Omit<TimetableSchoolReview, 'scenario' | 'solution'>[]>;
   review(id: string, reviewId: string): Promise<TimetableSchoolReview | null>;
   decide(id: string, reviewId: string, status: 'approved' | 'rejected', actor: string, reason: string): Promise<void>;
-  createPublication(id: string, publication: TimetableSchoolPublicRecord): Promise<void>;
+  createPublication(id: string, publication: TimetableSchoolPublicRecord, actorUid: string): Promise<void>;
   publication(id: string, publicId: string): Promise<TimetableSchoolPublicRecord | null>;
+  publications(id: string): Promise<Omit<TimetableSchoolPublicRecord, 'snapshot'>[]>;
   revoke(id: string, publicId: string, actor: string): Promise<void>;
   activity(id: string): Promise<TimetableSchoolAudit[]>;
   audit(id: string, event: TimetableSchoolAudit): Promise<void>;
@@ -118,6 +120,7 @@ export function createTimetableSchoolsApp(deps: TimetableSchoolsDeps, origins = 
       if (action === 'list' && req.method === 'GET') { res.json({ schools: await deps.store.list(actor.uid) }); return; }
       if (action === 'create' && req.method === 'POST') {
         const name = requiredString(body.name, 'Tên trường', 160);
+        if ((await deps.store.list(actor.uid)).filter(s => s.ownerUid === actor.uid).length >= 3) throw new SchoolError(409, 'Mỗi tài khoản được tạo tối đa 3 trường trong giai đoạn thí điểm.');
         const school: TimetableSchool = { id: 's' + randomBytes(12).toString('base64url'), name, ownerUid: actor.uid, plan: 'pilot', seatLimit: 10, createdAt: new Date().toISOString() };
         await deps.store.create(school, actor); res.status(201).json({ school }); return;
       }
@@ -154,10 +157,25 @@ export function createTimetableSchoolsApp(deps: TimetableSchoolsDeps, origins = 
         // This token is shown ONCE to the school admin. No email is sent until a provider is configured.
         res.status(201).json({ code, expiresAt: invite.expiresAt, role }); return;
       }
+      if (action === 'changeRole' && req.method === 'POST') {
+        if (membership?.role !== 'owner') throw new SchoolError(403, 'Chỉ chủ trường được thay đổi quyền hoặc xóa thành viên.');
+        const targetUid = requiredString(body.targetUid, 'Tài khoản thành viên', 128);
+        if (!/^[A-Za-z0-9_-]+$/.test(targetUid)) throw new SchoolError(422, 'Tài khoản thành viên không hợp lệ.');
+        if (targetUid === actor.uid) throw new SchoolError(409, 'Không thể tự thay đổi quyền chủ trường.');
+        const existing = await deps.store.member(schoolId, targetUid);
+        if (!existing || existing.role === 'owner') throw new SchoolError(404, 'Không thể thay đổi chủ trường hoặc thành viên không tồn tại.');
+        const nextRole = body.role === null ? null : body.role as Exclude<SchoolRole, 'owner'>;
+        if (nextRole !== null && !['admin', 'scheduler', 'reviewer', 'viewer'].includes(nextRole)) throw new SchoolError(422, 'Vai trò không hợp lệ.');
+        await deps.store.updateMember(schoolId, targetUid, nextRole, actor.uid);
+        res.json({ status: nextRole === null ? 'removed' : 'updated' }); return;
+      }
       if (action === 'save' && req.method === 'POST') {
         requireRole('edit');
         if (!body.scenario || !Array.isArray(body.scenario.assignments) || !Array.isArray(body.scenario.teachers)) throw new SchoolError(422, 'Kịch bản không hợp lệ.');
-        const scenario = normalizeTimetableScenario(body.scenario);
+        const safeScenario = { ...body.scenario };
+        delete safeScenario.publicationSnapshots;
+        delete safeScenario.examRoomPlan;
+        const scenario = normalizeTimetableScenario(safeScenario);
         const solution: TimetableSolution | null = body.solution || null;
         validatePlan(school, scenario, solution);
         if (solution && (!Array.isArray(solution.entries) || !solution.diagnostics)) throw new SchoolError(422, 'Phương án xếp lịch không hợp lệ.');
@@ -205,8 +223,11 @@ export function createTimetableSchoolsApp(deps: TimetableSchoolsDeps, origins = 
         const snapshot = makePublicTimetable(review.scenario, review.solution, review.options);
         if (Buffer.byteLength(JSON.stringify(snapshot)) > 700000) throw new SchoolError(413, 'Bản công bố vượt giới hạn kích thước.');
         const publicId = randomBytes(24).toString('base64url');
-        await deps.store.createPublication(schoolId, { id: publicId, schoolId, snapshot, status: 'published', approvedReviewId: reviewId, createdAt: new Date().toISOString() });
+        await deps.store.createPublication(schoolId, { id: publicId, schoolId, snapshot, status: 'published', approvedReviewId: reviewId, createdAt: new Date().toISOString() }, actor.uid);
         res.status(201).json({ code: schoolId + '.' + publicId, status: 'published' }); return;
+      }
+      if (action === 'publications' && req.method === 'GET') {
+        requireRole('publish'); res.json({ publications: await deps.store.publications(schoolId) }); return;
       }
       if (action === 'revoke' && req.method === 'POST') {
         requireRole('publish');
