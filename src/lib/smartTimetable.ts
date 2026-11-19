@@ -3,7 +3,7 @@ import { advancedScenarioIssues, assignmentClassIds, assignmentStudentGroupIds, 
 import { classDailyLimit, classPeriodInterval, educationScenarioIssues, scenarioForTeachingWeek, EDUCATION_LEVELS, EDUCATION_PROFILES, type EducationLevel, type TimetableEducation } from './timetableEducation.js';
 import type { TimetableExamPlan } from './timetableExamRooms';
 
-import { week12PlacementProblems, week12SoftPenalty, week12TeacherNameIssues } from './timetableWeek12';
+import { week12PlacementProblems, week12SoftPenalty, week12TeacherNameIssues } from './timetableWeek12.js';
 
 export const TIMETABLE_DAYS = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'] as const;
 export type TimetableDay = (typeof TIMETABLE_DAYS)[number];
