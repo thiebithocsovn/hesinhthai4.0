@@ -114,6 +114,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
   const [manualSubjectId, setManualSubjectId] = useState('');
   const [manualTeacherId, setManualTeacherId] = useState('');
   const [manualAssignmentId, setManualAssignmentId] = useState('');
+  const [manualError, setManualError] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [undoHistory, setUndoHistory] = useState<PersistedWorkspace[]>([]);
@@ -217,6 +218,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
     setActiveTab(page.tab);
     setSelectedEntryId('');
     setManualSlot(null);
+    setManualError('');
     if (page.catalog) setCatalogKind(page.catalog);
     if (page.constraint) setConstraintKind(page.constraint);
     if (page.view) setScheduleView(page.view);
@@ -285,6 +287,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
     setScheduleResourceId(scenario.classes[0]?.id || '');
     setSelectedEntryId('');
     setManualSlot(null);
+    setManualError('');
     navigatePage('schedule');
     setMessage('Đã tạo bảng trống. Chọn lớp, nhấn vào ô trống và chọn môn cùng giáo viên để xếp từng tiết.');
   };
@@ -293,7 +296,9 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
     if (!solution || !manualSlot || !selectedManualAssignment || busy) return;
     const result = placeManualTimetableBlock(scenario, solution, selectedManualAssignment.id, manualSlot.dayIndex, manualSlot.period);
     if (!result.solution) {
-      setMessage('Không thể xếp tiết: ' + result.errors.slice(0, 3).join(' '));
+      const problem = result.errors.slice(0, 3).join(' ');
+      setManualError(problem);
+      setMessage('Không thể xếp tiết: ' + problem);
       return;
     }
     setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20));
@@ -301,6 +306,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
     setSolution(result.solution);
     setVersions(previous => [result.solution!, ...previous].slice(0, 8));
     setManualSlot(null);
+    setManualError('');
     setManualSubjectId('');
     setManualTeacherId('');
     setManualAssignmentId('');
@@ -329,7 +335,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
     setSolution(result.solution);
     setVersions(previous => [result.solution!, ...previous].slice(0, 8));
     setSelectedEntryId('');
-    setMessage('Đã chuyển toàn bộ block và kiểm tra độc lập: đủ tiết, không trùng lớp, giáo viên hoặc phòng.');
+    setMessage('Đã chuyển toàn bộ block và kiểm tra độc lập: không trùng lớp, giáo viên hoặc phòng; tiếp tục xếp đủ tiết nếu lịch còn thiếu.');
   };
 
   const acceptSolution = (next: TimetableSolution, generation: number) => {
@@ -655,7 +661,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
                         <div className="flex items-start justify-between gap-1"><button type="button" className="flex-1 text-left text-xs font-bold leading-5" aria-label={`Chọn ${lookup.subjects.get(entry.subjectId)?.name} ${day} tiết ${period}`} onClick={() => { if (selectedEntryId && selectedEntryId !== entry.id) moveEntry(selectedEntryId, dayIndex, period); else if (entry.fixed || entry.locked) setMessage('Tiết cố định hoặc đang khóa. Mở khóa trước khi chuyển.'); else setSelectedEntryId(selectedEntryId === entry.id ? '' : entry.id); }}>{lookup.subjects.get(entry.subjectId)?.name}</button><button type="button" onClick={() => toggleEntryLock(entry)} disabled={entry.fixed} className="rounded p-1 text-slate-500 hover:bg-white" aria-label={entry.fixed ? 'Tiết cố định' : entry.locked ? 'Bỏ khóa block' : 'Khóa block'}>{entry.locked || entry.fixed ? <Lock size={12} /> : <Unlock size={12} />}</button><button type="button" onClick={() => removeManualLesson(entry)} disabled={entry.fixed || entry.locked} className="rounded p-1 text-rose-500 hover:bg-rose-50 disabled:opacity-30" title="Xóa tiết để xếp lại" aria-label="Xóa tiết học"><Trash2 size={12} /></button></div>
                         <div className="mt-1 text-[10px] leading-5 text-slate-600">{scheduleView !== 'class' && `${assignmentClassIds(entry).map(id => lookup.classes.get(id)?.name).join(' + ')} · `}{assignmentTeacherIds(entry).map(id => lookup.teachers.get(id)?.name).join(' + ')}</div>
                         {scenario.education && <div className="text-[10px] font-semibold text-blue-800">{entryClockLabel(scenario, entry)}</div>}{assignmentStudentGroupIds(entry).length > 0 && <div className="text-[10px] font-semibold text-indigo-700">{assignmentStudentGroupIds(entry).map(id => scenario.studentGroups?.find(g => g.id === id)?.name).join(' + ')}</div>}{entry.roomId && <div className="text-[10px] text-slate-500">{lookup.rooms.get(entry.roomId)?.name}</div>}{entry.fixed && <div className="text-[9px] font-bold text-amber-700">CỐ ĐỊNH</div>}
-                      </div>) : <button type="button" className="flex min-h-20 w-full items-center justify-center rounded-md text-[10px] text-slate-300 hover:bg-blue-50 hover:text-blue-600" aria-label={`${day} tiết ${period} trống`} onClick={() => { if (selectedEntryId) moveEntry(selectedEntryId, dayIndex, period); else if (scheduleView === 'class') { setManualSlot({ dayIndex, period }); setManualSubjectId(''); setManualTeacherId(''); setManualAssignmentId(''); } else setMessage('Hãy chuyển sang chế độ xem Theo lớp để xếp tiết thủ công vào ô trống.'); }}>{selectedEntryId ? 'Chuyển vào đây' : scheduleView === 'class' ? '+ Xếp tiết' : '—'}</button>}
+                      </div>) : <button type="button" className="flex min-h-20 w-full items-center justify-center rounded-md text-[10px] text-slate-300 hover:bg-blue-50 hover:text-blue-600" aria-label={`${day} tiết ${period} trống`} onClick={() => { if (selectedEntryId) moveEntry(selectedEntryId, dayIndex, period); else if (scheduleView === 'class') { setManualSlot({ dayIndex, period }); setManualError(''); setManualSubjectId(''); setManualTeacherId(''); setManualAssignmentId(''); } else setMessage('Hãy chuyển sang chế độ xem Theo lớp để xếp tiết thủ công vào ô trống.'); }}>{selectedEntryId ? 'Chuyển vào đây' : scheduleView === 'class' ? '+ Xếp tiết' : '—'}</button>}
                     </td>;
                   })}</tr>{period < scenario.periodsPerDay && sessionForPeriod(scenario, period) !== sessionForPeriod(scenario, period + 1) && <tr><td colSpan={days.length + 1} className="bg-amber-50 p-1 text-center text-[9px] font-semibold uppercase tracking-widest text-amber-700">Nghỉ giữa buổi</td></tr>}</React.Fragment>)}
               </tbody></table></div>
@@ -666,21 +672,22 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
                 <section role="dialog" aria-modal="true" aria-label="Xếp tiết thủ công" className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
                   <div><h3 className="text-lg font-extrabold text-slate-900">Xếp tiết thủ công</h3>
                     <p className="mt-1 text-sm text-slate-600">{lookup.classes.get(scheduleResourceId)?.name} · {days[manualSlot.dayIndex]} · Tiết {manualSlot.period} ({SESSION_LABELS[sessionForPeriod(scenario, manualSlot.period)]})</p></div>
+                  {manualError && <div role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{manualError}</div>}
                   {!manualCandidates.length ? <div role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Lớp này đã xếp hết số tiết được phân công, hoặc chưa có phân công. Hãy chọn lớp khác hoặc bổ sung phân công.</div> : <>
                     <label className="block text-sm font-semibold text-slate-700">Môn học
                       <select aria-label="Chọn môn học để xếp thủ công" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={selectedManualSubjectId}
-                        onChange={event => { setManualSubjectId(event.target.value); setManualTeacherId(''); setManualAssignmentId(''); }}>
+                        onChange={event => { setManualSubjectId(event.target.value); setManualTeacherId(''); setManualAssignmentId(''); setManualError(''); }}>
                         {[...new Set(manualCandidates.map(item => item.subjectId))].map(id => <option key={id} value={id}>{lookup.subjects.get(id)?.name || id}</option>)}
                       </select>
                     </label>
                     <label className="block text-sm font-semibold text-slate-700">Giáo viên
                       <select aria-label="Chọn giáo viên để xếp thủ công" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={selectedManualTeacherId}
-                        onChange={event => { setManualTeacherId(event.target.value); setManualAssignmentId(''); }}>
+                        onChange={event => { setManualTeacherId(event.target.value); setManualAssignmentId(''); setManualError(''); }}>
                         {[...new Set(subjectCandidates.map(item => item.teacherId))].map(id => <option key={id} value={id}>{lookup.teachers.get(id)?.name || id}</option>)}
                       </select>
                     </label>
                     {assignmentCandidates.length > 1 && <label className="block text-sm font-semibold text-slate-700">Phân công / phòng
-                      <select aria-label="Chọn phân công cụ thể" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={selectedManualAssignment?.id || ''} onChange={event => setManualAssignmentId(event.target.value)}>
+                      <select aria-label="Chọn phân công cụ thể" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={selectedManualAssignment?.id || ''} onChange={event => { setManualAssignmentId(event.target.value); setManualError(''); }}>
                         {assignmentCandidates.map(item => <option key={item.id} value={item.id}>{item.roomId ? lookup.rooms.get(item.roomId)?.name : 'Phòng thường'} · {item.periodsPerWeek - (solution.entries.filter(e => e.assignmentId === item.id).length)} tiết còn lại · {item.id}</option>)}
                       </select>
                     </label>}
