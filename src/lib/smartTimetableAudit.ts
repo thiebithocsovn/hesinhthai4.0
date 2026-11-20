@@ -22,7 +22,8 @@ export interface TimetableAuditReport {
 }
 
 /** Independent audit of an output timetable (not a call into the solver's own validator). */
-export function auditTimetableSolution(raw: TimetableScenario, solution: TimetableSolution | null): TimetableAuditReport {
+export function auditTimetableSolution(raw: TimetableScenario, solution: TimetableSolution | null, options: { allowIncomplete?: boolean } = {}): TimetableAuditReport {
+  const allowIncomplete = options.allowIncomplete === true;
   const normalized = normalizeTimetableScenario(raw);
   const scenario = scenarioForTeachingWeek(normalized);
   const entries = solution?.entries || [];
@@ -109,12 +110,12 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
     if (!Number.isInteger(assignment.periodsPerWeek) || assignment.periodsPerWeek < 1 || !scenario.subjects.some(subject => subject.id === assignment.subjectId)) errors.push('Số tiết hoặc môn học không hợp lệ: ' + assignment.id + '.');
     const assignedRoom = rooms.get(assignment.roomId || '');
     if (assignedRoom?.campusId && assignment.campusId && assignedRoom.campusId !== assignment.campusId) errors.push('Phòng và phân công khác cơ sở: ' + assignment.id + '.');
-    if (placed.length !== assignment.periodsPerWeek) errors.push('Phân công ' + assignment.id + ': yêu cầu ' + assignment.periodsPerWeek + ' tiết, đã xếp ' + placed.length + '.');
+    if (placed.length > assignment.periodsPerWeek || (!allowIncomplete && placed.length !== assignment.periodsPerWeek)) errors.push('Phân công ' + assignment.id + ': yêu cầu ' + assignment.periodsPerWeek + ' tiết, đã xếp ' + placed.length + '.');
     for (const slot of assignment.fixedStartSlots || []) {
       const start = parseTimetableSlot(slot);
       if (!start) { errors.push('Ô cố định không hợp lệ: ' + assignment.id + ' / ' + slot + '.'); continue; }
       for (let offset = 0; offset < (assignment.blockSize || 1); offset++) {
-        if (!placed.some(item => item.dayIndex === start.dayIndex && item.period === start.period + offset)) {
+        if ((!allowIncomplete || placed.length === assignment.periodsPerWeek) && !placed.some(item => item.dayIndex === start.dayIndex && item.period === start.period + offset)) {
           errors.push('Thiếu tiết cố định của ' + assignment.id + ' tại ' + slot + ', vị trí ' + (offset + 1) + '.');
         }
       }
@@ -134,7 +135,7 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
     const expectedBlock = assignment.blockSize || 1;
     const lengths = [...groups.values()].map(group => group.length).sort((a, b) => a - b);
     const requiredLengths = Array.from({ length: Math.ceil(assignment.periodsPerWeek / expectedBlock) }, (_, i) => Math.min(expectedBlock, assignment.periodsPerWeek - i * expectedBlock)).sort((a, b) => a - b);
-    if (JSON.stringify(lengths) !== JSON.stringify(requiredLengths)) errors.push('Số lượng hoặc độ dài block không khớp: ' + assignment.id + '.');
+    if ((!allowIncomplete || placed.length === assignment.periodsPerWeek) && JSON.stringify(lengths) !== JSON.stringify(requiredLengths)) errors.push('Số lượng hoặc độ dài block không khớp: ' + assignment.id + '.');
     for (const group of groups.values()) {
       const ordered = [...group].sort((a, b) => a.period - b.period);
       const expectedMax = assignment.blockSize || 1;
@@ -201,11 +202,11 @@ export function auditTimetableSolution(raw: TimetableScenario, solution: Timetab
       const signatures: string[] = [];
       for (const member of members) {
         const meeting = (byAssignment.get(member!.id) || []).filter(e => e.meetingIndex === index).sort((a, b) => a.period - b.period);
-        if (!meeting.length) { errors.push('Thiếu buổi ' + (index + 1) + ' của nhóm ' + group.name + '.'); continue; }
+        if (!meeting.length) { if (!allowIncomplete) errors.push('Thiếu buổi ' + (index + 1) + ' của nhóm ' + group.name + '.'); continue; }
         if (group.kind === 'parallel') signatures.push(meeting.map(e => `${e.dayIndex}:${entryInterval(scenario, e).start}:${entryInterval(scenario, e).end}`).join('|'));
         else signatures.push(meeting.map(e => `${e.dayIndex}:${sessionForPeriod(scenario, e.period)}`).filter((x, i, list) => list.indexOf(x) === i).join('|'));
       }
-      if (new Set(signatures).size > 1 || (group.kind === 'same-session' && signatures.some(x => x.includes('|')))) errors.push('Nhóm ' + group.name + ' không thỏa ' + (group.kind === 'parallel' ? 'học song song' : 'học cùng buổi') + '.');
+      if ((!allowIncomplete || signatures.length === members.length) && (new Set(signatures).size > 1 || (group.kind === 'same-session' && signatures.some(x => x.includes('|'))))) errors.push('Nhóm ' + group.name + ' không thỏa ' + (group.kind === 'parallel' ? 'học song song' : 'học cùng buổi') + '.');
     }
   }
   for (const classroom of scenario.classes) {

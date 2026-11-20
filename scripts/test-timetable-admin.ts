@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createDefaultTimetableScenario, normalizeTimetableScenario, optimizeTimetable, type TimetableScenario } from '../src/lib/smartTimetable';
 import { auditTimetableSolution } from '../src/lib/smartTimetableAudit';
-import { classGradeId, moveTimetableBlock, setHomeroomTeacher, timetableGrades } from '../src/lib/timetableAdmin';
+import { classGradeId, createBlankManualTimetable, moveTimetableBlock, placeManualTimetableBlock, removeManualTimetableBlock, setHomeroomTeacher, timetableGrades } from '../src/lib/timetableAdmin';
 import { TIMETABLE_ADMIN_PAGES, TIMETABLE_SETUP_STEPS } from '../src/lib/timetableNavigation';
 
 const old = createDefaultTimetableScenario();
@@ -59,6 +59,41 @@ assert.ok(!moveTimetableBlock(scenario, { ...solution, entries: solution.entries
 assert.ok(!moveTimetableBlock(scenario, { ...solution, entries: solution.entries.map(item => ({ ...item, blockId: undefined })) }, 'a1', 2, 1).solution, 'Old backups without block IDs must not split consecutive lessons.');
 assert.ok(!moveTimetableBlock({ ...scenario, assignments: scenario.assignments.map(item => item.id === 'a' ? { ...item, fixedStartSlots: ['0:1'] } : item) }, solution, 'a1', 2, 1).solution, 'Fixed-start constraints remain effective even without entry flags.');
 assert.equal(JSON.stringify(solution), initialSolution, 'Rejected moves and previews never mutate the saved solution.');
+
+const blank = createBlankManualTimetable(scenario);
+assert.equal(blank.entries.length, 0, 'Manual scheduling must begin with an empty grid.');
+const blankAudit = auditTimetableSolution(scenario, blank, { allowIncomplete: true });
+assert.ok(blankAudit.valid && !blankAudit.complete, 'An empty manual draft is valid but incomplete.');
+assert.ok(!auditTimetableSolution(scenario, blank).valid, 'Strict export/publication audit must still reject incomplete schedules.');
+const manualA = placeManualTimetableBlock(scenario, blank, 'a', 0, 1);
+assert.ok(manualA.solution, manualA.errors.join('; '));
+assert.equal(manualA.solution!.entries.length, 2, 'Placing a double lesson creates an entire block.');
+assert.ok(auditTimetableSolution(scenario, manualA.solution!, { allowIncomplete: true }).valid);
+assert.ok(!placeManualTimetableBlock(scenario, manualA.solution!, 'b', 0, 1).solution, 'Room conflicts must be rejected immediately.');
+assert.ok(!placeManualTimetableBlock(scenario, manualA.solution!, 'c', 0, 1).solution, 'Teacher conflicts must be rejected immediately.');
+assert.ok(!placeManualTimetableBlock(scenario, manualA.solution!, 'a', 1, 1).solution, 'Do not place more than assigned weekly lessons.');
+assert.ok(!placeManualTimetableBlock(scenario, blank, 'a', 0, 3).solution, 'Reject a double period that crosses morning/afternoon.');
+assert.ok(!placeManualTimetableBlock(scenario, blank, 'a', 3, 1).solution, 'Reject unavailable teacher slots.');
+const manualB = placeManualTimetableBlock(scenario, manualA.solution!, 'b', 1, 1);
+assert.ok(manualB.solution, manualB.errors.join('; '));
+const manualC = placeManualTimetableBlock(scenario, manualB.solution!, 'c', 1, 2);
+assert.ok(manualC.solution, manualC.errors.join('; '));
+const completeManual = auditTimetableSolution(scenario, manualC.solution!);
+assert.ok(completeManual.valid && completeManual.complete, completeManual.errors.join('; '));
+const removedManual = removeManualTimetableBlock(scenario, manualC.solution!, manualB.solution!.entries.find(entry => entry.assignmentId === 'b')!.id);
+assert.ok(removedManual.solution, removedManual.errors.join('; '));
+assert.ok(auditTimetableSolution(scenario, removedManual.solution!, { allowIncomplete: true }).valid);
+assert.equal(auditTimetableSolution(scenario, removedManual.solution!).complete, false);
+const movedPartial = moveTimetableBlock(scenario, removedManual.solution!, manualA.solution!.entries[0].id, 2, 1);
+assert.ok(movedPartial.solution, movedPartial.errors.join('; '));
+assert.ok(auditTimetableSolution(scenario, movedPartial.solution!, { allowIncomplete: true }).valid);
+const fixedScenario = { ...scenario, assignments: scenario.assignments.map(item => item.id === 'a' ? { ...item, fixedStartSlots: ['0:1'] } : item) };
+assert.ok(!placeManualTimetableBlock(fixedScenario, createBlankManualTimetable(fixedScenario), 'a', 1, 1).solution, 'Manual placement must honor fixed starts.');
+const fixedManual = placeManualTimetableBlock(fixedScenario, createBlankManualTimetable(fixedScenario), 'a', 0, 1);
+assert.ok(fixedManual.solution, fixedManual.errors.join('; '));
+assert.ok(!removeManualTimetableBlock(fixedScenario, fixedManual.solution!, fixedManual.solution!.entries[0].id).solution, 'Fixed lessons cannot be deleted.');
+assert.equal(JSON.stringify(blank.entries), '[]', 'Manual placement must not mutate the initial draft.');
+
 assert.equal(new Set(TIMETABLE_ADMIN_PAGES.map(item => item.id)).size, TIMETABLE_ADMIN_PAGES.length);
 assert.ok(TIMETABLE_SETUP_STEPS.every(id => TIMETABLE_ADMIN_PAGES.some(item => item.id === id)));
-console.log('Timetable admin: legacy grades, homeroom reassignment, safe block moves and navigation passed.');
+console.log('Timetable admin: legacy grades, homeroom reassignment, safe block moves, blank grids, manual placements and navigation passed.');
