@@ -117,11 +117,10 @@ Web/PWA
 
 ## Lưu dữ liệu và bảo mật
 
-- Khách dùng thử: dữ liệu chỉ nằm trên thiết bị.
-- Giáo viên đăng nhập: ứng dụng vẫn **local-first**, nên mất mạng vẫn tiếp tục làm việc.
-- Khi có mạng, workspace hiện tại được đồng bộ tới `timetable_workspaces/{uid}`.
-- Firestore Rules chỉ cho giáo viên đang hoạt động đọc/ghi document mang đúng UID của mình; quản trị viên có quyền giám sát.
-- Lịch sử nhiều phương án được giữ local và có thể sao lưu JSON. Cloud chỉ giữ scenario hiện tại + phương án hiện tại để hạn chế kích thước document.
+- Bản cá nhân mở bằng tài khoản Google đã xác minh của chủ thời khóa biểu. Người sở hữu xem email và trạng thái lưu trong thanh trên cùng. Danh mục giáo viên là dữ liệu xếp lịch.
+- Mỗi lần mở lại, đăng nhập hoặc kết nối lại, ứng dụng đối chiếu bản máy với `timetable_workspaces/{uid}` trong Firestore. Dữ liệu gồm tuần đang chọn, phân công, ràng buộc và phương án hiện tại. Lịch sử phương án được giữ trên máy và trong bản sao lưu JSON.
+- Chỉ báo “Đã lưu trên tài khoản” xuất hiện sau khi máy chủ xác nhận. Máy có bản lưu có thể tiếp tục sửa khi mất mạng. Nếu hai máy cùng sửa, chủ lịch chọn phiên bản muốn dùng và có thể tải bản dự phòng.
+- Giai đoạn cá nhân đã gỡ không gian nhiều trường, tài khoản thành viên, mã mời và quy trình duyệt chung. Việc phát hành một bản tra cứu chỉ đọc vẫn do chủ lịch chủ động thực hiện.
 
 ## Xuất báo cáo
 

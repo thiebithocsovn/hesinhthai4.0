@@ -2,6 +2,7 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
+import { isTimetableOwner } from '../src/lib/timetableOwner.js';
 import { teacherAdminAppOptions } from './teacherAdminCredentials.js';
 import { createTimetablePublicationApp, type PublicationRecord } from './timetablePublication.js';
 import { createPublicationToken, decodePublicationToken } from './timetablePublicationToken.js';
@@ -20,17 +21,7 @@ export function createFirebaseTimetablePublicationApp() {
     createId(uid) { return createPublicationToken(uid, secret()); },
     async verifyOwner(token) {
       const identity = await getAuth(app()).verifyIdToken(token, true);
-      if (identity.firebase?.sign_in_provider === 'anonymous') throw new Error('Anonymous access');
-      const adminEmails = (process.env.TEACHER_ADMIN_EMAILS || 'tuyenthcskimhy@gmail.com').split(',').map(x => x.trim().toLowerCase());
-      const claimedAdmin = identity.admin === true || identity.role === 'admin' || identity.email_verified === true && adminEmails.includes((identity.email || '').toLowerCase());
-      if (!claimedAdmin) {
-        const admin = await request(`admins/${encodeURIComponent(identity.uid)}?mask.fieldPaths=id`);
-        if (!admin.ok) {
-          const response = await request(`teachers/${encodeURIComponent(identity.uid)}?mask.fieldPaths=id&mask.fieldPaths=status`);
-          const data = response.ok ? await response.json() : null;
-          if (data?.fields?.status?.stringValue !== 'active' || data?.fields?.id?.stringValue !== identity.uid) throw new Error('Inactive teacher');
-        }
-      }
+      if (!isTimetableOwner(identity.email, identity.email_verified === true)) throw new Error('Timetable owner required');
       return identity.uid;
     },
     async read(id) {

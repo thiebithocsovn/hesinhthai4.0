@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import TimetableAdminShell from './TimetableAdminShell';
 import { TimetableAvailabilityPanel, TimetableBackupPanel, TimetableCatalogPanel, TimetableCurriculumPanel, TimetableGradesPanel, TimetableHomeroomPanel, TimetableOverviewPanel, TimetableSettingsPanel } from './TimetableAdminPanels';
 import { TimetableAssignmentResources, TimetableCampusPanel, TimetableConcurrencyPanel, TimetableMergePanel, TimetableResourceDetails, TimetableSameSessionPanel, TimetableSplitPanel, TimetableTeacherDaysPanel } from './TimetableAdvancedPanels';
+import { decodeWorkspace, normalizeSolution, type TimetableWorkspace as PersistedWorkspace } from '../lib/timetableWorkspace';
 import { timetableCoverSignature } from '../lib/timetableCover';
 import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from '../lib/smartTimetableResources';
 import { TIMETABLE_ADMIN_PAGES, type TimetableWorkspaceTab } from '../lib/timetableNavigation';
@@ -51,11 +52,14 @@ const TimetablePublicationPanel = React.lazy(() => import('./TimetablePublicatio
 const TimetableExamRoomsPanel = React.lazy(() => import('./TimetableExamRoomsPanel'));
 const TimetableSchoolBoard = React.lazy(() => import('./TimetableSchoolBoard'));
 const TimetableCoverPanel = React.lazy(() => import('./TimetableCoverPanel'));
-const TimetableSchoolsPanel = React.lazy(() => import('./TimetableSchoolsPanel'));
+
 
 interface SmartTimetableProps {
   onBack: () => void;
   storageKey: string;
+  initialWorkspace?: PersistedWorkspace;
+  onWorkspaceChange?: (next: PersistedWorkspace) => void;
+  accountStatus?: React.ReactNode;
   trialMode?: boolean;
 }
 
@@ -64,52 +68,18 @@ type CatalogKind = 'teacher' | 'class' | 'subject' | 'room';
 type ConstraintKind = 'teacher' | 'class' | 'room';
 type ScheduleView = 'class' | 'teacher' | 'room';
 
-interface PersistedWorkspace {
-  scenario: TimetableScenario;
-  solution: TimetableSolution | null;
-  versions: TimetableSolution[];
-}
-
 interface TimetableWorkerResponse {
   ok: boolean;
   solution?: TimetableSolution;
   error?: string;
 }
 
-function normalizeSolution(solution: TimetableSolution | null | undefined): TimetableSolution | null {
-  if (!solution?.entries || !solution.diagnostics) return null;
-  const teacherGaps = Number(solution.diagnostics.teacherGaps || 0);
-  return {
-    ...solution,
-    diagnostics: {
-      ...solution.diagnostics,
-      hardConflicts: solution.diagnostics.hardConflicts || [],
-      warnings: solution.diagnostics.warnings || [],
-      unscheduled: solution.diagnostics.unscheduled || [],
-      teacherGaps,
-      preflight: solution.diagnostics.preflight || [],
-      quality: solution.diagnostics.quality || {
-        teacherGaps,
-        classGaps: 0,
-        lateCorePeriods: 0,
-        dailyImbalance: 0,
-      },
-    },
-  };
-}
-
 function readWorkspace(storageKey: string): PersistedWorkspace {
   try {
-    const parsed = JSON.parse(localStorage.getItem(storageKey) || 'null') as PersistedWorkspace | null;
-    if (parsed?.scenario?.teachers && parsed?.scenario?.classes && parsed?.scenario?.assignments) {
-      return {
-        scenario: normalizeTimetableScenario(parsed.scenario),
-        solution: normalizeSolution(parsed.solution),
-        versions: Array.isArray(parsed.versions) ? parsed.versions.map(normalizeSolution).filter(Boolean).slice(0, 8) as TimetableSolution[] : [],
-      };
-    }
+    const raw = localStorage.getItem(storageKey);
+    if (raw) return decodeWorkspace(JSON.parse(raw));
   } catch {
-    // Fall through to sample data.
+    // Standalone preview can start from its sample.
   }
   return { scenario: createDefaultTimetableScenario(), solution: null, versions: [] };
 }
@@ -131,8 +101,9 @@ function downloadBlob(filename: string, data: BlobPart, type: string): void {
   URL.revokeObjectURL(url);
 }
 
-export default function SmartTimetable({ onBack, storageKey, trialMode = false }: SmartTimetableProps) {
-  const initial = useMemo(() => readWorkspace(storageKey), [storageKey]);
+export default function SmartTimetable({ onBack, storageKey, initialWorkspace, onWorkspaceChange, accountStatus, trialMode = false }: SmartTimetableProps) {
+  const initial = useMemo(() => initialWorkspace ?? readWorkspace(storageKey), [initialWorkspace, storageKey]);
+  const persisted = useRef(initial);
   const [scenario, setScenario] = useState<TimetableScenario>(initial.scenario);
   const [solution, setSolution] = useState<TimetableSolution | null>(initial.solution);
   const [versions, setVersions] = useState<TimetableSolution[]>(initial.versions);
@@ -184,12 +155,19 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
   useEffect(() => { const title = document.title; document.title = 'Thời khóa biểu'; return () => { document.title = title; }; }, []);
 
   useEffect(() => {
+    if (onWorkspaceChange) {
+      if (scenario !== persisted.current.scenario || solution !== persisted.current.solution || versions !== persisted.current.versions) {
+        persisted.current = { scenario, solution, versions };
+        onWorkspaceChange(persisted.current);
+      }
+      return;
+    }
     try {
       localStorage.setItem(storageKey, JSON.stringify({ scenario, solution, versions } satisfies PersistedWorkspace));
     } catch {
       // Workspace stays usable without browser storage.
     }
-  }, [scenario, solution, storageKey, versions]);
+  }, [onWorkspaceChange, scenario, solution, storageKey, versions]);
 
   useEffect(() => () => {
     optimizerGeneration.current++;
@@ -255,27 +233,6 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
     resetSolution();
   };
 
-  const loadSharedWorkspace = (incomingScenario: TimetableScenario, incomingSolution: TimetableSolution | null) => {
-    const nextScenario = normalizeTimetableScenario(incomingScenario);
-    let nextSolution = normalizeSolution(incomingSolution);
-    let incompleteDraft = false;
-    if (nextSolution) {
-      const report = auditTimetableSolution(nextScenario, nextSolution);
-      if (!report.valid || !report.complete) {
-        // Preserve the team's scenario while refusing to display an invalid solution as a valid timetable.
-        nextSolution = null;
-        incompleteDraft = true;
-      }
-    }
-    setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20));
-    setRedoHistory([]);
-    cancelOptimizer();
-    setScenario(nextScenario);
-    setSolution(nextSolution);
-    setVersions([]);
-    setSelectedEntryId('');
-    setMessage(incompleteDraft ? 'Đã nạp dữ liệu khai báo của trường. Phương án chưa hợp lệ nên không được mở; hãy xếp và kiểm tra lại.' : 'Đã nạp dữ liệu trường; có thể hoàn tác để về bản làm việc trước đó.');
-  };
   const restoreWorkspace = (workspace: PersistedWorkspace) => { cancelOptimizer(); setScenario(workspace.scenario); setSolution(workspace.solution); setVersions(workspace.versions); setSelectedEntryId(''); };
   const undo = () => {
     const previous = undoHistory[undoHistory.length - 1]; if (!previous) return;
@@ -528,6 +485,7 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
       pageId={pageId}
       timetableTitle={timetableTitle}
       trialMode={trialMode}
+      accountStatus={accountStatus}
       onNavigate={navigatePage}
       onBack={onBack}
       actions={<>
@@ -570,7 +528,6 @@ export default function SmartTimetable({ onBack, storageKey, trialMode = false }
         {activeTab === 'education' && <TimetableEducationPanel key={JSON.stringify(scenario.education || null)} scenario={scenario} onChange={changeScenario} />}
         {activeTab === 'schoolboard' && <TimetableSchoolBoard scenario={scenario} solution={solution} />}
         {activeTab === 'cover' && <TimetableCoverPanel key={timetableCoverSignature(scenario, solution)} scenario={scenario} solution={solution} storageKey={storageKey} />}
-        {activeTab === 'schools' && <TimetableSchoolsPanel scenario={scenario} solution={solution} trialMode={trialMode} onLoad={loadSharedWorkspace} />}
         {activeTab === 'overview' && <TimetableOverviewPanel scenario={scenario} solution={solution} navigate={navigatePage} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} />}
         {activeTab === 'catalog' && <><TimetableCatalogPanel key={catalogKind} scenario={scenario} kind={catalogKind} onChange={changeScenario} /><TimetableEducationCatalogDetails scenario={scenario} kind={catalogKind} onChange={changeScenario} />{(catalogKind === 'class' || catalogKind === 'room') && <TimetableResourceDetails scenario={scenario} onChange={changeScenario} />}</>}
         {activeTab === 'grades' && <TimetableGradesPanel scenario={scenario} onChange={changeScenario} />}

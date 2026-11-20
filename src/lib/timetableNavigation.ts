@@ -1,4 +1,4 @@
-export type TimetableWorkspaceTab = 'education' | 'overview' | 'catalog' | 'assignments' | 'constraints' | 'schedule' | 'diagnostics' | 'cover' | 'schools' | 'agent' | 'grades' | 'homeroom' | 'curriculum' | 'settings' | 'backup' | 'advanced' | 'schoolboard';
+export type TimetableWorkspaceTab = 'education' | 'overview' | 'catalog' | 'assignments' | 'constraints' | 'schedule' | 'diagnostics' | 'cover' | 'agent' | 'grades' | 'homeroom' | 'curriculum' | 'settings' | 'backup' | 'advanced' | 'schoolboard';
 
 export interface TimetableAdminPage {
   id: string;
@@ -28,7 +28,6 @@ export const TIMETABLE_ADMIN_GROUPS: { title: string; pages: TimetableAdminPage[
     { id: 'schoolboard', label: 'Bảng lịch toàn trường', tab: 'schoolboard', description: 'Xem tất cả lớp trên cùng một bảng, lọc theo ngày và cấp học.' },
     { id: 'refine', label: 'Tinh chỉnh TKB', tab: 'schedule', description: 'Chọn tiết rồi chuyển sang ô trống; mọi thay đổi được kiểm tra độc lập.' },
     { id: 'cover', label: 'Điều động dạy thay', tab: 'cover', description: 'Đăng ký dạy thay theo ngày, kiểm tra trùng lịch và xuất danh sách dự kiến; không đổi lịch gốc.' },
-    { id: 'schools', label: 'Trường học & phân quyền', tab: 'schools', description: 'Không gian trường, tài khoản, phân quyền, lưu chung và duyệt lịch cấp trường.' },
     { id: 'agent', label: 'Trợ lý thời khóa biểu', tab: 'agent', description: 'Nhập yêu cầu bằng tiếng Việt, xem trước rồi duyệt ràng buộc.' },
   ] },
   { title: 'Cấu hình', pages: [

@@ -9,7 +9,6 @@
   },
   "functions": {
     "api/admin/teachers/password.ts": { "maxDuration": 30 },
-    "api/timetable.ts": { "maxDuration": 30 },
-    "api/timetable/schools.ts": { "maxDuration": 30 }
+    "api/timetable.ts": { "maxDuration": 30 }
   }
 }
