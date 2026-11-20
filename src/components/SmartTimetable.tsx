@@ -8,7 +8,7 @@ import { decodeWorkspace, type TimetableWorkspace as PersistedWorkspace } from '
 import { timetableCoverSignature } from '../lib/timetableCover';
 import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from '../lib/smartTimetableResources';
 import { TIMETABLE_ADMIN_PAGES, type TimetableWorkspaceTab } from '../lib/timetableNavigation';
-import { moveTimetableBlock, swapTimetableBlocks } from '../lib/timetableAdmin';
+import { createBlankManualTimetable, moveTimetableBlock, placeManualTimetableBlock, removeManualTimetableBlock, swapTimetableBlocks } from '../lib/timetableAdmin';
 import { auditTimetableSolution } from '../lib/smartTimetableAudit';
 import { collectTimetableConstraintAlerts } from '../lib/timetableConstraintAlerts';
 import { printTimetableView } from '../lib/timetablePrint';
@@ -110,6 +110,10 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
   const [pageId, setPageId] = useState('overview');
   const [selectedEntryId, setSelectedEntryId] = useState('');
+  const [manualSlot, setManualSlot] = useState<{ dayIndex: number; period: number } | null>(null);
+  const [manualSubjectId, setManualSubjectId] = useState('');
+  const [manualTeacherId, setManualTeacherId] = useState('');
+  const [manualAssignmentId, setManualAssignmentId] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [undoHistory, setUndoHistory] = useState<PersistedWorkspace[]>([]);
@@ -196,6 +200,15 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
 
   const scheduleResources = scheduleView === 'class' ? scenario.classes.filter(c => scheduleLevel === 'all' || c.level === scheduleLevel) : scheduleView === 'teacher' ? scenario.teachers : scenario.rooms;
   const audit = useMemo(() => auditTimetableSolution(scenario, solution), [scenario, solution]);
+  const draftAudit = useMemo(() => auditTimetableSolution(scenario, solution, { allowIncomplete: true }), [scenario, solution]);
+  const manualCandidates = weeklyScenario.assignments.filter(item =>
+    scheduleView === 'class' && assignmentClassIds(item).includes(scheduleResourceId) &&
+    (solution?.entries.filter(entry => entry.assignmentId === item.id).length || 0) < item.periodsPerWeek);
+  const selectedManualSubjectId = manualCandidates.some(item => item.subjectId === manualSubjectId) ? manualSubjectId : manualCandidates[0]?.subjectId || '';
+  const subjectCandidates = manualCandidates.filter(item => item.subjectId === selectedManualSubjectId);
+  const selectedManualTeacherId = subjectCandidates.some(item => item.teacherId === manualTeacherId) ? manualTeacherId : subjectCandidates[0]?.teacherId || '';
+  const assignmentCandidates = subjectCandidates.filter(item => item.teacherId === selectedManualTeacherId);
+  const selectedManualAssignment = assignmentCandidates.find(item => item.id === manualAssignmentId) || assignmentCandidates[0];
 
   const navigatePage = (id: string) => {
     const page = TIMETABLE_ADMIN_PAGES.find(item => item.id === id);
@@ -203,6 +216,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
     setPageId(id);
     setActiveTab(page.tab);
     setSelectedEntryId('');
+    setManualSlot(null);
     if (page.catalog) setCatalogKind(page.catalog);
     if (page.constraint) setConstraintKind(page.constraint);
     if (page.view) setScheduleView(page.view);
@@ -223,6 +237,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
     cancelOptimizer();
     setSolution(null);
     setSelectedEntryId('');
+    setManualSlot(null);
     setMessage('Dữ liệu đã thay đổi. Hãy xếp lại để cập nhật phương án.');
   };
 
@@ -233,7 +248,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
     resetSolution();
   };
 
-  const restoreWorkspace = (workspace: PersistedWorkspace) => { cancelOptimizer(); setScenario(workspace.scenario); setSolution(workspace.solution); setVersions(workspace.versions); setSelectedEntryId(''); };
+  const restoreWorkspace = (workspace: PersistedWorkspace) => { cancelOptimizer(); setScenario(workspace.scenario); setSolution(workspace.solution); setVersions(workspace.versions); setSelectedEntryId(''); setManualSlot(null); };
   const undo = () => {
     const previous = undoHistory[undoHistory.length - 1]; if (!previous) return;
     setRedoHistory(history => [...history, { scenario, solution, versions }].slice(-20)); setUndoHistory(history => history.slice(0, -1)); restoreWorkspace(previous); setMessage('Đã hoàn tác thay đổi dữ liệu.');
@@ -244,14 +259,65 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
   };
 
   const restoreVersion = (version: TimetableSolution) => {
-    const report = auditTimetableSolution(scenario, version);
-    if (!report.valid || !report.complete) {
-      setMessage('Phương án này không khớp đầy đủ với dữ liệu và ràng buộc hiện tại. Khôi phục bản JSON tương ứng hoặc xếp lại lịch.');
+    const report = auditTimetableSolution(scenario, version, { allowIncomplete: true });
+    if (!report.valid) {
+      setMessage('Phương án này không khớp dữ liệu hoặc ràng buộc hiện tại. Khôi phục bản JSON tương ứng hoặc xếp lại lịch.');
       return;
     }
     setSolution(version);
     navigatePage('schedule');
     setMessage('Đã mở phương án và kiểm tra độc lập.');
+  };
+
+  const beginManualTimetable = () => {
+    if (!weeklyScenario.assignments.length || !scenario.classes.length) {
+      setMessage('Hãy khai báo lớp, môn, giáo viên và phân công trước khi xếp thủ công.');
+      navigatePage('assignments');
+      return;
+    }
+    if (solution?.entries.length && !window.confirm('Tạo thời khóa biểu trống sẽ thay phương án đang mở. Bản cũ vẫn nằm trong lịch sử phương án. Tiếp tục?')) return;
+    setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20));
+    setRedoHistory([]);
+    const blank = createBlankManualTimetable(scenario);
+    setVersions(previous => solution?.entries.length ? [solution, ...previous].slice(0, 8) : previous);
+    setSolution(blank);
+    setScheduleView('class');
+    setScheduleResourceId(scenario.classes[0]?.id || '');
+    setSelectedEntryId('');
+    setManualSlot(null);
+    navigatePage('schedule');
+    setMessage('Đã tạo bảng trống. Chọn lớp, nhấn vào ô trống và chọn môn cùng giáo viên để xếp từng tiết.');
+  };
+
+  const addManualLesson = () => {
+    if (!solution || !manualSlot || !selectedManualAssignment || busy) return;
+    const result = placeManualTimetableBlock(scenario, solution, selectedManualAssignment.id, manualSlot.dayIndex, manualSlot.period);
+    if (!result.solution) {
+      setMessage('Không thể xếp tiết: ' + result.errors.slice(0, 3).join(' '));
+      return;
+    }
+    setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20));
+    setRedoHistory([]);
+    setSolution(result.solution);
+    setVersions(previous => [result.solution!, ...previous].slice(0, 8));
+    setManualSlot(null);
+    setManualSubjectId('');
+    setManualTeacherId('');
+    setManualAssignmentId('');
+    setMessage('Đã xếp tiết thủ công và kiểm tra ràng buộc. Tiếp tục chọn ô trống để xếp các tiết còn lại.');
+  };
+
+  const removeManualLesson = (entry: ScheduleEntry) => {
+    if (!solution || busy) return;
+    if (!window.confirm('Xóa tiết học này (cả block nếu là tiết đôi/ba)? Thời khóa biểu sẽ trở lại trạng thái bản nháp cho đến khi xếp đủ tiết.')) return;
+    const result = removeManualTimetableBlock(scenario, solution, entry.id);
+    if (!result.solution) { setMessage('Không thể xóa tiết: ' + result.errors.slice(0, 3).join(' ')); return; }
+    setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20));
+    setRedoHistory([]);
+    setSolution(result.solution);
+    setVersions(previous => [result.solution!, ...previous].slice(0, 8));
+    setSelectedEntryId('');
+    setMessage('Đã xóa block và cập nhật số tiết còn cần xếp.');
   };
 
   const moveEntry = (id: string, dayIndex: number, period: number) => {
@@ -501,6 +567,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
         <button type="button" onClick={undo} disabled={busy || !undoHistory.length} className="tt-action-export" aria-label="Hoàn tác thay đổi"><Undo2 size={14} />Hoàn tác</button>
         <button type="button" onClick={redo} disabled={busy || !redoHistory.length} className="tt-action-export" aria-label="Làm lại thay đổi"><Redo2 size={14} />Làm lại</button>
         <button type="button" onClick={exportExcel} disabled={!solution || busy || !audit.valid || !audit.complete} className="tt-action-export"><Download size={15} />Xuất Excel</button>
+        <button type="button" onClick={beginManualTimetable} disabled={busy || !weeklyScenario.assignments.length} className="tt-action-export"><Plus size={15} />Xếp thủ công từ bảng trống</button>
         <button type="button" onClick={runOptimizer} disabled={busy || !scenario.assignments.length} className="tt-action-run"><WandSparkles size={15} />{busy ? 'Đang xếp lịch...' : 'Xếp tự động'}</button>
       </>}
     >
@@ -573,22 +640,56 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
               </div>
             </div>
             {selectedEntryId && <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Đã chọn tiết. Bấm ô đích để chuyển cả block.<button type="button" className="tt-button" onClick={() => setSelectedEntryId('')}>Hủy chọn</button></div>}
-            {!solution ? <div className="tt-panel py-12 text-center"><CalendarRange className="mx-auto h-10 w-10 text-slate-300" /><h3 className="mt-4">Chưa có phương án</h3><p>Bấm Xếp tự động để tạo lịch từ dữ liệu đã khai báo.</p></div> : <>
-              <div className={`rounded-lg px-4 py-3 text-xs ${audit.valid && audit.complete ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>{audit.valid && audit.complete ? 'Đã kiểm tra độc lập: đủ tiết, không trùng lớp, giáo viên hoặc phòng.' : `Bản nháp: ${audit.errors.length} vấn đề cần kiểm tra trước khi chia sẻ.`}</div>
+            {!solution ? <div className="tt-panel py-12 text-center"><CalendarRange className="mx-auto h-10 w-10 text-slate-300" /><h3 className="mt-4">Chưa có phương án</h3><p>Bấm <b>Xếp thủ công từ bảng trống</b> hoặc <b>Xếp tự động</b> để bắt đầu.</p><button type="button" onClick={beginManualTimetable} disabled={!weeklyScenario.assignments.length} className="tt-button primary mt-4"><Plus size={15}/>Xếp thủ công từ bảng trống</button></div> : <>
+              <div role="status" className={`rounded-lg px-4 py-3 text-xs ${audit.valid && audit.complete ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>{audit.valid && audit.complete
+              ? 'Đã kiểm tra độc lập: đủ tiết, không trùng lớp, giáo viên hoặc phòng.'
+              : draftAudit.valid
+                ? `Đang xếp thủ công: ${solution.entries.length}/${totalRequiredPeriods} tiết. Bản nháp đã kiểm tra xung đột; chỉ được in, xuất và công bố khi xếp đủ tiết.`
+                : `Bản nháp có ${draftAudit.errors.length} lỗi ràng buộc: ${draftAudit.errors.slice(0, 2).join(' ')}`}</div>
               <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table className="w-full min-w-[820px] border-collapse text-sm"><thead><tr className="bg-[#293c83] text-white"><th className="w-16 border-r border-white/15 p-3">Tiết</th>{days.map(day => <th key={day} className="border-r border-white/15 p-3">{day}</th>)}</tr></thead><tbody>
                 {Array.from({ length: scenario.periodsPerDay }, (_, index) => index + 1).map(period => <React.Fragment key={period}><tr><th className="border-r border-t border-slate-200 bg-slate-50 p-3 text-slate-500">{period}<div className="mt-1 text-[9px] font-normal text-slate-400">{SESSION_LABELS[sessionForPeriod(scenario, period)]}</div></th>
                   {days.map((day, dayIndex) => {
                     const cellEntries = visibleEntries.filter(item => item.dayIndex === dayIndex && item.period === period);
                     return <td key={day} className="h-24 border-r border-t border-slate-200 p-1.5 align-top" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const id = event.dataTransfer.getData('text/timetable-entry'); if (id) moveEntry(id, dayIndex, period); }}>
                       {cellEntries.length ? cellEntries.map(entry => <div key={entry.id} draggable={!entry.fixed && !entry.locked} onDragStart={event => event.dataTransfer.setData('text/timetable-entry', entry.id)} className={`h-full rounded-md border p-2 ${entryTone(entry, scenario)} mb-1 ${selectedEntryId === entry.id ? 'ring-2 ring-blue-500' : ''}`}>
-                        <div className="flex items-start justify-between gap-1"><button type="button" className="flex-1 text-left text-xs font-bold leading-5" aria-label={`Chọn ${lookup.subjects.get(entry.subjectId)?.name} ${day} tiết ${period}`} onClick={() => { if (selectedEntryId && selectedEntryId !== entry.id) moveEntry(selectedEntryId, dayIndex, period); else if (entry.fixed || entry.locked) setMessage('Tiết cố định hoặc đang khóa. Mở khóa trước khi chuyển.'); else setSelectedEntryId(selectedEntryId === entry.id ? '' : entry.id); }}>{lookup.subjects.get(entry.subjectId)?.name}</button><button type="button" onClick={() => toggleEntryLock(entry)} disabled={entry.fixed} className="rounded p-1 text-slate-500 hover:bg-white" aria-label={entry.fixed ? 'Tiết cố định' : entry.locked ? 'Bỏ khóa block' : 'Khóa block'}>{entry.locked || entry.fixed ? <Lock size={12} /> : <Unlock size={12} />}</button></div>
+                        <div className="flex items-start justify-between gap-1"><button type="button" className="flex-1 text-left text-xs font-bold leading-5" aria-label={`Chọn ${lookup.subjects.get(entry.subjectId)?.name} ${day} tiết ${period}`} onClick={() => { if (selectedEntryId && selectedEntryId !== entry.id) moveEntry(selectedEntryId, dayIndex, period); else if (entry.fixed || entry.locked) setMessage('Tiết cố định hoặc đang khóa. Mở khóa trước khi chuyển.'); else setSelectedEntryId(selectedEntryId === entry.id ? '' : entry.id); }}>{lookup.subjects.get(entry.subjectId)?.name}</button><button type="button" onClick={() => toggleEntryLock(entry)} disabled={entry.fixed} className="rounded p-1 text-slate-500 hover:bg-white" aria-label={entry.fixed ? 'Tiết cố định' : entry.locked ? 'Bỏ khóa block' : 'Khóa block'}>{entry.locked || entry.fixed ? <Lock size={12} /> : <Unlock size={12} />}</button><button type="button" onClick={() => removeManualLesson(entry)} disabled={entry.fixed || entry.locked} className="rounded p-1 text-rose-500 hover:bg-rose-50 disabled:opacity-30" title="Xóa tiết để xếp lại" aria-label="Xóa tiết học"><Trash2 size={12} /></button></div>
                         <div className="mt-1 text-[10px] leading-5 text-slate-600">{scheduleView !== 'class' && `${assignmentClassIds(entry).map(id => lookup.classes.get(id)?.name).join(' + ')} · `}{assignmentTeacherIds(entry).map(id => lookup.teachers.get(id)?.name).join(' + ')}</div>
                         {scenario.education && <div className="text-[10px] font-semibold text-blue-800">{entryClockLabel(scenario, entry)}</div>}{assignmentStudentGroupIds(entry).length > 0 && <div className="text-[10px] font-semibold text-indigo-700">{assignmentStudentGroupIds(entry).map(id => scenario.studentGroups?.find(g => g.id === id)?.name).join(' + ')}</div>}{entry.roomId && <div className="text-[10px] text-slate-500">{lookup.rooms.get(entry.roomId)?.name}</div>}{entry.fixed && <div className="text-[9px] font-bold text-amber-700">CỐ ĐỊNH</div>}
-                      </div>) : <button type="button" className="flex min-h-20 w-full items-center justify-center rounded-md text-[10px] text-slate-300 hover:bg-blue-50 hover:text-blue-600" aria-label={`${day} tiết ${period} trống`} onClick={() => { if (selectedEntryId) moveEntry(selectedEntryId, dayIndex, period); }}>{selectedEntryId ? 'Chuyển vào đây' : '—'}</button>}
+                      </div>) : <button type="button" className="flex min-h-20 w-full items-center justify-center rounded-md text-[10px] text-slate-300 hover:bg-blue-50 hover:text-blue-600" aria-label={`${day} tiết ${period} trống`} onClick={() => { if (selectedEntryId) moveEntry(selectedEntryId, dayIndex, period); else if (scheduleView === 'class') { setManualSlot({ dayIndex, period }); setManualSubjectId(''); setManualTeacherId(''); setManualAssignmentId(''); } else setMessage('Hãy chuyển sang chế độ xem Theo lớp để xếp tiết thủ công vào ô trống.'); }}>{selectedEntryId ? 'Chuyển vào đây' : scheduleView === 'class' ? '+ Xếp tiết' : '—'}</button>}
                     </td>;
                   })}</tr>{period < scenario.periodsPerDay && sessionForPeriod(scenario, period) !== sessionForPeriod(scenario, period + 1) && <tr><td colSpan={days.length + 1} className="bg-amber-50 p-1 text-center text-[9px] font-semibold uppercase tracking-widest text-amber-700">Nghỉ giữa buổi</td></tr>}</React.Fragment>)}
               </tbody></table></div>
             </>}
+
+            {manualSlot && solution && scheduleView === 'class' && (
+              <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/50 p-4" role="presentation">
+                <section role="dialog" aria-modal="true" aria-label="Xếp tiết thủ công" className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
+                  <div><h3 className="text-lg font-extrabold text-slate-900">Xếp tiết thủ công</h3>
+                    <p className="mt-1 text-sm text-slate-600">{lookup.classes.get(scheduleResourceId)?.name} · {days[manualSlot.dayIndex]} · Tiết {manualSlot.period} ({SESSION_LABELS[sessionForPeriod(scenario, manualSlot.period)]})</p></div>
+                  {!manualCandidates.length ? <div role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Lớp này đã xếp hết số tiết được phân công, hoặc chưa có phân công. Hãy chọn lớp khác hoặc bổ sung phân công.</div> : <>
+                    <label className="block text-sm font-semibold text-slate-700">Môn học
+                      <select aria-label="Chọn môn học để xếp thủ công" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={selectedManualSubjectId}
+                        onChange={event => { setManualSubjectId(event.target.value); setManualTeacherId(''); setManualAssignmentId(''); }}>
+                        {[...new Set(manualCandidates.map(item => item.subjectId))].map(id => <option key={id} value={id}>{lookup.subjects.get(id)?.name || id}</option>)}
+                      </select>
+                    </label>
+                    <label className="block text-sm font-semibold text-slate-700">Giáo viên
+                      <select aria-label="Chọn giáo viên để xếp thủ công" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={selectedManualTeacherId}
+                        onChange={event => { setManualTeacherId(event.target.value); setManualAssignmentId(''); }}>
+                        {[...new Set(subjectCandidates.map(item => item.teacherId))].map(id => <option key={id} value={id}>{lookup.teachers.get(id)?.name || id}</option>)}
+                      </select>
+                    </label>
+                    {assignmentCandidates.length > 1 && <label className="block text-sm font-semibold text-slate-700">Phân công / phòng
+                      <select aria-label="Chọn phân công cụ thể" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={selectedManualAssignment?.id || ''} onChange={event => setManualAssignmentId(event.target.value)}>
+                        {assignmentCandidates.map(item => <option key={item.id} value={item.id}>{item.roomId ? lookup.rooms.get(item.roomId)?.name : 'Phòng thường'} · {item.periodsPerWeek - (solution.entries.filter(e => e.assignmentId === item.id).length)} tiết còn lại · {item.id}</option>)}
+                      </select>
+                    </label>}
+                    {selectedManualAssignment && <p className="rounded-lg bg-indigo-50 p-3 text-xs text-indigo-900">{selectedManualAssignment.periodsPerWeek - solution.entries.filter(e => e.assignmentId === selectedManualAssignment.id).length} tiết chưa xếp · Đặt {Math.min(selectedManualAssignment.blockSize || 1, selectedManualAssignment.periodsPerWeek - solution.entries.filter(e => e.assignmentId === selectedManualAssignment.id).length)} tiết liên tục. Hệ thống từ chối ô vi phạm ràng buộc.</p>}
+                  </>}
+                  <div className="flex justify-end gap-2"><button type="button" className="tt-button" onClick={() => setManualSlot(null)}>Hủy</button><button type="button" className="tt-button green" disabled={!selectedManualAssignment} onClick={addManualLesson}><Plus size={15}/>Xếp vào ô này</button></div>
+                </section>
+              </div>
+            )}
             {versions.length > 0 && <section className="tt-panel"><h3>Các phương án gần nhất</h3><div className="mt-3 flex gap-2 overflow-auto">{versions.map((version, index) => <button type="button" key={`${version.generatedAt}-${index}`} onClick={() => restoreVersion(version)} className="tt-button min-w-32 flex-col !items-start"><b>Phương án {index + 1}</b><span className="text-xs">{version.entries.length} tiết · {version.score} điểm phạt</span></button>)}</div></section>}
           </div>
         )}
