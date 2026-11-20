@@ -135,6 +135,16 @@ Web/PWA
 - Chỉ báo “Đã lưu trên tài khoản” xuất hiện sau khi máy chủ xác nhận. Máy có bản lưu có thể tiếp tục sửa khi mất mạng. Nếu hai máy cùng sửa, chủ lịch chọn phiên bản muốn dùng và có thể tải bản dự phòng.
 - Giai đoạn cá nhân đã gỡ không gian nhiều trường, tài khoản thành viên, mã mời và quy trình duyệt chung. Việc phát hành một bản tra cứu chỉ đọc vẫn do chủ lịch chủ động thực hiện.
 
+## Thời khóa biểu toàn trường
+
+Từ menu **Xếp lịch → Thời khóa biểu toàn trường**, người sử dụng có thể xem đồng thời mọi lớp. Nút **Xem toàn trường** tại màn hình **Xếp thời khóa biểu** mở trực tiếp chế độ này.
+
+- Mặc định là **Toàn tuần** (các ngày xếp học, tiết học và lớp ở các cột), có thể chuyển sang **Theo ngày**.
+- Lọc theo **buổi sáng/chiều/tối**, **cấp học**, **khối**, hoặc tìm nhanh tên lớp. Trường liên cấp hiển thị các lớp cùng bảng; lớp ghép xuất hiện ở các cột tương ứng.
+- Bảng chỉ đọc và cập nhật theo phương án đang xếp, không làm thay đổi dữ liệu hay ràng buộc.
+- Có thể xuất bảng đang lọc thành **Excel** hoặc **In / PDF** khi phương án đã đủ tiết và qua kiểm tra độc lập. Bản nháp vẫn xem được để kiểm tra trước khi hoàn thiện.
+- Với bảng có nhiều lớp, cuộn ngang; tiêu đề và cột thứ/tiết được ghim để dễ đối chiếu. Có thể lọc cấp hoặc khối để in gọn.
+
 ## Xuất báo cáo
 
 File Excel gồm:
