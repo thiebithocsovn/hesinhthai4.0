@@ -7,13 +7,14 @@ interface Props {
   pageId: string;
   timetableTitle: string;
   trialMode: boolean;
+  accountStatus?: React.ReactNode;
   onNavigate: (id: string) => void;
   onBack: () => void;
   actions: React.ReactNode;
   children: React.ReactNode;
 }
 
-export default function TimetableAdminShell({ pageId, timetableTitle, trialMode, onNavigate, onBack, actions, children }: Props) {
+export default function TimetableAdminShell({ pageId, timetableTitle, trialMode, accountStatus, onNavigate, onBack, actions, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
@@ -65,7 +66,7 @@ export default function TimetableAdminShell({ pageId, timetableTitle, trialMode,
       <header className="tt-topbar">
         <button type="button" ref={menuButton} aria-controls="timetable-sidebar" className="tt-menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở menu thời khóa biểu" aria-expanded={menuOpen}><Menu size={21} /></button>
         <div className="tt-breadcrumb">Thời khóa biểu <ChevronRight size={13} /><span>{page.label}</span></div>
-        <span className="tt-local-status"><i />{trialMode ? 'Dùng thử trên thiết bị' : 'Không gian làm việc'}</span>
+        {accountStatus ?? <span className="tt-local-status"><i />{trialMode ? 'Dùng thử trên thiết bị' : 'Không gian làm việc'}</span>}
       </header>
       <main className="tt-content">
         <section className="tt-school-banner"><div className="tt-school-title"><GraduationCap size={27} /><div><p>PHẦN MỀM XẾP THỜI KHÓA BIỂU</p><h1>{timetableTitle || 'Thời khóa biểu'}</h1></div></div><div className="tt-main-actions">{actions}</div></section>

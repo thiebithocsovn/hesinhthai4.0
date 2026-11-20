@@ -52,7 +52,7 @@
     "test:plicker-fraction": "node --import tsx scripts/test-plicker-fraction.ts",
     "test:plicker-student-sync": "node --import tsx scripts/test-plicker-student-sync.ts",
     "test:plicker-reports": "node --import tsx scripts/test-plicker-reports.ts",
-    "test:smart-timetable": "node --import tsx scripts/test-smart-timetable.ts && node --import tsx scripts/test-timetable-constraint-alerts.ts && node --import tsx scripts/test-timetable-cover.ts",
+    "test:smart-timetable": "node --import tsx scripts/test-timetable-account-sync.ts && node --import tsx scripts/test-smart-timetable.ts && node --import tsx scripts/test-timetable-constraint-alerts.ts && node --import tsx scripts/test-timetable-cover.ts",
     "test:learning-wall": "node --import tsx scripts/test-learning-wall.ts",
     "test:wall-assessment": "node --import tsx scripts/test-wall-assessment.ts",
     "test:wall-chat": "node --import tsx scripts/test-wall-chat.ts",
@@ -69,7 +69,8 @@
     "test:teacher-printing": "node --import tsx scripts/test-teacher-exam-printing.ts",
     "test:timetable-agent": "node --import tsx scripts/test-timetable-agent.ts && node --import tsx scripts/test-timetable-week12.ts",
     "test:timetable-admin": "node --import tsx scripts/test-timetable-admin.ts",
-    "test:timetable-advanced": "node --import tsx scripts/test-timetable-advanced.ts && node --import tsx scripts/test-timetable-publication.ts && node --import tsx scripts/test-timetable-saas.ts && npm run test:timetable-education",
+    "test:timetable-advanced": "node --import tsx scripts/test-timetable-advanced.ts && node --import tsx scripts/test-timetable-publication.ts && npm run test:timetable-education",
+    "test:timetable-account-firestore": "node --import tsx scripts/test-timetable-account-firestore.ts",
     "test:timetable-ui": "node scripts/test-timetable-ui.cjs",
     "test:timetable-education": "node --import tsx scripts/test-timetable-education.ts"
   },
