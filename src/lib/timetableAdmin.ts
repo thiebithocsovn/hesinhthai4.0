@@ -50,7 +50,7 @@ export function moveTimetableBlock(scenario: TimetableScenario, solution: Timeta
   if (!audit.valid) return { errors: audit.errors };
   // Refresh displayed quality metrics only after the independent audit passes.
   const { teacherGaps, classGaps, lateCorePeriods, dailyImbalance } = timetableMetrics(scenario, entries);
-  const diagnostics = { ...solution.diagnostics, hardConflicts: [], unscheduled: [], teacherGaps,
+  const diagnostics = { ...solution.diagnostics, hardConflicts: [], teacherGaps,
     quality: { teacherGaps, classGaps, lateCorePeriods, dailyImbalance }, preflight: analyzeTimetableScenario(scenario),
     unscheduled: remainingManualLessons(scenario, entries),
     warnings: ['Phương án đã tinh chỉnh thủ công; điểm phản ánh các chỉ số chất lượng sau chỉnh sửa.'],
