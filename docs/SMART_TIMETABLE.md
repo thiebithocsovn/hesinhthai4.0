@@ -55,6 +55,19 @@ PlatformBootstrap
 9. Khóa các block đã tốt và tối ưu lại nếu cần.
 10. Xuất Excel hoặc sao lưu JSON.
 
+## Xếp thủ công từ thời khóa biểu trống
+
+1. Khai báo lớp, môn học, giáo viên và **phân công giảng dạy** (hoặc nhập phân công từ Excel) trước khi xếp.
+2. Nhấn **Xếp thủ công từ bảng trống** trên thanh thao tác. Nếu đã có lịch, xác nhận tạo bảng trống; phương án cũ được giữ trong lịch sử để khôi phục.
+3. Trong mục **Thời khóa biểu**, chọn chế độ **Theo lớp** và chọn lớp muốn xếp.
+4. Nhấn ô trống `+ Xếp tiết`, chọn **Môn học**, **Giáo viên** và (nếu có nhiều phân công tương ứng) **Phân công / phòng**; nhấn **Xếp vào ô này**.
+5. Tiết đôi/ba được đặt trọn block liên tiếp và không cắt qua buổi học. Tiết cố định phải được đặt trước các tiết còn lại trong cùng phân công; tiết cố định không thể xóa hay chuyển.
+6. Nếu không đủ số tiết phân công, ô trùng lớp/giáo viên/phòng, hoặc vi phạm giờ bận, giới hạn, quy tắc tuần, hệ thống từ chối thao tác và hiển thị lý do ngay trong cửa sổ.
+7. Có thể kéo thả hoặc nhấn chọn một tiết rồi chọn ô khác để di chuyển/hoán đổi; nút thùng rác xóa cả block (không áp dụng cho tiết cố định/đang khóa). Có thể **Hoàn tác**.
+8. Bản nháp được lưu tự động theo cơ chế local-first và đồng bộ tài khoản khi kết nối; mở lại để tiếp tục xếp. **In/PDF, xuất Excel và công bố** chỉ được mở khi kiểm tra độc lập xác nhận lịch đủ tiết và không vi phạm ràng buộc.
+
+> **Lưu ý:** Lịch thủ công lấy môn/giáo viên từ phân công đã khai báo để không tạo ra tiết trái dữ liệu. Khi chuyển sang **Xếp tự động**, các tiết chưa khóa có thể bị thuật toán xếp lại; hãy khóa những tiết muốn giữ.
+
 ## Nhập Excel
 
 Ứng dụng đọc sheet đầu tiên. Ba cột tối thiểu là:
