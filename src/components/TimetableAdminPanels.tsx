@@ -159,8 +159,22 @@ export function TimetableOverviewPanel({ scenario, solution, navigate, onImport,
   </div>;
 }
 
-export function TimetableBackupPanel({ solution, versions, onBackup, onRestore, onExcel, onImport, onTemplate, onVersion, onReset }: { solution: TimetableSolution | null; versions: TimetableSolution[]; onBackup: () => void; onRestore: () => void; onExcel: () => void; onImport: () => void; onTemplate: () => void; onVersion: (value: TimetableSolution) => void; onReset: () => void }) {
-  return <div className="space-y-5"><section className="tt-panel"><h3>Dữ liệu và thời khóa biểu</h3><p>Sao lưu JSON giữ danh mục, phân công, ràng buộc và các phương án. Excel chứa bảng tổng hợp và lịch lớp, giáo viên.</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" className="tt-button green" onClick={onBackup}><Database size={15} />Sao lưu JSON</button><button type="button" className="tt-button" onClick={onRestore}><FileUp size={15} />Khôi phục JSON</button><button type="button" className="tt-button primary" disabled={!solution} onClick={onExcel}><Download size={15} />Xuất Excel TKB</button><button type="button" className="tt-button" onClick={onTemplate}><FileDown size={15} />Tải mẫu Excel</button><button type="button" className="tt-button" onClick={onImport}><Upload size={15} />Nhập Excel phân công</button></div></section>
+export function TimetableBackupPanel({ solution, versions, onBackup, onRestore, onRestoreText, onExcel, onImport, onTemplate, onVersion, onReset }: { solution: TimetableSolution | null; versions: TimetableSolution[]; onBackup: () => void; onRestore: () => void; onRestoreText: (raw: string) => boolean; onExcel: () => void; onImport: () => void; onTemplate: () => void; onVersion: (value: TimetableSolution) => void; onReset: () => void }) {
+  const [backupText, setBackupText] = useState('');
+  return <div className="space-y-5"><section className="tt-panel"><h3>Dữ liệu và thời khóa biểu</h3><p>Sao lưu JSON giữ danh mục, phân công, ràng buộc và các phương án. Excel chứa bảng tổng hợp và lịch lớp, giáo viên.</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" className="tt-button green" onClick={onBackup}><Database size={15} />Sao lưu JSON</button><button type="button" className="tt-button" onClick={onRestore}><FileUp size={15} />Khôi phục JSON</button><button type="button" className="tt-button primary" disabled={!solution} onClick={onExcel}><Download size={15} />Xuất Excel TKB</button><button type="button" className="tt-button" onClick={onTemplate}><FileDown size={15} />Tải mẫu Excel</button><button type="button" className="tt-button" onClick={onImport}><Upload size={15} />Nhập Excel phân công</button></div>
+      <details className="mt-4">
+        <summary className="cursor-pointer font-semibold">Dán bản sao lưu</summary>
+        <label className="mt-3 block text-sm">Nội dung bản sao lưu JSON
+          <textarea className="mt-2 block min-h-28 w-full rounded-md border p-2 font-mono text-sm" value={backupText}
+            spellCheck={false} autoComplete="off" onChange={event => setBackupText(event.target.value)} />
+        </label>
+        <p>Dữ liệu vừa khôi phục sẽ thay bản đang mở. Có thể chọn Hoàn tác để quay lại.</p>
+        <button type="button" className="tt-button mt-2" disabled={!backupText.trim()}
+          onClick={() => { if (onRestoreText(backupText)) setBackupText(''); }}>
+          Khôi phục từ nội dung đã dán
+        </button>
+      </details>
+    </section>
     <section className="tt-panel"><h3>Các phương án đã lưu</h3>{versions.length ? <div className="mt-4 flex flex-wrap gap-3">{versions.map((version, index) => <button type="button" key={`${version.generatedAt}-${index}`} className="tt-button flex-col !items-start" onClick={() => onVersion(version)}><b>Phương án {index + 1} · {version.entries.length} tiết</b><small>{new Date(version.generatedAt).toLocaleString('vi-VN')}</small><small>{version.diagnostics.unscheduled.reduce((sum, item) => sum + item.remaining, 0)} tiết chưa xếp</small></button>)}</div> : <p>Chưa có phương án. Chạy Xếp tự động để tạo lịch.</p>}</section>
     <section className="tt-panel"><h3>Dữ liệu mẫu liên cấp</h3><p>Thay bộ dữ liệu hiện tại bằng mẫu để trải nghiệm. Hãy sao lưu JSON trước khi dùng.</p><button type="button" className="tt-button mt-4 text-rose-700" onClick={onReset}>Khôi phục dữ liệu mẫu</button></section>
   </div>;

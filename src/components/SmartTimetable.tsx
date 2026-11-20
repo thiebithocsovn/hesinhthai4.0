@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import TimetableAdminShell from './TimetableAdminShell';
 import { TimetableAvailabilityPanel, TimetableBackupPanel, TimetableCatalogPanel, TimetableCurriculumPanel, TimetableGradesPanel, TimetableHomeroomPanel, TimetableOverviewPanel, TimetableSettingsPanel } from './TimetableAdminPanels';
 import { TimetableAssignmentResources, TimetableCampusPanel, TimetableConcurrencyPanel, TimetableMergePanel, TimetableResourceDetails, TimetableSameSessionPanel, TimetableSplitPanel, TimetableTeacherDaysPanel } from './TimetableAdvancedPanels';
-import { decodeWorkspace, normalizeSolution, type TimetableWorkspace as PersistedWorkspace } from '../lib/timetableWorkspace';
+import { decodeWorkspace, type TimetableWorkspace as PersistedWorkspace } from '../lib/timetableWorkspace';
 import { timetableCoverSignature } from '../lib/timetableCover';
 import { assignmentClassIds, assignmentStudentGroupIds, assignmentTeacherIds } from '../lib/smartTimetableResources';
 import { TIMETABLE_ADMIN_PAGES, type TimetableWorkspaceTab } from '../lib/timetableNavigation';
@@ -420,18 +420,26 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
     'application/json;charset=utf-8',
   );
 
+  const restoreBackupText = (raw: string): boolean => {
+    try {
+      const next = decodeWorkspace(JSON.parse(raw));
+      setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20));
+      setRedoHistory([]);
+      restoreWorkspace(next);
+      setMessage('Đã khôi phục dữ liệu từ bản sao lưu.');
+      return true;
+    } catch (error) {
+      setMessage(error instanceof SyntaxError ? 'Bản sao lưu chưa đúng định dạng JSON.' :
+        error instanceof Error ? `Không thể khôi phục: ${error.message}` : 'Không thể khôi phục dữ liệu.');
+      return false;
+    }
+  };
+
   const importBackup = async (file: File) => {
     try {
-      const parsed = JSON.parse(await file.text()) as Partial<PersistedWorkspace> & { scenario?: TimetableScenario };
-      if (!parsed.scenario?.teachers || !parsed.scenario.classes || !parsed.scenario.assignments) throw new Error('Tệp sao lưu không đúng cấu trúc.');
-      const nextScenario = normalizeTimetableScenario(parsed.scenario);
-      setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20)); setRedoHistory([]);
-      setScenario(nextScenario);
-      setSolution(normalizeSolution(parsed.solution));
-      setVersions(Array.isArray(parsed.versions) ? parsed.versions.map(normalizeSolution).filter(Boolean).slice(0, 8) as TimetableSolution[] : []);
-      setMessage('Đã khôi phục dữ liệu từ tệp sao lưu.');
-    } catch (error) {
-      setMessage(error instanceof Error ? `Không thể khôi phục: ${error.message}` : 'Không thể khôi phục dữ liệu.');
+      restoreBackupText(await file.text());
+    } catch {
+      setMessage('Không đọc được tệp sao lưu.');
     } finally {
       if (jsonInputRef.current) jsonInputRef.current.value = '';
     }
@@ -541,7 +549,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
         {activeTab === 'advanced' && pageId === 'concurrency' && <TimetableConcurrencyPanel scenario={scenario} onChange={changeScenario} />}
         {activeTab === 'advanced' && pageId === 'exam-rooms' && <TimetableExamRoomsPanel scenario={scenario} onChange={next => { setUndoHistory(previous => [...previous, { scenario, solution, versions }].slice(-20)); setRedoHistory([]); setScenario(next); setMessage('Đã lưu đề xuất phân phòng thi.'); }} />}
         {activeTab === 'advanced' && pageId === 'public-links' && <TimetablePublicationPanel scenario={scenario} solution={solution} storageKey={storageKey} />}
-        {activeTab === 'backup' && <TimetableBackupPanel solution={solution} versions={versions} onBackup={exportBackup} onRestore={() => jsonInputRef.current?.click()} onExcel={exportExcel} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} onVersion={restoreVersion} onReset={() => { if (window.confirm('Thay dữ liệu hiện tại bằng dữ liệu mẫu? Hãy sao lưu JSON trước khi tiếp tục.')) resetWorkspace(); }} />}
+        {activeTab === 'backup' && <TimetableBackupPanel solution={solution} versions={versions} onBackup={exportBackup} onRestore={() => jsonInputRef.current?.click()} onRestoreText={restoreBackupText} onExcel={exportExcel} onImport={() => excelInputRef.current?.click()} onTemplate={downloadExcelTemplate} onVersion={restoreVersion} onReset={() => { if (window.confirm('Thay dữ liệu hiện tại bằng dữ liệu mẫu? Hãy sao lưu JSON trước khi tiếp tục.')) resetWorkspace(); }} />}
 
         {activeTab === 'assignments' && (
           <div className="grid gap-5 lg:grid-cols-[390px_1fr]">
