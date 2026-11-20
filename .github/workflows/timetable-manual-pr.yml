@@ -1,0 +1,47 @@
+name: Validate manual timetable changes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/components/SmartTimetable.tsx'
+      - 'src/lib/timetableAdmin.ts'
+      - 'src/lib/smartTimetableAudit.ts'
+      - 'scripts/test-timetable-admin.ts'
+      - 'docs/SMART_TIMETABLE.md'
+      - '.github/workflows/timetable-manual-pr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check-manual-timetable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore missing baseline ecosystem files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch main https://github.com/trungtuyen/4.0.git "$RUNNER_TEMP/hesinhthai-upstream"
+          cd "$RUNNER_TEMP/hesinhthai-upstream"
+          git fetch --depth 1 origin 46a643e4715102048a6966b300852b5544351340
+          git checkout --detach 46a643e4715102048a6966b300852b5544351340
+          cd "$GITHUB_WORKSPACE"
+          rsync -a --ignore-existing --exclude='.git/' --exclude='.github/' --exclude='node_modules/' "$RUNNER_TEMP/hesinhthai-upstream/" ./
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: TypeScript typecheck
+        run: npm run lint
+      - name: Timetable regression tests
+        run: |
+          npm run test:smart-timetable
+          npm run test:timetable-agent
+          npm run test:timetable-admin
+          npm run test:timetable-advanced
+      - name: Build GitHub Pages application
+        run: npm run build:static
