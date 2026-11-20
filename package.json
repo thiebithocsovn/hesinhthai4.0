@@ -52,7 +52,7 @@
     "test:plicker-fraction": "node --import tsx scripts/test-plicker-fraction.ts",
     "test:plicker-student-sync": "node --import tsx scripts/test-plicker-student-sync.ts",
     "test:plicker-reports": "node --import tsx scripts/test-plicker-reports.ts",
-    "test:smart-timetable": "node --import tsx scripts/test-timetable-account-sync.ts && node --import tsx scripts/test-smart-timetable.ts && node --import tsx scripts/test-timetable-constraint-alerts.ts && node --import tsx scripts/test-timetable-cover.ts",
+    "test:smart-timetable": "node --import tsx scripts/test-timetable-account-sync.ts && node --import tsx scripts/test-smart-timetable.ts && node --import tsx scripts/test-timetable-constraint-alerts.ts && node --import tsx scripts/test-timetable-cover.ts && node --import tsx scripts/test-timetable-schoolboard.ts",
     "test:learning-wall": "node --import tsx scripts/test-learning-wall.ts",
     "test:wall-assessment": "node --import tsx scripts/test-wall-assessment.ts",
     "test:wall-chat": "node --import tsx scripts/test-wall-chat.ts",
