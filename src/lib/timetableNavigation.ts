@@ -25,7 +25,7 @@ export const TIMETABLE_ADMIN_GROUPS: { title: string; pages: TimetableAdminPage[
     { id: 'curriculum', label: 'Khối - môn - số tiết', tab: 'curriculum', description: 'Kiểm tra và điều chỉnh số tiết mỗi tuần theo lớp và môn.' },
     { id: 'analysis', label: 'Phân tích PCCM', tab: 'diagnostics', description: 'Kiểm tra tải giảng dạy và tính khả thi của phân công.' },
     { id: 'schedule', label: 'Xếp thời khóa biểu', tab: 'schedule', description: 'Xếp tự động, xem lịch lớp, giáo viên và phòng học.' },
-    { id: 'schoolboard', label: 'Bảng lịch toàn trường', tab: 'schoolboard', description: 'Xem tất cả lớp trên cùng một bảng, lọc theo ngày và cấp học.' },
+    { id: 'schoolboard', label: 'Thời khóa biểu toàn trường', tab: 'schoolboard', description: 'Xem chung toàn tuần hoặc từng ngày; lọc theo cấp, khối, buổi và lớp; xuất Excel, in PDF.' },
     { id: 'refine', label: 'Tinh chỉnh TKB', tab: 'schedule', description: 'Chọn tiết rồi chuyển sang ô trống; mọi thay đổi được kiểm tra độc lập.' },
     { id: 'cover', label: 'Điều động dạy thay', tab: 'cover', description: 'Đăng ký dạy thay theo ngày, kiểm tra trùng lịch và xuất danh sách dự kiến; không đổi lịch gốc.' },
     { id: 'agent', label: 'Trợ lý thời khóa biểu', tab: 'agent', description: 'Nhập yêu cầu bằng tiếng Việt, xem trước rồi duyệt ràng buộc.' },
