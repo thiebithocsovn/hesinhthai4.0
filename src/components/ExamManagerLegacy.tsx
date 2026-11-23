@@ -3,6 +3,10 @@ import { ArrowLeft, Plus, Trash2, Edit2, Play, CheckCircle, Clock, Users, FileTe
 import { RichTextEditor } from './RichTextEditor';
 import TeacherExamNavigation, { type TeacherWorkspaceView } from './TeacherExamNavigation';
 import TeacherExamOverview from './TeacherExamOverview';
+import TeacherQuestionBank, { type BankSelection } from './TeacherQuestionBank';
+import TeacherExamCalendar from './TeacherExamCalendar';
+import TeacherExamAnalytics from './TeacherExamAnalytics';
+import { assessExamReadiness } from '../lib/examReadiness';
 import { filterTeacherExams, type TeacherExamStatusFilter } from '../lib/teacherExamWorkspace';
 import OMRScanner from './OMRScanner';
 import ExamReceiptDialog from './ExamReceiptDialog';
@@ -216,7 +220,8 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const [appMode, setAppMode] = useState<'landing' | 'teacher' | 'student'>(initialMode);
   // The overview reuses the existing 'exams' subscription. No extra roster/result reads.
   const [teacherTab, setTeacherTab] = useState<'exams' | 'students' | 'monitoring' | 'results' | 'scanning'>('exams');
-  const [examPage, setExamPage] = useState<'overview' | 'list'>('overview');
+  const [examPage, setExamPage] = useState<'overview' | 'list' | 'calendar' | 'bank'>('overview');
+  const [resultsPage, setResultsPage] = useState<'list' | 'analytics'>('list');
   const [examSearch, setExamSearch] = useState('');
   const [examStatusFilter, setExamStatusFilter] = useState<TeacherExamStatusFilter>('all');
 
@@ -474,6 +479,55 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
       receiptSettings: { ...DEFAULT_EXAM_RECEIPT_SETTINGS, autoPrint: true },
     });
     setIsExamModalOpen(true);
+  };
+
+  // Reuse teacher-owned questions without changing source exams or writing a draft prematurely.
+  const createDraftFromBank = (selected: readonly BankSelection[]) => {
+    const access = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
+    if (access.role === 'guest' || !selected.length || selected.length > 100) return;
+    const questions: Question[] = [];
+    const visited = new Set<string>();
+    for (const item of selected) {
+      const key = JSON.stringify([item.examId, item.questionId]);
+      if (visited.has(key)) continue;
+      visited.add(key);
+      const sourceExam = exams.find(exam => exam.id === item.examId);
+      if (!sourceExam || !canAccessTeacherOwnedRecord(access, sourceExam)) return;
+      const question = sourceExam.questions.find(q => q.id === item.questionId);
+      if (!question) return;
+      // Question/rubric subobjects are deep-cloned. A new ID prevents old result
+      // answers from being associated with this entirely new draft exam.
+      const copy = JSON.parse(JSON.stringify(question)) as Question;
+      copy.id = crypto.randomUUID();
+      if (copy.rubric) copy.rubric = copy.rubric.map(entry => ({ ...entry, id: crypto.randomUUID() }));
+      questions.push(copy);
+    }
+    if (!questions.length) return;
+    setEditingExam({
+      id: createSecureExamAccessCode(),
+      title: 'Đề tổng hợp từ ngân hàng câu hỏi',
+      durationMinutes: 45,
+      questions,
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+      startTime: new Date().toISOString().slice(0, 16),
+      teacherId: access.ownerUid,
+      receiptSettings: { ...DEFAULT_EXAM_RECEIPT_SETTINGS, autoPrint: true },
+    });
+    setExamPage('list');
+    setIsExamModalOpen(true);
+  };
+
+  const openExamFromWorkspace = (examId: string) => {
+    setExamSearch(examId);
+    setExamStatusFilter('all');
+    setExamPage('list');
+    setTeacherTab('exams');
+  };
+
+  const createExamOnDate = (dateKey: string) => {
+    handleCreateExam();
+    setEditingExam(previous => previous ? { ...previous, startTime: dateKey + 'T08:00' } : previous);
   };
 
   const handleExportExcel = () => {
@@ -1008,6 +1062,18 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     const exam = exams.find(e => e.id === examId);
     if (!exam || closingExamId) return;
     const isClosing = exam.status === 'published';
+    if (!isClosing && exam.status === 'draft') {
+      const issues = assessExamReadiness(exam);
+      const blockers = issues.filter(issue => issue.level === 'blocker');
+      if (blockers.length) {
+        window.alert('Chưa thể mở kỳ thi. Cần xử lý:\n' + blockers.map(issue => '• ' + issue.message).join('\n'));
+        setEditingExam(exam);
+        setIsExamModalOpen(true);
+        return;
+      }
+      const warnings = issues.filter(issue => issue.level === 'warning');
+      if (warnings.length && !window.confirm('Kỳ thi có cảnh báo cần kiểm tra:\n' + warnings.map(issue => '• ' + issue.message).join('\n') + '\nVẫn mở thi?')) return;
+    }
     if (isClosing && !window.confirm('Đóng kỳ thi ngay? Học sinh đang làm sẽ bị khóa bài. Hệ thống thu bản lưu gần nhất và tự chấm trắc nghiệm; tự luận/thực hành vẫn do giáo viên chấm.')) return;
     setClosingExamId(examId);
     try {
@@ -1976,20 +2042,21 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   }
 
   const currentWorkspaceView: TeacherWorkspaceView = teacherTab === 'exams'
-    ? (examPage === 'overview' ? 'overview' : 'exams')
-    : teacherTab;
+    ? (examPage === 'overview' ? 'overview' : examPage === 'calendar' ? 'calendar' : examPage === 'bank' ? 'bank' : 'exams')
+    : teacherTab === 'results' && resultsPage === 'analytics' ? 'analytics' : teacherTab;
   const navigateTeacherView = (view: TeacherWorkspaceView) => {
-    if (view === 'overview') {
+    if (view === 'overview' || view === 'exams' || view === 'calendar' || view === 'bank') {
       setTeacherTab('exams');
-      setExamPage('overview');
-      return;
-    }
-    if (view === 'exams') {
-      setTeacherTab('exams');
-      setExamPage('list');
+      setExamPage(view === 'exams' ? 'list' : view);
       return;
     }
     setExamPage('list');
+    if (view === 'analytics') {
+      setTeacherTab('results');
+      setResultsPage('analytics');
+      return;
+    }
+    setResultsPage('list');
     setTeacherTab(view);
     if (view === 'students') setSelectedClassId('');
   };
@@ -2045,6 +2112,12 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
               onShowMonitoring={() => navigateTeacherView('monitoring')}
               onShowResults={() => navigateTeacherView('results')}
             />
+          )}
+          {teacherTab === 'exams' && examPage === 'calendar' && (
+            <TeacherExamCalendar exams={exams} onOpenExam={openExamFromWorkspace} onCreateAt={createExamOnDate} />
+          )}
+          {teacherTab === 'exams' && examPage === 'bank' && (
+            <TeacherQuestionBank exams={exams} onCreateDraft={createDraftFromBank} onOpenExam={openExamFromWorkspace} />
           )}
           {teacherTab === 'exams' && examPage === 'list' && (
             <div className="max-w-7xl mx-auto">
@@ -2516,8 +2589,24 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <table className="w-full text-left">
+              <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {(() => {
+                  const selected = activeSessions.filter(session => session.examId === (selectedExamIdForResults || exams[0]?.id));
+                  const taking = selected.filter(session => session.status === 'taking');
+                  const online = taking.filter(session => Date.now() - new Date(session.lastActive).getTime() < EXAM_SESSION_ONLINE_WINDOW_MS);
+                  return ([
+                    ['Tổng lượt vào thi', selected.length],
+                    ['Đang làm bài', taking.length],
+                    ['Đã nộp bài', selected.filter(session => session.status === 'submitted').length],
+                    ['Mất kết nối', taking.length - online.length],
+                  ] as const).map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-medium text-slate-500">{label}</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{value}</p>
+                  </div>);
+                })()}
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+                <table className="min-w-[680px] w-full text-left">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
                       <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Học sinh</th>
@@ -2575,7 +2664,18 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
             </div>
           )}
 
-          {teacherTab === 'results' && (
+          {teacherTab === 'results' && resultsPage === 'analytics' && (
+            <TeacherExamAnalytics
+              exams={exams}
+              results={results}
+              students={students}
+              classes={classes}
+              resultsReady={resultsReady}
+              error={resultsError}
+              onOpenGrading={examId => { setResultsPage('list'); setSelectedExamIdForResults(examId); setGradingExamId(examId); }}
+            />
+          )}
+          {teacherTab === 'results' && resultsPage === 'list' && (
             <div className="max-w-full mx-auto">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <h2 className="text-2xl font-bold text-slate-800">Tổng hợp kết quả</h2>
@@ -3048,6 +3148,22 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
 
             <div className="flex-1 overflow-auto p-6 bg-slate-50">
               <div className="max-w-3xl mx-auto space-y-6">
+                <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="Kiểm tra trước khi mở kỳ thi">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-base font-bold text-slate-900">Kiểm tra tính sẵn sàng</h4>
+                    <span className="rounded-lg bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800">Không thay đổi dữ liệu</span>
+                  </div>
+                  {assessExamReadiness(editingExam).length === 0
+                    ? <p className="mt-2 text-sm text-emerald-800">✓ Chưa phát hiện vấn đề cơ bản về đề, đáp án và thời lượng. Vẫn cần giáo viên kiểm tra nội dung trước khi mở thi.</p>
+                    : <ul className="mt-3 space-y-2">
+                        {assessExamReadiness(editingExam).map((issue, index) => (
+                          <li key={index} className={`rounded-lg px-3 py-2 text-sm ${issue.level === 'blocker' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-900'}`}>
+                            {issue.level === 'blocker' ? 'Cần sửa: ' : 'Lưu ý: '}{issue.message}
+                          </li>
+                        ))}
+                      </ul>}
+                  <p className="mt-3 text-xs text-slate-500">Bản nháp vẫn được lưu bình thường. Khi mở thi, hệ thống chặn các lỗi nghiêm trọng và yêu cầu xác nhận các cảnh báo.</p>
+                </section>
                 {/* Exam Settings */}
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                   <h4 className="font-bold text-slate-800 text-lg border-b border-slate-100 pb-2">Thông tin chung</h4>
