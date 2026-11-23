@@ -6,6 +6,9 @@ on:
       - 'src/components/ExamManagerLegacy.tsx'
       - 'src/components/TeacherExam*.tsx'
       - 'src/lib/teacherExamWorkspace.ts'
+      - 'src/lib/examReadiness.ts'
+      - 'src/components/TeacherQuestionBank.tsx'
+      - 'scripts/test-exam-professional-workspace.ts'
       - 'scripts/test-teacher-exam-workspace.ts'
       - 'package.json'
       - '.github/workflows/exam-teacher-workspace-ci.yml'
@@ -29,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps --ignore-scripts
       - name: Test teacher dashboard and old data compatibility
-        run: npm run test:exam-workspace
+        run: npm run test:exam-workspace && npm run test:exam-professional
       - name: Test student portal, isolation and exam access
         run: |
           npm run test:teacher-isolation
