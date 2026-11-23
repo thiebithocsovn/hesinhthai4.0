@@ -26,7 +26,7 @@ export function teacherExamState(exam: TeacherWorkspaceExam, now = Date.now()): 
 }
 
 function normalizeSearch(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLocaleLowerCase('vi-VN').trim();
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('vi-VN').replace(/đ/g, 'd').trim();
 }
 
 export function filterTeacherExams<T extends TeacherWorkspaceExam>(
