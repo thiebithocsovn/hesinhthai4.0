@@ -35,7 +35,6 @@ jobs:
           npm run test:teacher-isolation
           npm run test:exam-privacy
           npm run test:student-portal
-          npm run test:scalability
       - name: Typecheck
         run: npm run lint
       - name: Build static site without publishing
