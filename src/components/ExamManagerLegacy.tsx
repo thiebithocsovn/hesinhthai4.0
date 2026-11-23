@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Play, CheckCircle, Clock, Users, FileText, LogOut, ChevronRight, ChevronLeft, Save, PlayCircle, StopCircle, Calendar, Upload, X, Download, Shuffle, Activity, ArrowRight, Camera, GraduationCap, BookOpen, Bell, ShieldCheck, UserRound, KeyRound, CalendarClock, Loader2, Printer, Eye } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Play, CheckCircle, Clock, Users, FileText, LogOut, ChevronRight, ChevronLeft, Save, PlayCircle, StopCircle, Calendar, Upload, X, Download, Shuffle, Activity, ArrowRight, Camera, GraduationCap, BookOpen, Bell, ShieldCheck, UserRound, KeyRound, CalendarClock, Loader2, Printer, Eye, Search } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
+import TeacherExamNavigation, { type TeacherWorkspaceView } from './TeacherExamNavigation';
+import TeacherExamOverview from './TeacherExamOverview';
+import { filterTeacherExams, type TeacherExamStatusFilter } from '../lib/teacherExamWorkspace';
 import OMRScanner from './OMRScanner';
 import ExamReceiptDialog from './ExamReceiptDialog';
 import TeacherExamPrintStation from './TeacherExamPrintStation';
@@ -211,10 +214,16 @@ async function synchronizeExamPublication(exam: Exam, previousExam: Exam = exam,
 
 export default function ExamManager({ onBack, initialMode = 'landing', currentUser }: ExamManagerProps) {
   const [appMode, setAppMode] = useState<'landing' | 'teacher' | 'student'>(initialMode);
+  // The overview reuses the existing 'exams' subscription. No extra roster/result reads.
   const [teacherTab, setTeacherTab] = useState<'exams' | 'students' | 'monitoring' | 'results' | 'scanning'>('exams');
+  const [examPage, setExamPage] = useState<'overview' | 'list'>('overview');
+  const [examSearch, setExamSearch] = useState('');
+  const [examStatusFilter, setExamStatusFilter] = useState<TeacherExamStatusFilter>('all');
 
   // --- Mock Data & State ---
   const [exams, setExams] = useState<Exam[]>([]);
+  // Pure presentation filtering; persisted exam IDs, states and query scopes are untouched.
+  const visibleExams = filterTeacherExams(exams, examSearch, examStatusFilter);
   const [students, setStudents] = useState<StudentAccount[]>([]);
   const [classes, setClasses] = useState<StudentClass[]>([]);
   const [results, setResults] = useState<ExamResult[]>([]);
@@ -1966,23 +1975,52 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     );
   }
 
+  const currentWorkspaceView: TeacherWorkspaceView = teacherTab === 'exams'
+    ? (examPage === 'overview' ? 'overview' : 'exams')
+    : teacherTab;
+  const navigateTeacherView = (view: TeacherWorkspaceView) => {
+    if (view === 'overview') {
+      setTeacherTab('exams');
+      setExamPage('overview');
+      return;
+    }
+    if (view === 'exams') {
+      setTeacherTab('exams');
+      setExamPage('list');
+      return;
+    }
+    setExamPage('list');
+    setTeacherTab(view);
+    if (view === 'students') setSelectedClassId('');
+  };
+
   // Teacher Mode
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50">
-      <header className="bg-white border-b border-slate-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => initialMode === 'teacher' ? onBack() : setAppMode('landing')} 
-            className="p-2 hover:bg-slate-100 rounded-full transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-slate-600" />
+      <header className="shrink-0 border-b border-slate-200 bg-white px-4 py-4 md:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button type="button"
+              onClick={() => initialMode === 'teacher' ? onBack() : setAppMode('landing')}
+              aria-label="Quay lại hệ sinh thái"
+              className="shrink-0 rounded-full p-2 text-slate-600 transition-colors hover:bg-slate-100">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="flex items-center gap-2 text-lg font-bold text-slate-900 sm:text-xl">
+                <Users className="h-5 w-5 shrink-0 text-teal-700" />
+                <span className="truncate">Quản lý Kỳ thi (Giáo viên)</span>
+              </h1>
+              <p className="hidden text-xs text-slate-500 sm:block">Tổ chức, giám sát và đánh giá kỳ thi trong một không gian</p>
+            </div>
+          </div>
+          <button type="button" onClick={handleCreateExam}
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800">
+            <Plus className="h-4 w-4" /> Tạo kỳ thi
           </button>
-          <h1 className="text-xl md:text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <Users className="w-6 h-6 text-teal-600" />
-            Quản lý Kỳ thi (Giáo viên)
-          </h1>
         </div>
       </header>
+      <TeacherExamNavigation compact current={currentWorkspaceView} onNavigate={navigateTeacherView} />
 
       {publicationError && <div role="alert" className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
         <p>{publicationError}</p>
@@ -1990,60 +2028,31 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
       </div>}
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <div className="w-64 bg-white border-r border-slate-200 flex flex-col py-4">
-          <nav className="space-y-1 px-3">
-            <button 
-              onClick={() => setTeacherTab('exams')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${teacherTab === 'exams' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-              <FileText className="w-5 h-5" />
-              Quản lý kỳ thi
-            </button>
-            <button 
-              onClick={() => {
-                setTeacherTab('students');
-                setSelectedClassId('');
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${teacherTab === 'students' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-              <Users className="w-5 h-5" />
-              Quản lý lớp học
-            </button>
-            <button 
-              onClick={() => setTeacherTab('monitoring')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${teacherTab === 'monitoring' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-              <Activity className="w-5 h-5" />
-              Giám sát phòng thi
-            </button>
-            <button 
-              onClick={() => setTeacherTab('results')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${teacherTab === 'results' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-              <CheckCircle className="w-5 h-5" />
-              Tổng hợp kết quả
-            </button>
-            <button 
-              onClick={() => setTeacherTab('scanning')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${teacherTab === 'scanning' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-              <Camera className="w-5 h-5" />
-              Chấm phiếu OMR
-            </button>
-          </nav>
-        </div>
+        <TeacherExamNavigation current={currentWorkspaceView} onNavigate={navigateTeacherView} />
 
         {/* Main Content */}
         <div className="flex-1 overflow-auto p-6 md:p-8">
           <TeacherExamPrintStation key={auth.currentUser?.uid || 'guest'} exams={exams} authenticatedUid={resolveTeacherAccessScope(currentUser, auth.currentUser?.uid).role === 'guest' ? '' : auth.currentUser?.uid || ''} />
-          {teacherTab === 'exams' && (
+          {teacherTab === 'exams' && examPage === 'overview' && (
+            <TeacherExamOverview
+              exams={exams}
+              onCreateExam={handleCreateExam}
+              onShowExams={(filter = 'all') => {
+                setExamStatusFilter(filter);
+                setExamPage('list');
+              }}
+              onShowStudents={() => navigateTeacherView('students')}
+              onShowMonitoring={() => navigateTeacherView('monitoring')}
+              onShowResults={() => navigateTeacherView('results')}
+            />
+          )}
+          {teacherTab === 'exams' && examPage === 'list' && (
             <div className="max-w-7xl mx-auto">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
                 <div>
                   <h2 className="text-2xl font-bold text-slate-800">Danh sách kỳ thi</h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    {exams.length} kỳ thi · Theo dõi thời gian, mã đề và thao tác trên từng dòng.
+                    {exams.length} kỳ thi · Tìm kiếm và quản lý theo trạng thái.
                   </p>
                 </div>
                 <button 
@@ -2055,7 +2064,83 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                 </button>
               </div>
 
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+                <label className="relative min-w-0 flex-1">
+                  <span className="sr-only">Tìm kỳ thi theo tên, mã kỳ thi hoặc mã đề</span>
+                  <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input type="search" value={examSearch} onChange={event => setExamSearch(event.target.value)}
+                    placeholder="Tìm tên kỳ thi, mã thi, mã đề..."
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" />
+                </label>
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                  <span className="shrink-0">Trạng thái</span>
+                  <select value={examStatusFilter} onChange={event => setExamStatusFilter(event.target.value as TeacherExamStatusFilter)}
+                    className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 sm:w-40">
+                    <option value="all">Tất cả</option>
+                    <option value="draft">Bản nháp</option>
+                    <option value="upcoming">Sắp diễn ra</option>
+                    <option value="open">Đang mở</option>
+                    <option value="closed">Đã đóng</option>
+                  </select>
+                </label>
+                <span role="status" className="shrink-0 text-sm text-slate-500">{visibleExams.length}/{exams.length} kỳ thi</span>
+              </div>
+
+              <div className="grid gap-3 lg:hidden">
+                {visibleExams.map(exam => (
+                  <article key={exam.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="break-words text-base font-bold text-slate-900">{exam.title}</h3>
+                        <p className="mt-1 break-all font-mono text-xs text-slate-500">Mã thi: {exam.id}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800">
+                        {exam.status === 'draft' ? 'Bản nháp' : exam.status === 'closed' ? 'Đã đóng' : getExamScheduleState(exam) === 'upcoming' ? 'Sắp diễn ra' : 'Đang mở'}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                      <span>{exam.durationMinutes} phút</span>
+                      <span>{exam.questions.length} câu hỏi</span>
+                      <span>{exam.isShuffled ? `${exam.shuffledVersions?.length || 0} mã đề` : 'Đề gốc'}</span>
+                      <span>{exam.startTime ? formatExamScheduleDate(exam.startTime) : 'Chưa đặt lịch'}</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => { setEditingExam(exam); setIsExamModalOpen(true); }}
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Sửa kỳ thi</button>
+                      <button type="button" disabled={closingExamId !== null} onClick={() => void toggleExamStatus(exam.id)}
+                        className={`rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50 ${exam.status === 'published' ? 'bg-red-50 text-red-700' : 'bg-teal-700 text-white'}`}>
+                        {exam.status === 'published' ? 'Đóng thi' : 'Mở thi'}
+                      </button>
+                    </div>
+                    <details className="mt-3 rounded-lg bg-slate-50 px-3 py-2">
+                      <summary className="cursor-pointer text-sm font-semibold text-slate-600">Thao tác khác</summary>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => handleShuffleExam(exam.id)} className="rounded-lg border bg-white px-2 py-2 text-sm">Trộn mã đề</button>
+                        <button type="button" onClick={() => handleExportAnswers(exam.id)} className="rounded-lg border bg-white px-2 py-2 text-sm">Xuất đáp án</button>
+                        {exam.status === 'closed' && <button type="button" disabled={closingExamId !== null}
+                          onClick={async () => {
+                            if (closingExamId) return;
+                            setClosingExamId(exam.id);
+                            try {
+                              const { finished, missing } = await finalizeClosedExamSessions(exam);
+                              alert(`Đã thu thêm ${finished} bài đang dở. ${missing ? `Còn ${missing} phiên thiếu bản lưu, cần kiểm tra thủ công.` : 'Các bài đã nộp được giữ nguyên.'}`);
+                            } catch (error) {
+                              console.error('Thu bài còn dang dở thất bại:', error);
+                              alert('Chưa thể thu hết bài. Hãy kiểm tra kết nối rồi thử lại.');
+                            } finally {
+                              setClosingExamId(null);
+                            }
+                          }} className="col-span-2 rounded-lg border border-blue-200 bg-blue-50 px-2 py-2 text-sm text-blue-700">Thu bài còn dang dở</button>}
+                        <button type="button" onClick={() => setExamToDelete(exam.id)}
+                          className="col-span-2 rounded-lg border border-red-200 bg-white px-2 py-2 text-sm font-semibold text-red-700">Xóa kỳ thi</button>
+                      </div>
+                    </details>
+                  </article>
+                ))}
+                {visibleExams.length === 0 && <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500">Không có kỳ thi phù hợp. Hãy đổi bộ lọc hoặc từ khóa.</div>}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:block">
                 <div className="overflow-x-auto">
                   <table className="min-w-[1080px] w-full border-collapse text-left">
                     <caption className="sr-only">Danh sách quản lý kỳ thi của giáo viên</caption>
@@ -2071,7 +2156,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {exams.map((exam, index) => (
+                      {visibleExams.map((exam, index) => (
                         <tr key={exam.id} className="align-top transition-colors hover:bg-slate-50/70">
                           <td className="px-4 py-5 text-sm font-medium text-slate-400">
                             {String(index + 1).padStart(2, '0')}
@@ -2201,10 +2286,10 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                           </td>
                         </tr>
                       ))}
-                      {exams.length === 0 && (
+                      {visibleExams.length === 0 && (
                         <tr>
                           <td colSpan={7} className="px-6 py-16 text-center text-sm text-slate-500">
-                            Chưa có kỳ thi nào. Hãy tạo kỳ thi đầu tiên!
+                            Không có kỳ thi phù hợp với bộ lọc hiện tại.
                           </td>
                         </tr>
                       )}
@@ -2212,7 +2297,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                   </table>
                 </div>
                 <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-                  Hiển thị {exams.length} kỳ thi. Kéo ngang để xem đầy đủ trên màn hình nhỏ.
+                  Hiển thị {visibleExams.length} / {exams.length} kỳ thi.
                 </div>
               </div>
             </div>
