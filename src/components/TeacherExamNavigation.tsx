@@ -1,6 +1,6 @@
-import { Activity, BarChart3, BookOpenText, ClipboardList, LayoutDashboard, ScanLine, Users, type LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, BookOpenText, CalendarDays, ClipboardList, GraduationCap, LayoutDashboard, ScanLine, Users, type LucideIcon } from 'lucide-react';
 
-export type TeacherWorkspaceView = 'overview' | 'exams' | 'students' | 'monitoring' | 'results' | 'scanning';
+export type TeacherWorkspaceView = 'overview' | 'exams' | 'calendar' | 'bank' | 'students' | 'monitoring' | 'results' | 'analytics' | 'scanning';
 
 interface NavigationItem {
   id: TeacherWorkspaceView;
@@ -12,9 +12,12 @@ interface NavigationItem {
 const ITEMS: NavigationItem[] = [
   { id: 'overview', label: 'Tổng quan', icon: LayoutDashboard, group: 'Quản lý' },
   { id: 'exams', label: 'Kỳ thi & đề thi', icon: ClipboardList, group: 'Quản lý' },
+  { id: 'bank', label: 'Ngân hàng câu hỏi', icon: BookOpenText, group: 'Quản lý' },
+  { id: 'calendar', label: 'Lịch thi', icon: CalendarDays, group: 'Quản lý' },
   { id: 'students', label: 'Lớp & học sinh', icon: Users, group: 'Quản lý' },
   { id: 'monitoring', label: 'Giám sát phòng thi', icon: Activity, group: 'Tổ chức & đánh giá' },
-  { id: 'results', label: 'Chấm & kết quả', icon: BarChart3, group: 'Tổ chức & đánh giá' },
+  { id: 'results', label: 'Chấm & kết quả', icon: GraduationCap, group: 'Tổ chức & đánh giá' },
+  { id: 'analytics', label: 'Phân tích & báo cáo', icon: BarChart3, group: 'Tổ chức & đánh giá' },
   { id: 'scanning', label: 'Chấm phiếu OMR', icon: ScanLine, group: 'Tổ chức & đánh giá' },
 ];
 
