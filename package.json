@@ -73,7 +73,8 @@
     "test:timetable-account-firestore": "node --import tsx scripts/test-timetable-account-firestore.ts",
     "test:timetable-ui": "node scripts/test-timetable-ui.cjs",
     "test:timetable-education": "node --import tsx scripts/test-timetable-education.ts",
-    "test:exam-workspace": "node --import tsx scripts/test-teacher-exam-workspace.ts"
+    "test:exam-workspace": "node --import tsx scripts/test-teacher-exam-workspace.ts",
+    "test:exam-professional": "node --import tsx scripts/test-exam-professional-workspace.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.32",
