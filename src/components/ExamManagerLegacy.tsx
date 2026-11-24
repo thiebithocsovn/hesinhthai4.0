@@ -2152,7 +2152,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                 <Users className="h-5 w-5 shrink-0 text-teal-700" />
                 <span className="truncate">Trung tâm khảo thí</span>
               </h1>
-              <p className="hidden text-xs text-slate-500 sm:block">AITHEROVA · Không gian làm việc giáo viên</p>
+              <p className="hidden text-xs text-slate-500 sm:block">Không gian làm việc giáo viên</p>
             </div>
           </div>
           <button type="button" onClick={handleCreateExam}
