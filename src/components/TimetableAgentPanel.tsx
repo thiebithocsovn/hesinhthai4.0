@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Bot, CalendarDays, CheckCircle2, LockKeyhole, RefreshCcw, ShieldCheck, WandSparkles } from 'lucide-react';
 import { auditTimetableSolution } from '../lib/smartTimetableAudit';
 import { planTimetableAgentCommand } from '../lib/timetableAgent';
@@ -6,6 +6,7 @@ import type { TimetableScenario, TimetableSolution } from '../lib/smartTimetable
 
 interface Props {
   initialCommand?: string;
+  onConsumeInitialCommand?: () => void;
   scenario: TimetableScenario;
   solution: TimetableSolution | null;
   busy: boolean;
@@ -13,8 +14,9 @@ interface Props {
   onRunOptimizer: () => void;
 }
 
-export default function TimetableAgentPanel({ initialCommand = '', scenario, solution, busy, onApply, onRunOptimizer }: Props) {
+export default function TimetableAgentPanel({ initialCommand = '', onConsumeInitialCommand, scenario, solution, busy, onApply, onRunOptimizer }: Props) {
   const [command, setCommand] = useState(initialCommand);
+  useEffect(() => { if (initialCommand) onConsumeInitialCommand?.(); }, [initialCommand, onConsumeInitialCommand]);
   const [notice, setNotice] = useState('');
   const [showAllErrors, setShowAllErrors] = useState(false);
   const proposal = useMemo(() => planTimetableAgentCommand(command, scenario, solution), [command, scenario, solution]);
