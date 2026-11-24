@@ -81,6 +81,7 @@ export default function App() {
       return 'landing';
     }
   });
+  const [initialExam, setInitialExam] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
@@ -255,7 +256,7 @@ export default function App() {
       setCurrentUser(verifiedUser);
       const pendingKpi = sessionStorage.getItem('edukpi.pending') === '1';
       sessionStorage.removeItem('edukpi.pending');
-      setCurrentView(pendingKpi ? 'kpi-manager' : 'admin');
+      setCurrentView(pendingKpi ? 'kpi-manager' : requestedApplication === 'plicker' ? 'admin' : 'landing');
     } catch (error) {
       if (signedInUid && auth.currentUser?.uid === signedInUid) await signOut(auth).catch(() => undefined);
       setAuthMessage(describeAuthError(error));
@@ -284,7 +285,7 @@ export default function App() {
       setAuthMessage('');
       const pendingKpi = destination === 'admin' && sessionStorage.getItem('edukpi.pending') === '1';
       if (pendingKpi) sessionStorage.removeItem('edukpi.pending');
-      setCurrentView(pendingKpi ? 'kpi-manager' : destination);
+      setCurrentView(pendingKpi ? 'kpi-manager' : destination === 'admin' && requestedApplication !== 'plicker' ? 'landing' : destination);
     } catch (error) {
       if (signedInUid && auth.currentUser?.uid === signedInUid) await signOut(auth).catch(() => undefined);
       setAuthMessage(describeAuthError(error));
@@ -364,7 +365,8 @@ export default function App() {
       return;
     }
     if (applicationId === 'exam-manager') {
-      navigateToAuth('login');
+      if (currentUser && auth.currentUser) { setInitialExam(true); setCurrentView('admin'); }
+      else navigateToAuth('login');
       return;
     }
     setCurrentView(applicationId);
@@ -379,7 +381,14 @@ export default function App() {
   }
 
   if (currentView === 'admin' && currentUser && auth.currentUser) {
-    return <AdminDashboard key={auth.currentUser.uid} onLogout={() => {
+    return <AdminDashboard key={auth.currentUser.uid} initialExam={initialExam} onHome={() => {
+      setInitialExam(false);
+      if (requestedApplication === 'plicker') {
+        window.history.replaceState(window.history.state, '', import.meta.env.BASE_URL);
+        selectApplicationManifest('ecosystem', import.meta.env.BASE_URL);
+      }
+      setCurrentView('landing');
+    }} onLogout={() => {
       void signOut(auth);
       setCurrentUser(null);
       setTeachers([]);
@@ -706,8 +715,9 @@ export default function App() {
     );
   }
 
-  return <FastLandingPage
-    onTeacherLogin={() => currentUser && auth.currentUser ? setCurrentView('admin') : navigateToAuth('login')}
+  return <FastLandingPage key={currentUser && auth.currentUser ? auth.currentUser.uid : 'guest'}
+    workspaceKey={currentUser && auth.currentUser ? auth.currentUser.uid : 'guest'}
+    onTeacherLogin={() => { setInitialExam(false); if (currentUser && auth.currentUser) setCurrentView('admin'); else navigateToAuth('login'); }}
     onTeacherRegister={() => navigateToAuth('register')}
     onStudentLogin={() => setCurrentView('student_exam')}
     onOpenProduct={launchApplication}
