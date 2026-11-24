@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Lớp Học Thông Minh 4.0 — Hệ sinh thái giáo dục",
-  "short_name": "Lớp học 4.0",
-  "description": "13 ứng dụng giáo dục, trò chơi tương tác, quản lý lớp học và kỳ thi dành cho giáo viên Việt Nam.",
+  "name": "Edu AI — Lớp Học Thông Minh 4.0",
+  "short_name": "Edu AI",
+  "description": "Hệ điều hành giáo dục trực tuyến với Start Menu, công cụ tương tác và quản lý lớp học.",
   "lang": "vi-VN",
   "dir": "ltr",
   "start_url": "./?source=installed",
