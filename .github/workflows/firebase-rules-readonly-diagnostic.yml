@@ -1,0 +1,73 @@
+name: Read-only production Firebase rules check
+on:
+  push:
+    branches: [diagnostic/firebase-rules-live-20261124]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check active rules without modifying Firebase
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          PROJECT_ID: gen-lang-client-0870957273
+          DATABASE_ID: ai-studio-51fdfd5e-caf8-4640-bdd8-404753ba685e
+        run: |
+          node --input-type=module <<'NODE'
+          import {createSign,createHash} from 'node:crypto';
+          import {execFileSync} from 'node:child_process';
+          if(!process.env.FIREBASE_SERVICE_ACCOUNT_JSON){
+            console.log('READ_ONLY_BLOCKED: Firebase deployment credential is not configured.');
+            process.exit(0);
+          }
+          try {
+            const c=JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+            if(c.project_id!==process.env.PROJECT_ID||!c.client_email||!c.private_key)throw new Error('Credential does not match target project.');
+            const url='https://oauth2.googleapis.com/token';
+            const now=Math.floor(Date.now()/1000);
+            const enc=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
+            const assertion=enc({alg:'RS256',typ:'JWT'})+'.'+enc({iss:c.client_email,scope:'https://www.googleapis.com/auth/firebase',aud:url,iat:now,exp:now+600});
+            const sign=createSign('RSA-SHA256');sign.update(assertion);sign.end();
+            const tokenResponse=await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:assertion+'.'+sign.sign(c.private_key).toString('base64url')})});
+            if(!tokenResponse.ok)throw new Error('Google token request rejected: '+tokenResponse.status);
+            const token=(await tokenResponse.json()).access_token;
+            const get=async path=>{
+              const result=await fetch('https://firebaserules.googleapis.com/v1/'+path,{headers:{Authorization:'Bearer '+token}});
+              if(!result.ok)throw new Error('Firebase Rules API read rejected: '+result.status);
+              return result.json();
+            };
+            const release=await get('projects/'+process.env.PROJECT_ID+'/releases/cloud.firestore/'+process.env.DATABASE_ID);
+            const rules=await get(release.rulesetName);
+            const files=rules.source?.files||[];
+            if(files.length!==1||typeof files[0].content!=='string')throw new Error('Live rules source is not a single text file.');
+            const norm=s=>s.replace(/\r\n/g,'\n').trimEnd();
+            const source=norm(files[0].content);
+            const sha=s=>createHash('sha256').update(s).digest('hex');
+            console.log('LIVE_RULES_SHA256: '+sha(source));
+            const paths=['firestore.rules','firestore.learning-wall.rules'];
+            for(const path of paths){
+              const commits=execFileSync('git',['log','-100','--format=%H','--',path],{encoding:'utf8'}).trim().split('\n').filter(Boolean);
+              for(const commit of commits){
+                let old;
+                try{old=execFileSync('git',['show',commit+':'+path],{encoding:'utf8',stdio:['ignore','pipe','ignore']});}catch{continue;}
+                if(sha(norm(old))===sha(source)){
+                  console.log('MATCHED_GIT_BACKUP: '+commit+' '+path);
+                  process.exit(0);
+                }
+              }
+            }
+            console.log('NO_MATCH: live source differs from checked Git revisions; administrator must save actual rules in console.');
+          }catch(e){
+            // Never print tokens, private keys, rule source or remote response bodies.
+            console.log('READ_ONLY_BLOCKED: '+(e instanceof Error&&/^(Credential does not match|Google token request rejected|Firebase Rules API read rejected|Live rules source)/.test(e.message)?e.message:'Unable to complete read-only verification.'));
+          }
+          NODE
