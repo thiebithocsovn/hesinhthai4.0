@@ -48,7 +48,7 @@ export default function TeacherExamNavigation({ current, onNavigate, compact = f
   return <aside className="hidden w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-slate-200 bg-white px-3 py-4 lg:flex xl:w-60">
     <div className="flex items-center gap-3 rounded-xl bg-slate-900 px-3 py-3 text-white">
       <BookOpenText className="h-6 w-6 shrink-0" aria-hidden="true" />
-      <div><p className="text-sm font-bold tracking-wide">AITHEROVA EXAM</p><p className="text-xs text-slate-300">Không gian giáo viên</p></div>
+      <div className="min-w-0"><p className="text-sm font-bold leading-tight">HỆ THỐNG THI TRỰC TUYẾN</p><p className="text-xs text-slate-300">Không gian giáo viên</p></div>
     </div>
     <nav aria-label="Điều hướng quản lý kỳ thi" className="space-y-4">
       {(['Quản lý', 'Tổ chức & đánh giá'] as const).map(group => (
