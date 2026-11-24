@@ -133,7 +133,14 @@ verify(packageJson.scripts['test:hardening'].includes('test-ecosystem-hardening.
 const workflow = readFileSync(new URL('../.github/workflows/main.yml', import.meta.url), 'utf8');
 verify(workflow.includes('FIREBASE_SERVICE_ACCOUNT_JSON'),
   'GitHub Pages can publish server-side rules when a Firebase deployment secret is configured.');
-verify(workflow.includes('npm run deploy:firestore'), 'Rules are published during the GitHub deployment when credentials exist.');
+const rulesWorkflow = readFileSync(new URL('../.github/workflows/deploy-exam-firestore-rules.yml', import.meta.url), 'utf8');
+verify(!workflow.includes('npm run deploy:firestore') &&
+  rulesWorkflow.includes('npm run deploy:firestore') &&
+  rulesWorkflow.includes('backup_confirmed') &&
+  rulesWorkflow.includes('database_id') &&
+  rulesWorkflow.includes('FIREBASE_SERVICE_ACCOUNT_JSON') &&
+  rulesWorkflow.includes('test-exam-staff-rules.ts'),
+  'Production rules require separate reviewed deployment, exact database, backup confirmation, credentials and RBAC tests.');
 verify(workflow.includes('npm run test:plicker-student-sync'),
   'GitHub deployments verify that Plicker student synchronization stays account-scoped.');
 verify(workflow.includes('npm run test:hardening'),
