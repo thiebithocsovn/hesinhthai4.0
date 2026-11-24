@@ -1,9 +1,13 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { Trash2 } from 'lucide-react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import { planClassEnrollment } from '../lib/examEnrollmentPlan';
+import { reconcileClassEnrollment } from '../lib/examEnrollmentSync';
+import { formatStudentName } from '../lib/studentNameNormalization';
 import { collectClassExamAttendance, type ClassRosterExam, type ClassRosterRecord, type ClassRosterResult, type ClassRosterSession } from '../lib/examClassAttendance';
 
-export default function TeacherExamClassAttendance({ownerUid,classId,students,exams,rosterReady}:{ownerUid:string;classId:string;students:readonly ClassRosterRecord[];exams:readonly ClassRosterExam[];rosterReady:boolean}) {
+export default function TeacherExamClassAttendance({ownerUid,classId,students,exams,rosterReady,onRename,onRemove}:{ownerUid:string;classId:string;students:readonly ClassRosterRecord[];exams:readonly ClassRosterExam[];rosterReady:boolean;onRename:(id:string,name:string)=>Promise<void>;onRemove:(id:string)=>Promise<void>}) {
   const [sessions,setSessions]=useState<ClassRosterSession[]>([]);
   const [results,setResults]=useState<ClassRosterResult[]>([]);
   const [sessionReady,setSessionReady]=useState(false);
@@ -27,15 +31,53 @@ export default function TeacherExamClassAttendance({ownerUid,classId,students,ex
   },[ownerUid]);
   const rows=useMemo(()=>collectClassExamAttendance(ownerUid,classId,students,exams,sessions,results),[ownerUid,classId,students,exams,sessions,results]);
   const ready=rosterReady&&sessionReady&&resultReady;
-  return <section className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden" aria-label="Học sinh tự đăng ký dự thi theo lớp">
-    <header className="border-b border-slate-100 p-4 sm:p-5">
-      <h3 className="font-bold text-slate-800">Học sinh dự thi ngoài danh sách lớp chính thức {ready?'('+rows.length+' lượt)':''}</h3>
-      <p className="mt-1 text-sm text-slate-500">Tự động đối chiếu lớp đã chọn trong phiên thi hoặc bài nộp. Một học sinh có thể có nhiều lượt thi; các lượt này chưa làm thay đổi sĩ số chính thức.</p>
-      {(sessionError||resultError)?<p role="alert" className="mt-2 text-sm text-amber-800">Chưa tải đủ dữ liệu dự thi. Kiểm tra kết nối hoặc quyền truy cập Firebase, rồi mở lại lớp.</p>:!ready?<p role="status" className="mt-2 text-sm text-slate-500">Đang đồng bộ dữ liệu dự thi…</p>:null}
-    </header>
-    <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th scope="col" className="px-4 py-3">Họ và tên</th><th scope="col" className="px-4 py-3">Kỳ thi</th><th scope="col" className="px-4 py-3">Trạng thái</th></tr></thead><tbody className="divide-y divide-slate-100">
-      {rows.map(row=><tr key={row.key}><td className="px-4 py-3 font-medium text-slate-800">{row.name}</td><td className="px-4 py-3 text-slate-600">{row.examTitle}</td><td className="px-4 py-3"><span className={'rounded-lg px-2 py-1 text-xs font-semibold '+(row.status==='submitted'?'bg-emerald-50 text-emerald-700':'bg-blue-50 text-blue-700')}>{row.status==='submitted'?'Đã nộp bài':'Có phiên làm bài'}</span></td></tr>)}
-      {ready&&!rows.length&&<tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">Chưa có lượt thi ngoài danh sách chính thức có thông tin lớp đã lưu.</td></tr>}
+  const plan=useMemo(()=>planClassEnrollment(ownerUid,classId,students,exams,sessions,results),[ownerUid,classId,students,exams,sessions,results]);
+  const signature=JSON.stringify(plan.eligible.map(row=>[row.studentId,row.name,row.examId]));
+  const attempted=useRef('');
+  const [busy,setBusy]=useState(false);
+  const [notice,setNotice]=useState('');
+  const [syncError,setSyncError]=useState('');
+  const [retry,setRetry]=useState(0);
+  useEffect(()=>{
+    if(!ready||busy||!plan.eligible.length||attempted.current===signature+':'+retry)return;
+    const timer=window.setTimeout(()=>{
+      attempted.current=signature+':'+retry;
+      setBusy(true);setSyncError('');
+      void reconcileClassEnrollment(db,ownerUid,classId).then(result=>{
+        setNotice(result.added?'Đã chuyển '+result.added+' học sinh vào danh sách chính thức. Giữ nguyên bài thi và điểm.':'Danh sách đã được kiểm tra.');
+      }).catch(()=>setSyncError('Chưa đồng bộ được toàn bộ học sinh. Các hồ sơ đã lưu vẫn được giữ; hãy thử lại.')).finally(()=>setBusy(false));
+    },350);
+    return()=>window.clearTimeout(timer);
+  },[ready,busy,signature,retry,ownerUid,classId]);
+
+  // One table, one row per existing student ID. Pending records are visibly
+  // marked until the teacher-authorized transaction confirms membership.
+  const official=students.filter(student=>student.teacherId===ownerUid&&student.classId===classId);
+  const officialIds=new Set(official.map(student=>student.id));
+  const pending=new Map(rows.filter(row=>!officialIds.has(row.studentId)).map(row=>[row.studentId,row]));
+  const reasons=new Map(plan.review.map(item=>[item.row.studentId,item.reason]));
+  const displayed=[
+    ...official.map(student=>({id:student.id,name:student.name,confirmed:true,reason:'',canEdit:true})),
+    ...[...pending.values()].filter(row=>{
+      const student=students.find(s=>s.id===row.studentId);
+      return student&&!student.classId&&!student.enrollmentExcluded;
+    }).map(row=>({id:row.studentId,name:row.name,confirmed:false,reason:reasons.get(row.studentId)||'',canEdit:true}))
+  ].sort((a,b)=>formatStudentName(a.name).localeCompare(formatStudentName(b.name),'vi')||a.id.localeCompare(b.id));
+  return <section aria-label="Học sinh trong danh sách chính thức">
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div><h3 className="font-bold text-slate-800">Học sinh trong danh sách chính thức ({official.length})</h3>
+        <p className="mt-1 text-xs text-slate-500">Tự cập nhật khi học sinh bắt đầu thi và chọn lớp. Không tạo thêm danh sách riêng.</p></div>
+      <button type="button" disabled={!ready||busy||!plan.eligible.length} onClick={()=>setRetry(v=>v+1)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-teal-700 disabled:opacity-40">{busy?'Đang đồng bộ…':'Đồng bộ lại'}</button>
+    </div>
+    {(sessionError||resultError||syncError)?<p role="alert" className="mb-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{syncError||'Chưa tải đủ dữ liệu dự thi. Kiểm tra kết nối hoặc mở lại lớp.'}</p>:!ready||busy?<p role="status" className="mb-2 text-xs text-slate-500">Đang đồng bộ danh sách từ máy chủ…</p>:notice?<p role="status" className="mb-2 text-xs text-emerald-800">{notice}</p>:null}
+    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm"><table className="w-full min-w-[480px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-600"><tr><th scope="col" className="w-16 px-4 py-3 text-center">STT</th><th scope="col" className="px-4 py-3">Họ và tên</th><th scope="col" className="px-4 py-3">Trạng thái</th><th scope="col" className="px-4 py-3 text-right">Thao tác</th></tr></thead><tbody className="divide-y divide-slate-100">
+      {displayed.map((row,index)=><tr key={row.id} className="hover:bg-slate-50">
+        <td className="px-4 py-3 text-center text-slate-500">{index+1}</td>
+        <td className="px-4 py-3"><input type="text" aria-label={'Họ tên học sinh '+(index+1)} key={row.id+':'+row.name} defaultValue={formatStudentName(row.name)} onBlur={event=>{const name=formatStudentName(event.target.value);event.target.value=name;if(name&&name!==row.name)void onRename(row.id,name);}} className="w-full rounded border border-transparent bg-transparent px-1 py-1 font-medium text-slate-800 focus:border-teal-500 focus:outline-none"/></td>
+        <td className="px-4 py-3">{row.confirmed?<span className="text-xs font-semibold text-emerald-700">Đã vào lớp</span>:<span className="text-xs font-medium text-amber-800">{row.reason||'Đang chờ đồng bộ'}</span>}</td>
+        <td className="px-4 py-3 text-right">{row.confirmed&&<button type="button" aria-label={'Bỏ '+row.name+' khỏi lớp'} onClick={()=>void onRemove(row.id)} className="rounded p-2 text-slate-400 hover:bg-red-50 hover:text-red-700"><Trash2 size={17}/></button>}</td>
+      </tr>)}
+      {ready&&!displayed.length&&<tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Chưa có học sinh nào trong lớp này.</td></tr>}
     </tbody></table></div>
   </section>;
 }

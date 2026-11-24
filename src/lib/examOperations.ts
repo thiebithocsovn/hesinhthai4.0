@@ -2,7 +2,7 @@ import { questionGroup, type ProgressQuestion } from './examCandidateWorkspace';
 export const LEVELS = ['Nhận biết','Thông hiểu','Vận dụng','Vận dụng cao'] as const;
 export type CognitiveLevel = typeof LEVELS[number];
 export interface BlueprintQuestion extends ProgressQuestion { points?: number; rubric?: readonly { points: number }[] }
-export interface RosterStudent { id: string; name: string; classId?: string; teacherId?: string; examId?: string }
+export interface RosterStudent { id: string; name: string; classId?: string; teacherId?: string; examId?: string; selfEnrolled?: boolean }
 export interface RosterClass { id: string; name: string; teacherId?: string }
 export interface RoomSeat { studentId: string; seat: number }
 export interface RoomPlan { name: string; seats: RoomSeat[] }
@@ -21,7 +21,7 @@ export function eligibleRoster(students: readonly RosterStudent[], classes: read
   const allowed = new Set(classes.filter(c => c.teacherId === teacherId && classIds.includes(c.id)).map(c => c.id));
   const seen = new Set<string>();
   return students.filter(s => {
-    if (!s.id || s.teacherId !== teacherId || !s.classId || !allowed.has(s.classId) || s.examId || seen.has(s.id)) return false;
+    if (!s.id || s.teacherId !== teacherId || !s.classId || !allowed.has(s.classId) || (s.examId && !s.selfEnrolled) || seen.has(s.id)) return false;
     seen.add(s.id);
     return true;
   }).sort((a,b) => a.name.localeCompare(b.name,'vi') || a.id.localeCompare(b.id));

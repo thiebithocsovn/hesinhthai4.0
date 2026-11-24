@@ -9,6 +9,7 @@ import {
   resumeStorageKey, EXAM_RESUME_CODE_SESSION_KEY, EXAM_RESUME_SESSION_KEY,
   type ExamResumeState,
 } from '../lib/examResume';
+import { formatStudentName } from '../lib/studentNameNormalization';
 import { getExamStudentClasses, guestExamStudentRecord, withExamStudentClass } from '../lib/examStudentClasses';
 import { buildStudentExamSchedule, canStudentEnterExam, formatExamScheduleDate, getExamScheduleState } from '../lib/examSchedule';
 import {
@@ -353,7 +354,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
     event.preventDefault();
     if (loginBusy) return;
     setLoginError('');
-    const normalizedName = studentName.trim().normalize('NFC').replace(/\s+/g, ' ');
+    const normalizedName = formatStudentName(studentName);
     const normalizedCode = examCode.trim();
     if (!normalizedName || !normalizedCode) {
       setLoginError('Vui lòng nhập đầy đủ họ tên và mã kỳ thi.');
@@ -417,7 +418,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       // A rostered class requires a real roster match; unknown names cannot
       // bypass a known student ID by creating another anonymous identity.
       const classHasRoster = Boolean(selectedClass && Object.values(exam.studentDirectory || {})
-        .some(entry => entry.classId === selectedClass.id));
+        .some(entry => entry.classId === selectedClass.id && !entry.selfEnrolled));
       if (classHasRoster && !exam.studentDirectory?.[classLookupKey]) {
         setLoginError('Không tìm thấy họ tên trong danh sách lớp đã đăng ký dự thi. Hãy kiểm tra chính tả hoặc liên hệ giáo viên.');
         return;
@@ -770,7 +771,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
                 <form onSubmit={login} className="sep-form" aria-busy={loginBusy}>
                   <div className="sep-field">
                     <label htmlFor="sep-student-name">Họ và tên học sinh <span className="sep-required">(*)</span></label>
-                    <input id="sep-student-name" name="studentName" value={studentName} onChange={event => setStudentName(event.target.value)} placeholder="Nhập đầy đủ họ và tên" autoComplete="name" required disabled={loginBusy} aria-describedby={loginError ? 'sep-login-error' : undefined} />
+                    <input id="sep-student-name" name="studentName" value={studentName} onChange={event => setStudentName(event.target.value)} onBlur={()=>setStudentName(formatStudentName(studentName))} placeholder="Nhập đầy đủ họ và tên" autoComplete="name" required disabled={loginBusy} aria-describedby={loginError ? 'sep-login-error' : undefined} />
                   </div>
                   <div className="sep-field">
                     <label htmlFor="sep-exam-code">Mã đăng nhập / mã kỳ thi <span className="sep-required">(*)</span></label>

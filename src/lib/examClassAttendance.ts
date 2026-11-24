@@ -1,5 +1,5 @@
 import { getSubmittedExamClassId } from './examStudentClasses';
-export interface ClassRosterRecord { id:string; teacherId?:string; name:string; classId?:string; examId?:string }
+export interface ClassRosterRecord { id:string; teacherId?:string; name:string; classId?:string; examId?:string; selfEnrolled?:boolean; enrollmentExcluded?:boolean }
 export interface ClassRosterExam { id:string; teacherId?:string; title:string; classNames?:Record<string,string> }
 export interface ClassRosterSession { id:string; teacherId?:string; examId:string; studentId:string; status:string; lastActive:string; draftAnswers?:Record<string,unknown> }
 export interface ClassRosterResult { id:string; teacherId?:string; examId:string; studentId:string; submittedAt:string; answers?:Record<string,unknown> }

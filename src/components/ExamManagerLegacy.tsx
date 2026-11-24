@@ -5,6 +5,7 @@ import TeacherExamNavigation, { type TeacherWorkspaceView } from './TeacherExamN
 import TeacherExamOverview from './TeacherExamOverview';
 import TeacherExamOperations from './TeacherExamOperations';
 import TeacherExamClassAttendance from './TeacherExamClassAttendance';
+import { formatStudentName } from '../lib/studentNameNormalization';
 import TeacherExamCouncil from './TeacherExamCouncil';
 import type { CouncilPlan } from '../lib/examCouncil';
 import { type ExamOperationsPlan, eligibleRoster, makeRooms, normalizeLevel, summarizeRoomSessions } from '../lib/examOperations';
@@ -23,7 +24,7 @@ import { buildClosedExamResult } from '../lib/examCloseout';
 import UnifiedStudentExamRunner from './UnifiedStudentExamRunner';
 import { buildExamReceiptHtml, DEFAULT_EXAM_RECEIPT_SETTINGS, getExamReceiptSettings, getReceiptStudentClassId, receiptReadyToSign, receiptSignTiming, type ExamReceiptSettings } from '../lib/examReceipt';
 import * as XLSX from 'xlsx';
-import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, getDocsFromServer, writeBatch, runTransaction } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, getDocsFromServer, writeBatch, runTransaction, deleteField } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
 import ExamManualGradingPanel from './ExamManualGradingPanel';
@@ -133,6 +134,8 @@ interface StudentAccount {
   classId?: string;
   teacherId?: string;
   examId?: string;
+  selfEnrolled?: boolean;
+  enrollmentExcluded?: boolean;
 }
 
 interface ExamResult {
@@ -1301,7 +1304,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const handleImportStudents = async () => {
     if (!studentImportText.trim() || !selectedClassId) return;
 
-    const names = studentImportText.split('\n').map(n => n.trim()).filter(n => n);
+    const names = studentImportText.split('\n').map(formatStudentName).filter(n => n);
     const newStudents = names.map(name => ({
       id: Math.random().toString(36).substr(2, 9),
       code: Math.floor(100000 + Math.random() * 900000).toString(),
@@ -1350,7 +1353,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     const student = students.find(s => s.id === id);
     if (student) {
       try {
-        await setDoc(doc(db, 'students', id), { ...student, name });
+        await updateDoc(doc(db, 'students', id), { name: formatStudentName(name) });
       } catch (error) {
         console.error("Error updating student:", error);
       }
@@ -1358,7 +1361,14 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   };
 
   const handleDeleteStudent = async (id: string) => {
+    const student=students.find(s=>s.id===id);
+    if(!student||!canAccessTeacherOwnedRecord(resolveTeacherAccessScope(currentUser,auth.currentUser?.uid),student))return;
     try {
+      if(student.selfEnrolled){
+        if(!window.confirm('Bỏ học sinh khỏi danh sách lớp? Bài thi và điểm cũ được giữ nguyên.'))return;
+        await updateDoc(doc(db,'students',id),{classId:deleteField(),enrollmentExcluded:true});
+        return;
+      }
       await deleteDoc(doc(db, 'students', id));
     } catch (error) {
       console.error("Error deleting student:", error);
@@ -1370,7 +1380,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     e.preventDefault();
     setLoginError(null);
 
-    const normalizedStudentName = studentCodeInput.trim();
+    const normalizedStudentName = formatStudentName(studentCodeInput);
     const normalizedExamCode = examCodeInput.trim();
     if (!normalizedStudentName || !normalizedExamCode) {
       setLoginError('Vui lòng nhập đầy đủ họ tên và mã kỳ thi.');
@@ -2599,57 +2609,13 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                     </div>
                   </div>
 
-                  <h3 className="mb-2 font-bold text-slate-800">Học sinh trong danh sách chính thức</h3>
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr>
-                          <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider w-20 text-center">STT</th>
-                          <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Họ và tên</th>
-                          <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Thao tác</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {students.filter(s => s.classId === selectedClassId).map((student, index) => (
-                          <tr key={student.id} className="hover:bg-slate-50">
-                            <td className="px-6 py-4 text-center">
-                              <span className="font-medium text-slate-500">{index + 1}</span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <input 
-                                type="text" 
-                                value={student.name}
-                                onChange={(e) => handleUpdateStudent(student.id, e.target.value)}
-                                className="bg-transparent border-none focus:ring-0 p-0 font-medium text-slate-800 w-full"
-                              />
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              <button 
-                                onClick={() => handleDeleteStudent(student.id)}
-                                className="text-slate-400 hover:text-red-500 p-1"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                        {students.filter(s => s.classId === selectedClassId).length === 0 && (
-                          <tr>
-                            <td colSpan={3} className="px-6 py-8 text-center text-slate-500">
-                              Chưa có học sinh nào trong lớp này.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
                   {(() => {
                     const selectedClass = classes.find(c => c.id === selectedClassId);
                     const scope = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
                     if (!selectedClass?.teacherId || !canAccessTeacherOwnedRecord(scope, selectedClass)) return null;
                     return <TeacherExamClassAttendance key={selectedClass.teacherId + ':' + selectedClass.id}
                       ownerUid={selectedClass.teacherId} classId={selectedClass.id} students={students} exams={exams}
-                      rosterReady={studentsServerReady && classesServerReady}/>;
+                      rosterReady={studentsServerReady && classesServerReady} onRename={handleUpdateStudent} onRemove={handleDeleteStudent}/>;
                   })()}
                 </>
               )}
