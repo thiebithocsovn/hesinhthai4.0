@@ -128,6 +128,8 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
 interface AdminDashboardProps {
   onLogout: () => void;
+  onHome?: () => void;
+  initialExam?: boolean;
   teachers: Teacher[];
   setTeachers: React.Dispatch<React.SetStateAction<Teacher[]>>;
   currentUser: Teacher | 'admin' | null;
@@ -156,13 +158,13 @@ interface DashboardCategory {
   authorId?: string;
 }
 
-export default function AdminDashboard({ onLogout, teachers, setTeachers, currentUser, initialApplication, googleLogin }: AdminDashboardProps) {
+export default function AdminDashboard({ onLogout, onHome, initialExam, teachers, setTeachers, currentUser, initialApplication, googleLogin }: AdminDashboardProps) {
   const accessScope = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
   const currentUserId = accessScope.ownerUid;
   const currentUserName = currentUser === 'admin' ? 'Admin' : currentUser?.name;
   const studentsStorageKey = createTeacherStorageKey('students', accessScope.ownerUid);
-  const [activeTab, setActiveTab] = useState<'teachers' | 'library'>(initialApplication === 'plicker' || currentUser !== 'admin' ? 'library' : 'teachers');
-  const [activeLibraryView, setActiveLibraryView] = useState<'main' | 'gesture-class' | 'learning-wall' | 'lucky-draw' | 'lucky-draw-cards' | 'plicker' | 'head-shake-game' | 'chatbot' | 'create-exam' | 'kpi-manager' | 'secret-box' | 'drag-drop-game' | 'excel-merger' | 'pdf-merger'>(initialApplication === 'plicker' ? 'plicker' : 'main');
+  const [activeTab, setActiveTab] = useState<'teachers' | 'library'>(initialExam || initialApplication === 'plicker' || currentUser !== 'admin' ? 'library' : 'teachers');
+  const [activeLibraryView, setActiveLibraryView] = useState<'main' | 'gesture-class' | 'learning-wall' | 'lucky-draw' | 'lucky-draw-cards' | 'plicker' | 'head-shake-game' | 'chatbot' | 'create-exam' | 'kpi-manager' | 'secret-box' | 'drag-drop-game' | 'excel-merger' | 'pdf-merger'>(initialApplication === 'plicker' ? 'plicker' : initialExam ? 'create-exam' : 'main');
   const [searchTerm, setSearchTerm] = useState('');
   const libraryFilter = useLibraryFilter();
   useLibraryFont();
@@ -656,8 +658,9 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
         <header className="lib-mobile-header lib-font flex md:hidden sticky top-0 z-50">
           <div className="lib-mobile-brand">
             <EcosystemLogo size={34} />
-            <span><strong>HỆ SINH THÁI GD 4.0</strong><small>{currentUser === 'admin' ? 'Admin Portal' : 'Teacher Portal'}</small></span>
+            <span><strong>EDU AI</strong><small>{currentUser === 'admin' ? 'Admin Portal' : 'Teacher Portal'}</small></span>
           </div>
+          {onHome && <button type="button" onClick={onHome} aria-label="Về Desktop Edu AI" className="lib-mobile-logout"><LayoutDashboard className="h-5 w-5"/></button>}
           <button onClick={onLogout} className="lib-mobile-logout" aria-label="Đăng xuất">
             <LogOut className="w-5 h-5" />
           </button>
@@ -669,10 +672,11 @@ export default function AdminDashboard({ onLogout, teachers, setTeachers, curren
         <aside className="lib-sidebar lib-font hidden md:flex">
           <div className="lib-brand">
             <EcosystemLogo size={44} />
-            <div><strong>HỆ SINH THÁI GD 4.0</strong><small>Không gian học tập thông minh</small></div>
+            <div><strong>EDU AI</strong><small>Không gian học tập thông minh</small></div>
           </div>
           <div className="lib-role"><Star className="w-4 h-4" fill="currentColor" />{currentUser === 'admin' ? 'Admin Portal' : 'Teacher Portal'}</div>
           <nav className="lib-nav" aria-label="Điều hướng chính">
+            {onHome && <button type="button" onClick={onHome}><LayoutDashboard className="w-5 h-5"/><span>Desktop Edu AI</span></button>}
             {currentUser === 'admin' && (
               <button
                 onClick={() => setActiveTab('teachers')}

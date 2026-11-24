@@ -50,7 +50,9 @@ function readStoredApplication(): TrialApplicationId | null {
 function findProductId(target: EventTarget | null): EcosystemApplicationId | null {
   if (!(target instanceof Element)) return null;
   const card = target.closest('button');
-  if (!card) return null;
+  if (!card || card.getAttribute('data-edu-pin-mode') === 'true') return null;
+  const explicit = card.getAttribute('data-edu-launch');
+  if (explicit) return ECOSYSTEM_APPLICATIONS.some(application => application.id === explicit) ? explicit as EcosystemApplicationId : null;
   const title = card.querySelector('h3')?.textContent?.trim();
   return title ? PRODUCT_NAME_TO_ID.get(title) || null : null;
 }
