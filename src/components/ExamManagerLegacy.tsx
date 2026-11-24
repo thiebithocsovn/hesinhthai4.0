@@ -2609,58 +2609,13 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                     </div>
                   </div>
 
-                  <h3 className="mb-2 font-bold text-slate-800">Học sinh trong danh sách chính thức ({students.filter(s=>s.classId===selectedClassId).length})</h3>
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr>
-                          <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider w-20 text-center">STT</th>
-                          <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Họ và tên</th>
-                          <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Thao tác</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {students.filter(s => s.classId === selectedClassId).map((student, index) => (
-                          <tr key={student.id} className="hover:bg-slate-50">
-                            <td className="px-6 py-4 text-center">
-                              <span className="font-medium text-slate-500">{index + 1}</span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <input 
-                                type="text" 
-                                key={student.id+':'+student.name}
-                                defaultValue={formatStudentName(student.name)}
-                                onBlur={(e) => { const name=formatStudentName(e.target.value); e.target.value=name; if(name&&name!==student.name)void handleUpdateStudent(student.id,name); }}
-                                className="bg-transparent border-none focus:ring-0 p-0 font-medium text-slate-800 w-full"
-                              />
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              <button 
-                                onClick={() => handleDeleteStudent(student.id)}
-                                className="text-slate-400 hover:text-red-500 p-1"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                        {students.filter(s => s.classId === selectedClassId).length === 0 && (
-                          <tr>
-                            <td colSpan={3} className="px-6 py-8 text-center text-slate-500">
-                              Chưa có học sinh nào trong lớp này.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
                   {(() => {
                     const selectedClass = classes.find(c => c.id === selectedClassId);
                     const scope = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
                     if (!selectedClass?.teacherId || !canAccessTeacherOwnedRecord(scope, selectedClass)) return null;
                     return <TeacherExamClassAttendance key={selectedClass.teacherId + ':' + selectedClass.id}
                       ownerUid={selectedClass.teacherId} classId={selectedClass.id} students={students} exams={exams}
-                      rosterReady={studentsServerReady && classesServerReady}/>;
+                      rosterReady={studentsServerReady && classesServerReady} onRename={handleUpdateStudent} onRemove={handleDeleteStudent}/>;
                   })()}
                 </>
               )}
