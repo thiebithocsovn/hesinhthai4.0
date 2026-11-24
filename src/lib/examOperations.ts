@@ -42,7 +42,7 @@ export function makeRooms(students: readonly RosterStudent[], capacity: number):
   }
   return rooms;
 }
-export function blueprintRows(questions: readonly BlueprintQuestion[], levels: Record<string, CognitiveLevel>, maxPoints: (q: BlueprintQuestion)=>number) {
+export function blueprintRows<Q extends ProgressQuestion>(questions: readonly Q[], levels: Record<string, CognitiveLevel>, maxPoints: (q: Q)=>number) {
   const groups = new Map<string, { group: string; counts: number[]; points: number; total: number }>();
   for (const question of questions) {
     const group = questionGroup(question);
