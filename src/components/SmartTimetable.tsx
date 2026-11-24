@@ -2,6 +2,7 @@ import TimetableEducationPanel, { TimetableEducationCatalogDetails, TimetableTea
 import { EDUCATION_PROFILES, educationLevels, entryClockLabel, inferEducationKind, scenarioForTeachingWeek, sessionForPeriod, SESSION_LABELS } from '../lib/timetableEducation';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import TimetableAdminShell from './TimetableAdminShell';
+import EduAgentDock from './EduAgentDock';
 import { TimetableAvailabilityPanel, TimetableBackupPanel, TimetableCatalogPanel, TimetableCurriculumPanel, TimetableGradesPanel, TimetableHomeroomPanel, TimetableOverviewPanel, TimetableSettingsPanel } from './TimetableAdminPanels';
 import { TimetableAssignmentResources, TimetableCampusPanel, TimetableConcurrencyPanel, TimetableMergePanel, TimetableResourceDetails, TimetableSameSessionPanel, TimetableSplitPanel, TimetableTeacherDaysPanel } from './TimetableAdvancedPanels';
 import { decodeWorkspace, type TimetableWorkspace as PersistedWorkspace } from '../lib/timetableWorkspace';
@@ -61,6 +62,7 @@ interface SmartTimetableProps {
   onWorkspaceChange?: (next: PersistedWorkspace) => void;
   accountStatus?: React.ReactNode;
   trialMode?: boolean;
+  agentUid?: string;
 }
 
 type WorkspaceTab = TimetableWorkspaceTab;
@@ -101,13 +103,14 @@ function downloadBlob(filename: string, data: BlobPart, type: string): void {
   URL.revokeObjectURL(url);
 }
 
-export default function SmartTimetable({ onBack, storageKey, initialWorkspace, onWorkspaceChange, accountStatus, trialMode = false }: SmartTimetableProps) {
+export default function SmartTimetable({ onBack, storageKey, initialWorkspace, onWorkspaceChange, accountStatus, trialMode = false, agentUid }: SmartTimetableProps) {
   const initial = useMemo(() => initialWorkspace ?? readWorkspace(storageKey), [initialWorkspace, storageKey]);
   const persisted = useRef(initial);
   const [scenario, setScenario] = useState<TimetableScenario>(initial.scenario);
   const [solution, setSolution] = useState<TimetableSolution | null>(initial.solution);
   const [versions, setVersions] = useState<TimetableSolution[]>(initial.versions);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
+  const [agentHandoff, setAgentHandoff] = useState({ command: '', revision: 0 });
   const [pageId, setPageId] = useState('overview');
   const [selectedEntryId, setSelectedEntryId] = useState('');
   const [manualSlot, setManualSlot] = useState<{ dayIndex: number; period: number } | null>(null);
@@ -704,6 +707,8 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
 
         {activeTab === 'agent' && (
           <TimetableAgentPanel
+            key={agentHandoff.revision}
+            initialCommand={agentHandoff.command}
             scenario={scenario}
             solution={solution}
             busy={busy}
@@ -733,6 +738,11 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
         )}
         </React.Suspense>
       </fieldset>
+      {!trialMode && agentUid && <EduAgentDock context="smart-timetable" uid={agentUid} onTimetableCommand={command => {
+        if (busy) return;
+        setAgentHandoff(previous => ({ command, revision: previous.revision + 1 }));
+        navigatePage('agent');
+      }}/>}
     </TimetableAdminShell>
   );
 }
