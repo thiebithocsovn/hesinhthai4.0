@@ -39,3 +39,13 @@ assert.ok(sync.includes('tx.update(ref,{classId,name:formatStudentName(current.n
 assert.ok(sync.includes("tx.get(doc(db,'classes',classId))")&&sync.includes('getDocsFromServer'));
 assert.ok(!sync.includes('deleteDoc')&&!sync.includes("tx.set("));
 console.log('Class enrollment: Vietnamese normalization, exact IDs, duplicates and incomplete names held, cross-owner checks, exclusion, and reusable official roster passed.');
+
+const rosterPanel=readFileSync(new URL('../src/components/TeacherExamClassAttendance.tsx',import.meta.url),'utf8');
+const manager=readFileSync(new URL('../src/components/ExamManagerLegacy.tsx',import.meta.url),'utf8');
+assert.equal((rosterPanel.match(/<table\b/g)||[]).length,1,'The class has a single unified table.');
+assert.ok(rosterPanel.includes('Học sinh trong danh sách chính thức') && rosterPanel.includes('officialIds.has(row.studentId)'));
+assert.ok(!rosterPanel.includes('Học sinh dự thi ngoài danh sách lớp chính thức'));
+assert.ok(rosterPanel.includes('reconcileClassEnrollment(db,ownerUid,classId)'));
+assert.ok(manager.includes('onRename={handleUpdateStudent} onRemove={handleDeleteStudent}'));
+assert.ok(!manager.includes('Học sinh trong danh sách chính thức ({students.filter'));
+console.log('Unified roster table and live reconciliation regression passed.');
