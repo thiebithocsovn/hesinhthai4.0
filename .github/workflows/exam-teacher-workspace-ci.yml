@@ -9,6 +9,10 @@ on:
       - 'src/lib/examOperations.ts'
       - 'src/lib/examCouncil.ts'
       - 'src/lib/examClassAttendance.ts'
+      - 'src/lib/examEnrollmentPlan.ts'
+      - 'src/lib/examEnrollmentSync.ts'
+      - 'src/lib/studentNameNormalization.ts'
+      - 'scripts/test-exam-class-enrollment.ts'
       - 'scripts/test-exam-class-attendance.ts'
       - 'scripts/test-security-hardening.ts'
       - 'src/lib/examStaffAccess.ts'
@@ -35,6 +39,7 @@ on:
       - feature/exam-staff-rbac-20261124
       - feature/exam-workspace-design-20261124
       - fix/exam-class-roster-20261124
+      - feature/exam-roster-enrollment-20261124
 
 permissions:
   contents: read
@@ -64,6 +69,7 @@ jobs:
           npm run test:exam-receipt
           npm run test:security-hardening
           node --import tsx scripts/test-exam-class-attendance.ts
+          node --import tsx scripts/test-exam-class-enrollment.ts
       - name: Typecheck
         run: npm run lint
       - uses: actions/setup-java@v4
