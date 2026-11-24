@@ -15,6 +15,8 @@ on:
       - 'src/lib/studentNameAgent.ts'
       - 'src/lib/teacherIsolation.ts'
       - 'scripts/test-student-name-agent.ts'
+      - 'src/lib/examTeacherRecovery.ts'
+      - 'scripts/test-exam-teacher-recovery.ts'
       - 'scripts/test-exam-class-enrollment.ts'
       - 'scripts/test-exam-class-attendance.ts'
       - 'scripts/test-security-hardening.ts'
@@ -77,6 +79,7 @@ jobs:
           node --import tsx scripts/test-exam-class-attendance.ts
           node --import tsx scripts/test-exam-class-enrollment.ts
           node --import tsx scripts/test-student-name-agent.ts
+          node --import tsx scripts/test-exam-teacher-recovery.ts
       - name: Typecheck
         run: npm run lint
       - uses: actions/setup-java@v4
