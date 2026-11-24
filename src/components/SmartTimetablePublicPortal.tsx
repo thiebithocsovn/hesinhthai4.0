@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { CalendarRange } from 'lucide-react';
 
 function findProductGrid(): HTMLElement | null {
+  if (document.querySelector('[data-edu-ai-desktop]')) return null;
   const section = document.getElementById('san-pham');
   if (!section) return null;
   const grid = section.querySelector('div.grid');
@@ -10,6 +11,7 @@ function findProductGrid(): HTMLElement | null {
 }
 
 function findApplicationCount(): HTMLElement | null {
+  if (document.querySelector('[data-edu-ai-desktop]')) return null;
   const label = Array.from(document.querySelectorAll('div')).find(element =>
     element.textContent?.trim() === 'Ứng dụng giáo dục',
   );
