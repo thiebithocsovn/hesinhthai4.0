@@ -2,15 +2,15 @@ import { useMemo, useState } from 'react';
 import { ClipboardCheck, Download, LayoutGrid, Save } from 'lucide-react';
 import { assessExamReadiness, type ReadinessExam } from '../lib/examReadiness';
 import { questionMaxPoints, type GradableQuestion } from '../lib/examManualGrading';
-import { LEVELS, blueprintRows, eligibleRoster, makeRooms, buildOperationsCsv, type ExamOperationsPlan, type CognitiveLevel, type RosterClass, type RosterStudent, type ProgressQuestion } from '../lib/examOperations';
-import { isExamProfile, EXAM_PROFILES } from '../lib/examCandidateWorkspace';
+import { LEVELS, blueprintRows, eligibleRoster, makeRooms, buildOperationsCsv, type ExamOperationsPlan, type CognitiveLevel, type RosterClass, type RosterStudent } from '../lib/examOperations';
+import { isExamProfile, EXAM_PROFILES, type ProgressQuestion } from '../lib/examCandidateWorkspace';
 
-interface OperationsQuestion extends ProgressQuestion, GradableQuestion {
+type OperationsQuestion = ProgressQuestion & GradableQuestion & {
   text: string;
   options: string[];
   correctAnswer: number;
   matchingPairs?: {id:string;left:string;right:string}[];
-}
+};
 interface OperationsExam extends ReadinessExam {
   questions: OperationsQuestion[];
   operationsPlan?: ExamOperationsPlan;
