@@ -10,6 +10,7 @@ import {
   type ExamResumeState,
 } from '../lib/examResume';
 import { formatStudentName, isFullStudentName } from '../lib/studentNameNormalization';
+import { inspectStudentName, checkStudentNameAgainstRoster } from '../lib/studentNameAgent';
 import { getExamStudentClasses, guestExamStudentRecord, withExamStudentClass } from '../lib/examStudentClasses';
 import { buildStudentExamSchedule, canStudentEnterExam, formatExamScheduleDate, getExamScheduleState } from '../lib/examSchedule';
 import {
@@ -145,6 +146,17 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   const [classError, setClassError] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
+  const nameInspection=useMemo(()=>inspectStudentName(studentName),[studentName]);
+  const [nameMatch,setNameMatch]=useState<'unavailable'|'matched'|'ambiguous'|'unmatched'|'open'>('unavailable');
+  useEffect(()=>{
+    setNameMatch('unavailable');
+    if(!classExam||classExam.code!==examCode.trim()||!selectedClassId||!nameInspection.full)return;
+    let cancelled=false;
+    const timer=window.setTimeout(()=>{
+      void checkStudentNameAgainstRoster(nameInspection.name,classExam.exam.teacherId,classExam.exam.id,selectedClassId,classExam.exam.studentDirectory||{}).then(value=>{if(!cancelled)setNameMatch(value);}).catch(()=>{if(!cancelled)setNameMatch('unavailable');});
+    },250);
+    return()=>{cancelled=true;window.clearTimeout(timer);};
+  },[classExam,examCode,selectedClassId,nameInspection.name,nameInspection.full]);
   const [showExamCode, setShowExamCode] = useState(false);
   const [showLoginHelp, setShowLoginHelp] = useState(false);
   const [schedule, setSchedule] = useState<PublicExamSchedule[]>([]);
@@ -412,6 +424,10 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       const lookupKey = await createStudentRosterLookupKey(exam.teacherId, exam.id, normalizedName);
       const classLookupKey = selectedClass ? await createStudentRosterLookupKey(exam.teacherId, exam.id, normalizedName, selectedClass.id) : lookupKey;
       const roster = exam.studentDirectory?.[classLookupKey] || exam.studentDirectory?.[lookupKey];
+      if(roster?.ambiguous){
+        setLoginError('Có nhiều hồ sơ trùng họ tên trong lớp. Hãy nhờ giáo viên xác minh trước khi thi.');
+        return;
+      }
       if (selectedClass && roster?.classId && roster.classId !== selectedClass.id) {
         setLoginError('Họ tên và lớp chưa khớp với danh sách đăng ký. Hãy kiểm tra với giáo viên.');
         return;
@@ -433,6 +449,10 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       } : undefined;
 
       if (!student) {
+        if(!isFullStudentName(normalizedName)){
+          setLoginError('Em hãy nhập đầy đủ họ và tên bằng chữ, không dùng số hoặc ký hiệu.');
+          return;
+        }
         student = {
           id: await createExamGuestStudentId(exam.teacherId, exam.id, normalizedName, selectedClass?.id),
           code: Math.floor(100000 + Math.random() * 900000).toString(),
@@ -788,7 +808,12 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
                 <form onSubmit={login} className="sep-form" aria-busy={loginBusy}>
                   <div className="sep-field">
                     <label htmlFor="sep-student-name">Họ và tên học sinh <span className="sep-required">(*)</span></label>
-                    <input id="sep-student-name" name="studentName" value={studentName} onChange={event => setStudentName(event.target.value)} onBlur={()=>setStudentName(formatStudentName(studentName))} placeholder="Nhập đầy đủ họ và tên" autoComplete="name" required disabled={loginBusy} aria-describedby={loginError ? 'sep-login-error' : undefined} />
+                    <input id="sep-student-name" name="studentName" value={studentName} onChange={event => {setStudentName(event.target.value);setLoginError('');}} onBlur={()=>setStudentName(formatStudentName(studentName))} placeholder="Nhập đầy đủ họ và tên" autoComplete="name" required disabled={loginBusy} aria-describedby={`sep-name-agent${loginError ? ' sep-login-error' : ''}`} />
+                    <div id="sep-name-agent" aria-live="polite" className="mt-1 rounded-lg border border-teal-100 bg-teal-50 px-3 py-2 text-xs text-slate-700">
+                      <span className="font-semibold text-teal-800">Trợ lý nhận diện họ tên</span>
+                      {studentName.trim()?<p className="mt-1 break-words">Họ tên chuẩn hóa: <strong>{nameInspection.name}</strong></p>:<p className="mt-1">Tự viết hoa chữ cái đầu và kiểm tra họ tên theo lớp.</p>}
+                      {studentName.trim()&&!nameInspection.full?<p className="mt-1 text-amber-800">Hãy nhập đầy đủ họ và tên.</p>:nameMatch==='matched'?<p className="mt-1 text-teal-800">Họ tên khớp danh sách lớp. Em hãy kiểm tra lại tên của mình.</p>:nameMatch==='ambiguous'?<p className="mt-1 text-amber-800">Có hồ sơ trùng tên, cần giáo viên xác minh.</p>:nameMatch==='unmatched'?<p className="mt-1 text-amber-800">Chưa khớp danh sách lớp. Kiểm tra lại dấu và chính tả hoặc hỏi giáo viên.</p>:studentName.trim()&&!nameInspection.hasVietnameseMarks?<p className="mt-1 text-amber-800">Kiểm tra dấu tiếng Việt theo tên thật. Không tự suy đoán dấu.</p>:null}
+                    </div>
                   </div>
                   <div className="sep-field">
                     <label htmlFor="sep-exam-code">Mã đăng nhập / mã kỳ thi <span className="sep-required">(*)</span></label>
