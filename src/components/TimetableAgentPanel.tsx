@@ -5,6 +5,7 @@ import { planTimetableAgentCommand } from '../lib/timetableAgent';
 import type { TimetableScenario, TimetableSolution } from '../lib/smartTimetable';
 
 interface Props {
+  initialCommand?: string;
   scenario: TimetableScenario;
   solution: TimetableSolution | null;
   busy: boolean;
@@ -12,8 +13,8 @@ interface Props {
   onRunOptimizer: () => void;
 }
 
-export default function TimetableAgentPanel({ scenario, solution, busy, onApply, onRunOptimizer }: Props) {
-  const [command, setCommand] = useState('');
+export default function TimetableAgentPanel({ initialCommand = '', scenario, solution, busy, onApply, onRunOptimizer }: Props) {
+  const [command, setCommand] = useState(initialCommand);
   const [notice, setNotice] = useState('');
   const [showAllErrors, setShowAllErrors] = useState(false);
   const proposal = useMemo(() => planTimetableAgentCommand(command, scenario, solution), [command, scenario, solution]);
