@@ -15,12 +15,12 @@ export interface StaffExam {id:string;title:string;teacherId?:string;status:'dra
 export interface StaffAssignment {
   id:string;examId:string;teacherId:string;staffUid:string;staffName:string;
   role:CouncilRole;kind:string;room:string;examTitle:string;schoolName:string;
-  councilName:string;site:string;councilRevision:string;memberIndex:number;state:StaffState;report:string;
+  councilName:string;site:string;councilRevision:string;memberIndex:number;state:StaffState;report:string;active:boolean;
 }
 const validId=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v);
-export function assignmentId(examId:string,staffUid:string) {
-  if(!validId(examId)||!validId(staffUid))throw new Error('Mã kỳ thi hoặc tài khoản không hợp lệ.');
-  return examId+'~'+staffUid;
+export function assignmentId(examId:string,staffUid:string,revision:string) {
+  if(!validId(examId)||!validId(staffUid)||!revision||revision.length>64||!/^[0-9TZ:.-]+$/.test(revision))throw new Error('Mã kỳ thi hoặc tài khoản không hợp lệ.');
+  return examId+'~'+staffUid+'~'+revision;
 }
 export function prepareAssignment(exam:StaffExam,index:number,issuer:string){
   const plan=exam.councilPlan;
@@ -31,5 +31,5 @@ export function prepareAssignment(exam:StaffExam,index:number,issuer:string){
   if(m.role!=='Giám thị'&&m.room)throw new Error('Phòng thi chỉ được khai báo cho giám thị.');
   return {examId:exam.id,teacherId:exam.teacherId,staffUid:m.teacherUid,staffName:m.name,
     role:m.role,kind:STAFF_KINDS[m.role].kind,room:m.room,examTitle:exam.title,schoolName:plan.schoolName,
-    councilName:plan.name,site:plan.site,councilRevision:plan.updatedAt,memberIndex:index,state:'pending' as const,report:'',grantedBy:issuer};
+    councilName:plan.name,site:plan.site,councilRevision:plan.updatedAt,memberIndex:index,state:'pending' as const,report:'',active:true,grantedBy:issuer};
 }
