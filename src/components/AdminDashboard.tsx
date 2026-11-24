@@ -1,4 +1,6 @@
 import React, { lazy, useState, useRef, useEffect, useMemo } from 'react';
+import EduAgentDock from './EduAgentDock';
+import { resolveAgentContext, type AgentAppId } from '../lib/eduAgentCore';
 import { Users, Plus, Trash2, Key, LogOut, Search, Edit2, ShieldCheck, BookOpen, CheckCircle, Lock, Unlock, Library, Gift, Target, QrCode, Camera, X, LayoutDashboard, FolderPlus, UserPlus, Star, ArrowLeft, MoreVertical, Clock, Bookmark, Globe, Filter, MessageCircle, CheckSquare, ChevronUp, ChevronDown, Settings, ClipboardCheck, ChartColumnIncreasing, MonitorPlay, MessageSquare, Hand, FileSpreadsheet, FileText, Eye, EyeOff } from 'lucide-react';
 import { Teacher } from '../types';
 import { doc, setDoc, deleteDoc, updateDoc, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, arrayUnion, where } from 'firebase/firestore';
@@ -129,6 +131,7 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 interface AdminDashboardProps {
   onLogout: () => void;
   onHome?: () => void;
+  onAgentLaunch?: (id: AgentAppId) => void;
   initialExam?: boolean;
   teachers: Teacher[];
   setTeachers: React.Dispatch<React.SetStateAction<Teacher[]>>;
@@ -158,7 +161,7 @@ interface DashboardCategory {
   authorId?: string;
 }
 
-export default function AdminDashboard({ onLogout, onHome, initialExam, teachers, setTeachers, currentUser, initialApplication, googleLogin }: AdminDashboardProps) {
+export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initialExam, teachers, setTeachers, currentUser, initialApplication, googleLogin }: AdminDashboardProps) {
   const accessScope = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
   const currentUserId = accessScope.ownerUid;
   const currentUserName = currentUser === 'admin' ? 'Admin' : currentUser?.name;
@@ -2143,6 +2146,12 @@ export default function AdminDashboard({ onLogout, onHome, initialExam, teachers
           </div>
         </div>
       )}
+      {currentUser && auth.currentUser && <EduAgentDock context={resolveAgentContext(activeTab === 'teachers' || activeLibraryView === 'main' ? 'admin' : activeLibraryView)} uid={auth.currentUser.uid} onLaunch={id => {
+        if (id === 'smart-timetable' || id === 'question-studio') { onAgentLaunch?.(id); return; }
+        if (!window.confirm('Mở ứng dụng đề xuất? Hãy lưu công việc đang làm trước khi chuyển.')) return;
+        setActiveTab('library');
+        setActiveLibraryView(id === 'exam-manager' ? 'create-exam' : id);
+      }}/>}
     </div>
   );
 }
