@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { Building2, Download, Plus, Save, Users, X } from 'lucide-react';
 import { auth, db } from '../firebase';
+import { TeacherStaffInbox, TeacherStaffGrantPanel } from './TeacherExamStaffAccess';
 import { COUNCIL_ROLES, groupSchools, schoolKey, validateCouncil, type CouncilMember, type CouncilPlan, type CouncilRole, type SchoolTeacher } from '../lib/examCouncil';
 import { buildOperationsCsv, type ExamOperationsPlan } from '../lib/examOperations';
 import { canAccessTeacherOwnedRecord, resolveTeacherAccessScope, type TeacherAccessScope } from '../lib/teacherIsolation';
@@ -59,6 +60,7 @@ export default function TeacherExamCouncil({exams,currentUser,onEdit}:Props) {
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
       {[['Trường đã khai báo',schools.filter(s=>s.key).length],['Hồ sơ giáo viên trong phạm vi quyền',teachers.length],['Kỳ thi có hội đồng',scopedExams.filter(e=>e.councilPlan).length]].map(([label,value])=><div key={label} className="rounded-xl border bg-white p-4"><p className="text-xs text-slate-500">{label}</p><strong className="text-2xl">{ready?value:'—'}</strong></div>)}
     </div>
+    <TeacherStaffInbox currentUser={currentUser}/>
     <section className="rounded-2xl border bg-white p-4 sm:p-5">
       <h3 className="font-bold">1. Danh mục trường</h3>
       <p className="mt-1 text-xs text-slate-500">{access.role==='administrator'?'Quản trị viên xem các hồ sơ giáo viên và chỉnh trường đăng ký.':'Giáo viên chỉ xem hồ sơ trường của chính mình.'} Danh mục nhóm theo tên trường trong hồ sơ, chưa phải hệ thống định danh tenant liên trường.</p>
@@ -73,6 +75,7 @@ export default function TeacherExamCouncil({exams,currentUser,onEdit}:Props) {
       <h3 className="flex items-center gap-2 font-bold"><Users size={20}/>2. Hội đồng thi</h3>
       <label className="mt-3 block text-sm font-semibold">Chọn kỳ thi<select value={exam?.id||''} onChange={e=>setSelectedId(e.target.value)} className={'mt-1 '+input}>{!exam&&<option value="">Chưa có kỳ thi</option>}{scopedExams.map(e=><option key={e.id} value={e.id}>{e.title}</option>)}</select></label>
       {exam&&<CouncilEditor key={exam.id+':'+(exam.councilPlan?.updatedAt||'')} exam={exam} teachers={teachers} ready={ready} access={access} currentUser={currentUser} onEdit={onEdit}/>}
+      {exam&&<TeacherStaffGrantPanel key={exam.id} exam={exam} currentUser={currentUser}/>}
     </section>
   </section>;
 }
