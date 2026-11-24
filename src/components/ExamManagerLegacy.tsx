@@ -4,6 +4,7 @@ import { RichTextEditor } from './RichTextEditor';
 import TeacherExamNavigation, { type TeacherWorkspaceView } from './TeacherExamNavigation';
 import TeacherExamOverview from './TeacherExamOverview';
 import TeacherExamOperations from './TeacherExamOperations';
+import TeacherExamClassAttendance from './TeacherExamClassAttendance';
 import TeacherExamCouncil from './TeacherExamCouncil';
 import type { CouncilPlan } from '../lib/examCouncil';
 import { type ExamOperationsPlan, eligibleRoster, makeRooms, normalizeLevel, summarizeRoomSessions } from '../lib/examOperations';
@@ -2467,7 +2468,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                     <div>
                       <h2 className="text-2xl font-bold text-slate-800">Quản lý lớp học</h2>
                       <p className="mt-1 text-sm text-slate-500">
-                        {classes.length} lớp học · Theo dõi sĩ số và quản lý học sinh trên từng dòng.
+                        {classes.length} lớp học · Sĩ số chính thức; mở lớp để xem thêm học sinh tự đăng ký dự thi.
                       </p>
                     </div>
                     <button 
@@ -2580,7 +2581,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                         <ArrowLeft className="w-5 h-5" />
                       </button>
                       <h2 className="text-2xl font-bold text-slate-800">
-                        Tài khoản học sinh - {classes.find(c => c.id === selectedClassId)?.name}
+                        Danh sách lớp - {classes.find(c => c.id === selectedClassId)?.name}
                       </h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
@@ -2594,6 +2595,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                     </div>
                   </div>
 
+                  <h3 className="mb-2 font-bold text-slate-800">Học sinh trong danh sách chính thức</h3>
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <table className="w-full text-left">
                       <thead className="bg-slate-50 border-b border-slate-200">
@@ -2637,6 +2639,14 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                       </tbody>
                     </table>
                   </div>
+                  {(() => {
+                    const selectedClass = classes.find(c => c.id === selectedClassId);
+                    const scope = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
+                    if (!selectedClass?.teacherId || !canAccessTeacherOwnedRecord(scope, selectedClass)) return null;
+                    return <TeacherExamClassAttendance key={selectedClass.teacherId + ':' + selectedClass.id}
+                      ownerUid={selectedClass.teacherId} classId={selectedClass.id} students={students} exams={exams}
+                      rosterReady={studentsServerReady && classesServerReady}/>;
+                  })()}
                 </>
               )}
             </div>

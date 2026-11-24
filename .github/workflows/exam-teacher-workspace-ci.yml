@@ -8,6 +8,9 @@ on:
       - 'src/lib/examCandidateWorkspace.ts'
       - 'src/lib/examOperations.ts'
       - 'src/lib/examCouncil.ts'
+      - 'src/lib/examClassAttendance.ts'
+      - 'scripts/test-exam-class-attendance.ts'
+      - 'scripts/test-security-hardening.ts'
       - 'src/lib/examStaffAccess.ts'
       - 'scripts/test-exam-staff-rules.ts'
       - 'firestore.rules'
@@ -30,6 +33,7 @@ on:
       - feature/exam-operations-v3-20261124
       - feature/exam-school-council-20261124
       - feature/exam-staff-rbac-20261124
+      - fix/exam-class-roster-20261124
 
 permissions:
   contents: read
@@ -57,6 +61,8 @@ jobs:
           npm run test:exam-class-receipts
           npm run test:exam-manual-grading
           npm run test:exam-receipt
+          npm run test:security-hardening
+          node --import tsx scripts/test-exam-class-attendance.ts
       - name: Typecheck
         run: npm run lint
       - uses: actions/setup-java@v4
