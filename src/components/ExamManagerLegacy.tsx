@@ -114,6 +114,7 @@ interface Exam {
   studentDirectory?: Record<string, PrivateStudentRosterEntry>;
   receiptSettings?: Partial<ExamReceiptSettings>;
   classNames?: Record<string, string>;
+  selfEnrollmentClassIds?: string[];
   accessVersionCode?: string;
   roundScoreToInteger?: boolean;
   examProfile?: ExamProfile;
