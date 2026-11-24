@@ -3,6 +3,8 @@ import { ArrowLeft, Plus, Trash2, Edit2, Play, CheckCircle, Clock, Users, FileTe
 import { RichTextEditor } from './RichTextEditor';
 import TeacherExamNavigation, { type TeacherWorkspaceView } from './TeacherExamNavigation';
 import TeacherExamOverview from './TeacherExamOverview';
+import TeacherExamOperations from './TeacherExamOperations';
+import { type ExamOperationsPlan, eligibleRoster, makeRooms, normalizeLevel, summarizeRoomSessions } from '../lib/examOperations';
 import TeacherQuestionBank, { type BankSelection } from './TeacherQuestionBank';
 import TeacherExamCalendar from './TeacherExamCalendar';
 import TeacherExamAnalytics from './TeacherExamAnalytics';
@@ -18,7 +20,7 @@ import { buildClosedExamResult } from '../lib/examCloseout';
 import UnifiedStudentExamRunner from './UnifiedStudentExamRunner';
 import { buildExamReceiptHtml, DEFAULT_EXAM_RECEIPT_SETTINGS, getExamReceiptSettings, getReceiptStudentClassId, receiptReadyToSign, receiptSignTiming, type ExamReceiptSettings } from '../lib/examReceipt';
 import * as XLSX from 'xlsx';
-import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, getDocsFromServer, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, getDocsFromServer, writeBatch, runTransaction } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
 import ExamManualGradingPanel from './ExamManualGradingPanel';
@@ -111,6 +113,7 @@ interface Exam {
   accessVersionCode?: string;
   roundScoreToInteger?: boolean;
   examProfile?: ExamProfile;
+  operationsPlan?: ExamOperationsPlan;
 }
 
 interface StudentClass {
@@ -206,8 +209,10 @@ async function synchronizeExamPublication(exam: Exam, previousExam: Exam = exam,
     authorizedExams.push({ code: version.code, exam: selectedVersion });
   }
   for (const authorized of authorizedExams) {
+    // Room assignments and teacher blueprint are private. Never expose them in the candidate payload.
+    const { operationsPlan: _privateOperationsPlan, ...candidateExam } = authorized.exam;
     batch.set(doc(db, PUBLIC_EXAM_ACCESS_COLLECTION, await createExamAccessDocumentId(authorized.code)),
-      await protectExamForAccess(stripTeacherOnlyFields(authorized.exam), authorized.code));
+      await protectExamForAccess(stripTeacherOnlyFields(candidateExam), authorized.code));
   }
   const schedule = await createPublicExamSchedule(exam);
   batch.set(doc(db, PUBLIC_EXAM_SCHEDULES_COLLECTION, schedule.id), schedule);
@@ -223,6 +228,9 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   // The overview reuses the existing 'exams' subscription. No extra roster/result reads.
   const [teacherTab, setTeacherTab] = useState<'exams' | 'students' | 'monitoring' | 'results' | 'scanning'>('exams');
   const [examPage, setExamPage] = useState<'overview' | 'list' | 'calendar' | 'bank'>('overview');
+  const [studentsPage, setStudentsPage] = useState<'roster' | 'operations'>('roster');
+  const [studentsServerReady,setStudentsServerReady] = useState(false);
+  const [classesServerReady,setClassesServerReady] = useState(false);
   const [resultsPage, setResultsPage] = useState<'list' | 'analytics'>('list');
   const [examSearch, setExamSearch] = useState('');
   const [examStatusFilter, setExamStatusFilter] = useState<TeacherExamStatusFilter>('all');
@@ -243,6 +251,15 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const [classReceiptSessionsLoading, setClassReceiptSessionsLoading] = useState(false);
   const [classReceiptSessionsError, setClassReceiptSessionsError] = useState('');
   const [activeSessions, setActiveSessions] = useState<ExamSession[]>([]);
+  const [sessionsServerReady,setSessionsServerReady] = useState(false);
+  const [sessionsError,setSessionsError] = useState('');
+  const [monitorNow,setMonitorNow] = useState(Date.now());
+  useEffect(() => {
+    if (teacherTab !== 'monitoring') return;
+    setMonitorNow(Date.now());
+    const id = window.setInterval(() => setMonitorNow(Date.now()),10000);
+    return () => window.clearInterval(id);
+  },[teacherTab]);
   const restoredPublishedExamIds = useRef(new Set<string>());
   const [publicationError, setPublicationError] = useState('');
   const [publicationRetry, setPublicationRetry] = useState(0);
@@ -255,6 +272,8 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     setExams([]);
     setStudents([]);
     setClasses([]);
+    setStudentsServerReady(false);
+    setClassesServerReady(false);
     setResults([]);
     setResultsReady(false);
     setResultsError('');
@@ -262,6 +281,8 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     setIsResultsDeleteOpen(false);
     setClassReceiptExamId(null);
     setActiveSessions([]);
+    setSessionsServerReady(false);
+    setSessionsError('');
     if (accessScope.role === 'guest') {
       return;
     }
@@ -288,14 +309,16 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     }, () => setExams([])));
 
     if (teacherTab !== 'exams') {
-      subscriptions.push(onSnapshot(studentsQuery, (snapshot: any) => {
+      subscriptions.push(onSnapshot(studentsQuery, {includeMetadataChanges:true}, (snapshot: any) => {
         setStudents(filterTeacherOwnedRecords(accessScope,
           snapshot.docs.map((item: any) => ({ id: item.id, ...item.data() } as StudentAccount))));
-      }, () => setStudents([])));
-      subscriptions.push(onSnapshot(classesQuery, (snapshot: any) => {
+        setStudentsServerReady(!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites);
+      }, () => {setStudents([]);setStudentsServerReady(false);}));
+      subscriptions.push(onSnapshot(classesQuery, {includeMetadataChanges:true}, (snapshot: any) => {
         setClasses(filterTeacherOwnedRecords(accessScope,
           snapshot.docs.map((item: any) => ({ id: item.id, ...item.data() } as StudentClass))));
-      }, () => setClasses([])));
+        setClassesServerReady(!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites);
+      }, () => {setClasses([]);setClassesServerReady(false);}));
     }
 
     if (teacherTab === 'results') {
@@ -312,21 +335,29 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     }
 
     let pendingSessions: ExamSession[] | null = null;
+    let pendingSessionsReady = false;
     let sessionUpdateTimer: NodeJS.Timeout | null = null;
 
     if (teacherTab === 'monitoring') {
-      subscriptions.push(onSnapshot(sessionsQuery, (snapshot: any) => {
+      subscriptions.push(onSnapshot(sessionsQuery, {includeMetadataChanges:true}, (snapshot: any) => {
+        pendingSessionsReady = !snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites;
         pendingSessions = filterTeacherOwnedRecords(accessScope,
           snapshot.docs.map((item: any) => ({ id: item.id, ...item.data() } as ExamSession)));
         if (!sessionUpdateTimer) {
           sessionUpdateTimer = setTimeout(() => {
             if (pendingSessions) {
               setActiveSessions(pendingSessions);
+              setSessionsServerReady(pendingSessionsReady);
+              setSessionsError('');
             }
             sessionUpdateTimer = null;
           }, 2000);
         }
-      }, () => setActiveSessions([])));
+      }, () => {
+        if (sessionUpdateTimer) clearTimeout(sessionUpdateTimer);
+        sessionUpdateTimer = null;pendingSessions = null;
+        setActiveSessions([]);setSessionsServerReady(false);setSessionsError('Không thể tải phiên thi. Kiểm tra kết nối và quyền tài khoản.');
+      }));
     }
 
     return () => {
@@ -532,6 +563,39 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const createExamOnDate = (dateKey: string) => {
     handleCreateExam();
     setEditingExam(previous => previous ? { ...previous, startTime: dateKey + 'T08:00' } : previous);
+  };
+
+  const saveOperationsPlan = async (id: string, plan: ExamOperationsPlan) => {
+    const access = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
+    const source = exams.find(exam => exam.id === id);
+    if (!source || !canAccessTeacherOwnedRecord(access, source) || source.status !== 'draft' || !source.teacherId || !studentsServerReady || !classesServerReady) {
+      throw new Error('Chỉ lưu kế hoạch cho kỳ thi nháp thuộc quyền quản lý và khi dữ liệu lớp đã đồng bộ.');
+    }
+    const owner = source.teacherId;
+    const [studentsSnapshot, classesSnapshot] = await Promise.all([
+      getDocsFromServer(query(collection(db, 'students'), where('teacherId','==',owner))),
+      getDocsFromServer(query(collection(db, 'classes'), where('teacherId','==',owner))),
+    ]);
+    const freshStudents = studentsSnapshot.docs.map(item => ({...item.data(),id:item.id} as StudentAccount));
+    const freshClasses = classesSnapshot.docs.map(item => ({...item.data(),id:item.id} as StudentClass));
+    const selectedClassIds = [...new Set(plan.selectedClassIds)].filter(classId => freshClasses.some(c => c.id === classId && c.teacherId === owner));
+    const rooms = makeRooms(eligibleRoster(freshStudents,freshClasses,owner,selectedClassIds),plan.capacity);
+    if (JSON.stringify(rooms) !== JSON.stringify(plan.rooms) || selectedClassIds.length !== plan.selectedClassIds.length) throw new Error('Danh sách lớp đã thay đổi. Kiểm tra lại kế hoạch trước khi lưu.');
+    await runTransaction(db, async transaction => {
+      const examRef = doc(db,'exams',id);
+      const snapshot = await transaction.get(examRef);
+      if (!snapshot.exists()) throw new Error('Kỳ thi không còn tồn tại.');
+      const fresh = {...snapshot.data(),id:snapshot.id} as Exam;
+      const currentAccess = resolveTeacherAccessScope(currentUser,auth.currentUser?.uid);
+      if (fresh.status !== 'draft' || fresh.teacherId !== owner || !canAccessTeacherOwnedRecord(currentAccess,fresh) ||
+          currentAccess.ownerUid !== access.ownerUid || currentAccess.role !== access.role) throw new Error('Quyền truy cập hoặc trạng thái kỳ thi đã thay đổi.');
+      if (JSON.stringify(fresh.questions.map(q=>q.id)) !== JSON.stringify(source.questions.map(q=>q.id))) throw new Error('Danh sách câu hỏi đã thay đổi; tải lại ma trận.');
+      const levels = Object.fromEntries(fresh.questions.flatMap(q => {
+        const level = normalizeLevel(plan.levels[q.id]);
+        return level ? [[q.id,level]] : [];
+      }));
+      transaction.update(examRef,{operationsPlan:{version:1,selectedClassIds,capacity:plan.capacity,rooms,levels,updatedAt:new Date().toISOString()}});
+    });
   };
 
   const handleExportExcel = () => {
@@ -2047,7 +2111,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
 
   const currentWorkspaceView: TeacherWorkspaceView = teacherTab === 'exams'
     ? (examPage === 'overview' ? 'overview' : examPage === 'calendar' ? 'calendar' : examPage === 'bank' ? 'bank' : 'exams')
-    : teacherTab === 'results' && resultsPage === 'analytics' ? 'analytics' : teacherTab;
+    : teacherTab === 'results' && resultsPage === 'analytics' ? 'analytics' : teacherTab === 'students' && studentsPage === 'operations' ? 'operations' : teacherTab;
   const navigateTeacherView = (view: TeacherWorkspaceView) => {
     if (view === 'overview' || view === 'exams' || view === 'calendar' || view === 'bank') {
       setTeacherTab('exams');
@@ -2061,6 +2125,8 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
       return;
     }
     setResultsPage('list');
+    if (view === 'operations') {setStudentsPage('operations');setTeacherTab('students');return;}
+    setStudentsPage('roster');
     setTeacherTab(view);
     if (view === 'students') setSelectedClassId('');
   };
@@ -2380,7 +2446,15 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
             </div>
           )}
 
-          {teacherTab === 'students' && (
+          {teacherTab === 'students' && studentsPage === 'operations' && (
+            <TeacherExamOperations exams={exams} students={students} classes={classes}
+              rosterReady={studentsServerReady && classesServerReady}
+              onSave={saveOperationsPlan}
+              onEdit={openExamFromWorkspace}
+              onMonitoring={examId => {setSelectedExamIdForResults(examId);navigateTeacherView('monitoring');}}
+            />
+          )}
+          {teacherTab === 'students' && studentsPage === 'roster' && (
             <div className="max-w-5xl mx-auto">
               {!selectedClassId ? (
                 <>
@@ -2593,14 +2667,32 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                 </div>
               </div>
 
+              {!sessionsServerReady && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{sessionsError || 'Đang xác nhận dữ liệu phiên thi với máy chủ; số liệu có thể chưa đầy đủ.'}</p>}
+              {(() => {
+                const exam = exams.find(item => item.id === (selectedExamIdForResults || exams[0]?.id));
+                const rooms = exam?.operationsPlan?.rooms || [];
+                if (!rooms.length) return null;
+                const state = summarizeRoomSessions(rooms,activeSessions.filter(session => session.examId === exam?.id && session.teacherId === exam?.teacherId),monitorNow,EXAM_SESSION_ONLINE_WINDOW_MS);
+                return <section className="mb-4 rounded-xl border bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold text-slate-900">Tiến độ theo phòng đã lập</h3><span className="text-xs text-slate-500">{state.unassigned} học sinh có phiên thi ngoài kế hoạch</span></div>
+                  <p className="mb-3 text-xs text-slate-500">Chưa có phiên không đồng nghĩa vắng mặt. Mất kết nối dựa trên hoạt động cuối của phiên; không tự động kết luận vi phạm.</p>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {state.summaries.map(room => <article key={room.name} className="rounded-lg border bg-slate-50 p-3">
+                      <div className="mb-2 flex justify-between gap-2"><strong>{room.name}</strong><span className="text-xs text-slate-500">{room.planned} dự kiến</span></div>
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-emerald-600" style={{width:(room.planned ? 100*room.submitted/room.planned : 0)+'%'}} /></div>
+                      <div className="mt-3 grid grid-cols-2 gap-1 text-xs"><span>Đã nộp: <b>{room.submitted}</b></span><span>Đang kết nối: <b>{room.online}</b></span><span>Mất kết nối: <b>{room.disconnected}</b></span><span>Chưa có phiên: <b>{room.notSeen}</b></span></div>
+                    </article>)}
+                  </div>
+                </section>;
+              })()}
               <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {(() => {
                   const selected = activeSessions.filter(session => session.examId === (selectedExamIdForResults || exams[0]?.id));
                   const taking = selected.filter(session => session.status === 'taking');
-                  const online = taking.filter(session => Date.now() - new Date(session.lastActive).getTime() < EXAM_SESSION_ONLINE_WINDOW_MS);
+                  const online = taking.filter(session => monitorNow - new Date(session.lastActive).getTime() < EXAM_SESSION_ONLINE_WINDOW_MS);
                   return ([
                     ['Tổng lượt vào thi', selected.length],
-                    ['Đang làm bài', taking.length],
+                    ['Đang kết nối', online.length],
                     ['Đã nộp bài', selected.filter(session => session.status === 'submitted').length],
                     ['Mất kết nối', taking.length - online.length],
                   ] as const).map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -2627,7 +2719,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                       .map(session => {
                         const student = students.find(s => s.id === session.studentId);
                         const studentClass = classes.find(c => c.id === student?.classId);
-                        const isOnline = new Date().getTime() - new Date(session.lastActive).getTime() < EXAM_SESSION_ONLINE_WINDOW_MS;
+                        const isOnline = monitorNow - new Date(session.lastActive).getTime() < EXAM_SESSION_ONLINE_WINDOW_MS;
                         
                         return (
                           <tr key={session.id} className="hover:bg-slate-50">

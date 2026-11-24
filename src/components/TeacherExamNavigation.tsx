@@ -1,6 +1,6 @@
-import { Activity, BarChart3, BookOpenText, CalendarDays, ClipboardList, GraduationCap, LayoutDashboard, ScanLine, Users, type LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, BookOpenText, CalendarDays, ClipboardList, GraduationCap, LayoutDashboard, LayoutGrid, ScanLine, Users, type LucideIcon } from 'lucide-react';
 
-export type TeacherWorkspaceView = 'overview' | 'exams' | 'calendar' | 'bank' | 'students' | 'monitoring' | 'results' | 'analytics' | 'scanning';
+export type TeacherWorkspaceView = 'overview' | 'exams' | 'calendar' | 'bank' | 'operations' | 'students' | 'monitoring' | 'results' | 'analytics' | 'scanning';
 
 interface NavigationItem {
   id: TeacherWorkspaceView;
@@ -15,6 +15,7 @@ const ITEMS: NavigationItem[] = [
   { id: 'bank', label: 'Ngân hàng câu hỏi', icon: BookOpenText, group: 'Quản lý' },
   { id: 'calendar', label: 'Lịch thi', icon: CalendarDays, group: 'Quản lý' },
   { id: 'students', label: 'Lớp & học sinh', icon: Users, group: 'Quản lý' },
+  { id: 'operations', label: 'Chuẩn bị & phân phòng', icon: LayoutGrid, group: 'Tổ chức & đánh giá' },
   { id: 'monitoring', label: 'Giám sát phòng thi', icon: Activity, group: 'Tổ chức & đánh giá' },
   { id: 'results', label: 'Chấm & kết quả', icon: GraduationCap, group: 'Tổ chức & đánh giá' },
   { id: 'analytics', label: 'Phân tích & báo cáo', icon: BarChart3, group: 'Tổ chức & đánh giá' },
