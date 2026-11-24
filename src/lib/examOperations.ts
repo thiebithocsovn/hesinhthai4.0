@@ -63,3 +63,26 @@ export function safeCsvCell(value: unknown): string {
 export function buildOperationsCsv(rows: readonly (readonly unknown[])[]): string {
   return '\ufeff' + rows.map(row=>row.map(safeCsvCell).join(',')).join('\r\n');
 }
+
+export interface RoomSession { studentId: string; status: 'taking' | 'submitted'; lastActive: string }
+export function summarizeRoomSessions(rooms: readonly RoomPlan[], sessions: readonly RoomSession[], now: number, onlineWindowMs: number) {
+  const latest = new Map<string,RoomSession>();
+  for (const session of sessions) {
+    const prev = latest.get(session.studentId);
+    if (!prev || (session.status === 'submitted' && prev.status !== 'submitted') ||
+      (session.status === prev.status && (Date.parse(session.lastActive) || 0) > (Date.parse(prev.lastActive) || 0))) latest.set(session.studentId,session);
+  }
+  const assigned = new Set(rooms.flatMap(room=>room.seats.map(seat=>seat.studentId)));
+  const summaries = rooms.map(room => {
+    let submitted=0,online=0,disconnected=0,notSeen=0;
+    for(const seat of room.seats) {
+      const session = latest.get(seat.studentId);
+      if (!session) notSeen++;
+      else if (session.status === 'submitted') submitted++;
+      else if (Number.isFinite(Date.parse(session.lastActive)) && now - Date.parse(session.lastActive) < onlineWindowMs) online++;
+      else disconnected++;
+    }
+    return { name:room.name,planned:room.seats.length,submitted,online,disconnected,notSeen };
+  });
+  return { summaries, unassigned:[...latest.keys()].filter(id=>!assigned.has(id)).length };
+}
