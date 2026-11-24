@@ -20,3 +20,7 @@ assert.equal(await checkStudentNameAgainstRoster(registered.name,owner,exam,clas
 assert.equal(duplicate[await createStudentRosterLookupKey(owner,exam,registered.name,classId)].id,'');
 assert.equal(JSON.stringify(directory).includes('Nguyễn'),false);
 console.log('Student name agent: normalization, evidence-based suggestions, class scoping, duplicate prevention, no plaintext roster exposure passed.');
+
+const openDuplicates=await createPrivateStudentRosterDirectory(owner,exam,[{...registered,selfEnrolled:true},{...registered,id:'d',selfEnrolled:true}]);
+assert.equal(await checkStudentNameAgainstRoster(registered.name,owner,exam,classId,openDuplicates),'ambiguous');
+assert.equal(await checkStudentNameAgainstRoster('Lê Thị Mai',owner,exam,classId,openDuplicates),'open');
