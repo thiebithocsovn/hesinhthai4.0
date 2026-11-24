@@ -112,6 +112,8 @@ const normalize = (value: string) => value.toLocaleLowerCase('vi').normalize('NF
 
 export default function FastLandingPage(props: FastLandingPageProps) {
   const [prefs, setPrefs] = useState(readPreferences);
+  const prefsRef = React.useRef(prefs);
+  prefsRef.current = prefs;
   const [start, setStart] = useState(true);
   const [settings, setSettings] = useState(false);
   const [query, setQuery] = useState('');
@@ -138,6 +140,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
   const openStart = () => { setSettings(false); setStart(true); setQuery(''); };
   const openSettings = () => { setStart(false); setSettings(true); };
   const changePreferences = (next: Preferences) => {
+    prefsRef.current = next;
     setPrefs(next);
     try { localStorage.setItem(PREF_KEY, JSON.stringify(next)); setNotice('Đã lưu cá nhân hóa trên trình duyệt này.'); }
     catch { setNotice('Đã áp dụng, nhưng trình duyệt chưa lưu được cài đặt.'); }
@@ -165,12 +168,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
       const wallpaper = canvas.toDataURL('image/jpeg', 0.78);
       if (wallpaper.length >= 2000000) throw new Error('Image too large');
       if (request !== wallpaperRequest.current) return;
-      setPrefs(previous => {
-        const next = { ...previous, wallpaper };
-        try { localStorage.setItem(PREF_KEY, JSON.stringify(next)); } catch { /* reported below */ }
-        return next;
-      });
-      setNotice('Đã áp dụng hình nền riêng. Ảnh được xử lý trên thiết bị, không tải lên máy chủ.');
+      changePreferences({ ...prefsRef.current, wallpaper });
     } catch { if (request === wallpaperRequest.current) setNotice('Không đọc được ảnh này. Hãy chọn ảnh khác.'); }
     finally { URL.revokeObjectURL(url); }
   };
@@ -207,7 +205,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
         </div>
       </main>
       {start && <div className="fixed inset-0 z-20 bg-black/35" onClick={() => setStart(false)} aria-hidden="true"/>}
-      {start && <section aria-label="Start Menu Edu AI" className={'fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-1/2 z-30 max-h-[calc(100dvh-6rem-env(safe-area-inset-bottom))] w-[calc(100%-1rem)] max-w-4xl -translate-x-1/2 overflow-y-auto rounded-3xl border p-4 shadow-2xl backdrop-blur-xl sm:p-6 ' + panel}>
+      {start && <section aria-label="Start Menu Edu AI" className={'fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-1/2 z-30 max-h-[calc(100dvh-6rem-env(safe-area-inset-bottom))] w-[calc(100%_-_1rem)] max-w-4xl -translate-x-1/2 overflow-y-auto rounded-3xl border p-4 shadow-2xl backdrop-blur-xl sm:p-6 ' + panel}>
         <div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="text-xl font-bold">Start</h2><p className={'text-xs ' + subtle}>Edu AI · Trung tâm ứng dụng</p></div><button type="button" aria-label="Đóng Start" onClick={() => setStart(false)} className={'rounded-xl p-2 ' + tile}><X className="h-5 w-5"/></button></div>
         <label className={'mb-4 flex items-center gap-3 rounded-xl border px-3 py-2.5 ' + tile}><Search className="h-5 w-5 shrink-0"/><input aria-label="Tìm ứng dụng" placeholder="Tìm ứng dụng và công cụ..." value={query} onChange={event => setQuery(event.target.value)} className="w-full bg-transparent text-sm outline-none placeholder:opacity-70"/></label>
         <div className={'mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3 ' + tile}>
