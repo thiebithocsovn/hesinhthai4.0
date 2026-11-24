@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { stripTeacherOnlyFields } from '../src/lib/examManualGrading';
 import { eligibleRoster,makeRooms,blueprintRows,buildOperationsCsv,normalizeLevel,summarizeRoomSessions } from '../src/lib/examOperations';
 const roster=[{id:'b',name:'B',classId:'c',teacherId:'owner'},{id:'a',name:'A',classId:'c',teacherId:'owner'},{id:'foreign',name:'Foreign',classId:'c',teacherId:'other'},{id:'guest',name:'Guest',classId:'c',teacherId:'owner',examId:'exam'},{id:'a',name:'A',classId:'c',teacherId:'owner'},{id:'d',name:'D',classId:'d',teacherId:'owner'}];
 const original=JSON.stringify(roster);
@@ -22,8 +23,11 @@ const status=summarizeRoomSessions(monitorRooms,[{studentId:'a',status:'submitte
 assert.deepEqual(status,{summaries:[{name:'Phòng 01',planned:2,submitted:1,online:0,disconnected:1,notSeen:0}],unassigned:1});
 assert.equal(summarizeRoomSessions(monitorRooms,[],Date.now(),90000).summaries[0].notSeen,2);
 const manager=readFileSync(new URL('../src/components/ExamManagerLegacy.tsx',import.meta.url),'utf8');
-assert.ok(manager.includes('const { operationsPlan: _privateOperationsPlan, ...candidateExam } = authorized.exam'));
-assert.ok(manager.includes('protectExamForAccess(stripTeacherOnlyFields(candidateExam), authorized.code)'));
+const candidate=stripTeacherOnlyFields({questions:[{id:'q',type:'essay',sampleAnswer:'private'}],operationsPlan:{rooms:monitorRooms},councilPlan:{members:[{name:'private'}]}});
+assert.equal('operationsPlan' in candidate,false);
+assert.equal('councilPlan' in candidate,false);
+assert.equal('sampleAnswer' in candidate.questions[0],false);
+assert.ok(manager.includes('protectExamForAccess(stripTeacherOnlyFields(authorized.exam), authorized.code)'));
 assert.ok(manager.includes("fresh.status !== 'draft'"));
 assert.ok(manager.includes('transaction.update(examRef,{operationsPlan:'));
 assert.ok(manager.includes("getDocsFromServer(query(collection(db, 'students'), where('teacherId','==',owner)))"));
