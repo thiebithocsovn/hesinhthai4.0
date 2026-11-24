@@ -6,6 +6,7 @@ import TeacherExamOverview from './TeacherExamOverview';
 import TeacherExamOperations from './TeacherExamOperations';
 import TeacherExamClassAttendance from './TeacherExamClassAttendance';
 import { formatStudentName } from '../lib/studentNameNormalization';
+import { buildTeacherRecovery, encryptTeacherRecovery } from '../lib/examTeacherRecovery';
 import TeacherExamCouncil from './TeacherExamCouncil';
 import type { CouncilPlan } from '../lib/examCouncil';
 import { type ExamOperationsPlan, eligibleRoster, makeRooms, normalizeLevel, summarizeRoomSessions } from '../lib/examOperations';
@@ -24,7 +25,7 @@ import { buildClosedExamResult } from '../lib/examCloseout';
 import UnifiedStudentExamRunner from './UnifiedStudentExamRunner';
 import { buildExamReceiptHtml, DEFAULT_EXAM_RECEIPT_SETTINGS, getExamReceiptSettings, getReceiptStudentClassId, receiptReadyToSign, receiptSignTiming, type ExamReceiptSettings } from '../lib/examReceipt';
 import * as XLSX from 'xlsx';
-import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, getDocsFromServer, writeBatch, runTransaction, deleteField } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDoc, getDocFromServer, getDocsFromServer, writeBatch, runTransaction, deleteField } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
 import ExamManualGradingPanel from './ExamManualGradingPanel';
@@ -264,6 +265,37 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const [classReceiptSessionsLoading, setClassReceiptSessionsLoading] = useState(false);
   const [classReceiptSessionsError, setClassReceiptSessionsError] = useState('');
   const [activeSessions, setActiveSessions] = useState<ExamSession[]>([]);
+  const [recoveryBusy,setRecoveryBusy]=useState(false);
+  const [recoveryNotice,setRecoveryNotice]=useState('');
+  const [recoveryPacket,setRecoveryPacket]=useState<{name:string;code:string;encrypted:string}|null>(null);
+  const issueRecovery=async(session:ExamSession)=>{
+    if(recoveryBusy||!sessionsServerReady)return;
+    if(!window.confirm('Xác nhận học sinh đã thoát khỏi máy cũ. Cấp gói tiếp tục bài thi, giữ nguyên thời gian và bản nháp; không tạo lượt thi mới?'))return;
+    setRecoveryBusy(true);setRecoveryNotice('');setRecoveryPacket(null);
+    try{
+      const scope=resolveTeacherAccessScope(currentUser,auth.currentUser?.uid);
+      if(!canAccessTeacherOwnedRecord(scope,session))throw Error('Không có quyền đối với phiên thi này.');
+      const [e,st,ss,result]=await Promise.all([
+        getDocFromServer(doc(db,'exams',session.examId)),getDocFromServer(doc(db,'students',session.studentId)),
+        getDocFromServer(doc(db,'exam_sessions',session.id)),getDocFromServer(doc(db,'results',session.id)),
+      ]);
+      if(!e.exists()||!st.exists()||!ss.exists())throw Error('Thiếu dữ liệu phiên thi.');
+      const exam={...e.data(),id:e.id} as Exam;
+      const student={...st.data(),id:st.id} as StudentAccount;
+      const live={...ss.data(),id:ss.id} as ExamSession;
+      if(![exam,student,live].every(row=>canAccessTeacherOwnedRecord(scope,row)))throw Error('Dữ liệu không thuộc phạm vi quản lý.');
+      const recovery=buildTeacherRecovery(exam,student,live,result.exists());
+      const packet=await encryptTeacherRecovery(recovery);
+      setRecoveryPacket({...packet,name:recovery.student.name});
+      setRecoveryNotice('Đã tạo gói khôi phục từ bản nháp máy chủ, có hiệu lực sử dụng trong 10 phút và không kéo dài thời gian thi.');
+    }catch(error){setRecoveryNotice(error instanceof Error?error.message:'Không thể tạo gói khôi phục.');}
+    finally{setRecoveryBusy(false);}
+  };
+  const downloadRecovery=()=>{
+    if(!recoveryPacket)return;
+    const url=URL.createObjectURL(new Blob([recoveryPacket.encrypted],{type:'application/json'}));
+    const a=document.createElement('a');a.href=url;a.download='khoi-phuc-bai-thi.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
   const [sessionsServerReady,setSessionsServerReady] = useState(false);
   const [sessionsError,setSessionsError] = useState('');
   const [monitorNow,setMonitorNow] = useState(Date.now());
@@ -2658,6 +2690,15 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                 </div>
               </div>
 
+              {(recoveryNotice||recoveryPacket)&&<div className="mb-4 rounded-xl border border-teal-200 bg-white p-4 text-sm">
+                <p role="status" className="font-medium">{recoveryNotice}</p>
+                {recoveryPacket&&<div className="mt-3 space-y-2">
+                  <p>Học sinh: <strong>{recoveryPacket.name}</strong>. Chỉ gửi riêng tệp và mã cho đúng học sinh.</p>
+                  <label className="block">Mã khôi phục<input readOnly value={recoveryPacket.code} onFocus={e=>e.target.select()} className="mt-1 w-full rounded border p-2 font-mono"/></label>
+                  <button type="button" onClick={downloadRecovery} className="rounded-lg bg-teal-700 px-3 py-2 font-semibold text-white">Tải tệp khôi phục</button>
+                  <button type="button" onClick={()=>{setRecoveryPacket(null);setRecoveryNotice('');}} className="ml-2 rounded-lg border px-3 py-2">Đóng</button>
+                </div>}
+              </div>}
               {!sessionsServerReady && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{sessionsError || 'Đang xác nhận dữ liệu phiên thi với máy chủ; số liệu có thể chưa đầy đủ.'}</p>}
               {(() => {
                 const exam = exams.find(item => item.id === (selectedExamIdForResults || exams[0]?.id));
@@ -2701,6 +2742,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                       <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Mã đề</th>
                       <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Trạng thái</th>
                       <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Hoạt động cuối</th>
+                      <th className="px-4 py-3 text-xs font-bold text-slate-500">Khôi phục</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2735,12 +2777,13 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                             <td className="px-6 py-4 text-sm text-slate-500">
                               {new Date(session.lastActive).toLocaleTimeString('vi-VN')}
                             </td>
+                            <td className="px-4 py-3">{session.status==='taking'&&<button type="button" disabled={recoveryBusy||!sessionsServerReady} onClick={()=>void issueRecovery(session)} className="rounded-lg border border-teal-200 px-3 py-2 text-xs font-semibold text-teal-700 disabled:opacity-40">Cho đăng nhập lại</button>}</td>
                           </tr>
                         );
                       })}
                     {activeSessions.filter(s => s.examId === (selectedExamIdForResults || exams[0]?.id)).length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
+                        <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
                           Chưa có học sinh nào tham gia kỳ thi này.
                         </td>
                       </tr>
