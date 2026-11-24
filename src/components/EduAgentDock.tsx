@@ -8,9 +8,10 @@ type Props = {
   onLaunch?: (id: AgentAppId) => void;
   onTimetableCommand?: (command: string) => void;
   desktop?: boolean;
+  timetableBusy?: boolean;
 };
 
-export default function EduAgentDock({ context, uid, onLaunch, onTimetableCommand, desktop = false }: Props) {
+export default function EduAgentDock({ context, uid, onLaunch, onTimetableCommand, desktop = false, timetableBusy = false }: Props) {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<AgentRole>(AGENT_PROFILES[context].role);
   const [request, setRequest] = useState('');
@@ -60,7 +61,7 @@ export default function EduAgentDock({ context, uid, onLaunch, onTimetableComman
         <div className="flex flex-wrap gap-2"><button type="button" disabled={!request.trim()||busy} onClick={prepare} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold disabled:opacity-50">Lập kế hoạch cục bộ</button>{uid && <button type="button" disabled={!request.trim()||busy} onClick={generate} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{busy?<Loader2 className="h-4 w-4 animate-spin"/>:<Sparkles className="h-4 w-4"/>}Gửi Gemini tạo dự thảo</button>}</div>
         <p className="flex gap-1.5 text-[11px] leading-relaxed text-slate-600"><ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600"/>Chỉ gửi nội dung bạn nhập khi bấm Gemini. Không tự đọc hồ sơ, tệp, điểm số hoặc dữ liệu học sinh. Không nhập thông tin cá nhân. AI không tự sửa dữ liệu.</p>
         {!uid && <p className="text-xs text-slate-600">Đăng nhập tài khoản được cấp quyền để dùng Gemini. Kế hoạch cục bộ không cần API.</p>}
-        {onTimetableCommand && <button type="button" disabled={!request.trim()||busy} onClick={()=>{onTimetableCommand(request.trim().slice(0,500));setOpen(false);}} className="w-full rounded-lg border border-teal-300 bg-teal-50 p-2 text-left text-xs font-semibold text-teal-800 disabled:opacity-50">Chuyển lệnh vào Agent thời khóa biểu để xem trước →</button>}
+        {onTimetableCommand && <button type="button" disabled={!request.trim()||busy||timetableBusy} onClick={()=>{onTimetableCommand(request.trim().slice(0,500));setOpen(false);}} className="w-full rounded-lg border border-teal-300 bg-teal-50 p-2 text-left text-xs font-semibold text-teal-800 disabled:opacity-50">Chuyển lệnh vào Agent thời khóa biểu để xem trước →</button>}
         {plan && <section className="rounded-xl border border-slate-200 bg-slate-50 p-3"><h3 className="text-sm font-bold">{plan.title}</h3><ol className="mt-2 list-decimal space-y-1 pl-4 text-xs leading-relaxed">{plan.steps.map((step,i)=><li key={i}>{step}</li>)}</ol><h4 className="mt-3 text-xs font-bold">Công cụ đề xuất</h4><div className="mt-2 flex flex-wrap gap-1.5">{plan.targets.map(id=>onLaunch && id!==context ? <button type="button" key={id} onClick={()=>onLaunch(id)} className="flex items-center gap-1 rounded-md border border-indigo-200 bg-white px-2 py-1.5 text-xs text-indigo-700">{agentAppName(id)}<ArrowRight className="h-3 w-3"/></button> : <span key={id} className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs">{agentAppName(id)}{id===context?' · hiện tại':''}</span>)}</div></section>}
         {draft && <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-3"><h3 className="text-sm font-bold">Dự thảo Gemini · {draft.model}</h3><div className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">{draft.text}</div><p className="mt-2 text-xs text-indigo-800">Kiểm tra và duyệt trước khi sử dụng. Chưa thực hiện thay đổi nào.</p></section>}
         {(plan || draft) && <button type="button" onClick={()=>void copy()} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold"><ClipboardCopy className="h-4 w-4"/>Sao chép {draft?'dự thảo':'kế hoạch'}</button>}
