@@ -244,7 +244,7 @@ function PersonalWorkspace({ user }: { user: User }) {
       </div></main>;
   }
   if (!editor) return <main className="mx-auto max-w-2xl p-6">{status}</main>;
-  return <SmartTimetable key={editor.generation} storageKey={key} initialWorkspace={editor.initial} onWorkspaceChange={changed} accountStatus={status} onBack={goBack} />;
+  return <SmartTimetable key={editor.generation} agentUid={user.uid} storageKey={key} initialWorkspace={editor.initial} onWorkspaceChange={changed} accountStatus={status} onBack={goBack} />;
 }
 
 export default function SmartTimetableEntry() {

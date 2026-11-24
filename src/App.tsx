@@ -7,6 +7,8 @@ import { db, auth } from './firebase';
 import { ECOSYSTEM_APPLICATIONS, ECOSYSTEM_DEPENDENCY_LABELS, type EcosystemApplicationId } from './ecosystem';
 import { publishPlatformRegistrationMetrics } from './components/PlatformFooter';
 import FastLandingPage from './components/FastLandingPage';
+import EduAgentDock from './components/EduAgentDock';
+import { resolveAgentContext, type AgentAppId } from './lib/eduAgentCore';
 import { isAdministratorAlias, readRememberedAdministratorEmail, rememberVerifiedAdministratorEmail, resolveAdministratorLoginEmail } from './lib/adminAuth';
 import { createPlickerLaunchPath, readRequestedApplication, selectApplicationManifest } from './lib/plickerPwa';
 import { synchronizeTeacherBrowserSession } from './lib/teacherIsolation';
@@ -372,6 +374,19 @@ export default function App() {
     setCurrentView(applicationId);
   };
 
+  const launchFromAgent = (id: AgentAppId) => {
+    if (!currentUser || !auth.currentUser || !window.confirm('Mở công cụ đề xuất? Hãy lưu công việc đang làm trước khi chuyển ứng dụng.')) return;
+    if (requestedApplication === 'plicker') {
+      window.history.replaceState(window.history.state, '', import.meta.env.BASE_URL);
+      selectApplicationManifest('ecosystem', import.meta.env.BASE_URL);
+    }
+    if (id === 'smart-timetable') {
+      const url = new URL(import.meta.env.BASE_URL, window.location.origin);
+      url.searchParams.set('app', 'smart-timetable');
+      window.location.assign(url.toString());
+    } else launchApplication(id);
+  };
+  const renderCurrentView = () => {
   if (currentView === 'kpi-manager' && currentUser && auth.currentUser) {
     return <KpiManager currentUser={currentUser} onBack={() => setCurrentView('landing')} />;
   }
@@ -381,7 +396,7 @@ export default function App() {
   }
 
   if (currentView === 'admin' && currentUser && auth.currentUser) {
-    return <AdminDashboard key={auth.currentUser.uid} initialExam={initialExam} onHome={() => {
+    return <AdminDashboard key={auth.currentUser.uid} initialExam={initialExam} onAgentLaunch={launchFromAgent} onHome={() => {
       setInitialExam(false);
       if (requestedApplication === 'plicker') {
         window.history.replaceState(window.history.state, '', import.meta.env.BASE_URL);
@@ -730,4 +745,8 @@ export default function App() {
       }).catch(error => setAuthMessage(describeAuthError(error)));
     } : undefined}
   />;
+  };
+  const showAgent = Boolean(currentUser && auth.currentUser && !['landing','auth','admin','student_exam'].includes(currentView) && !(currentView === 'learning-wall' && /^#wall=[a-f0-9]{48}$/.test(window.location.hash)));
+  return <>{renderCurrentView()}{showAgent && <EduAgentDock context={resolveAgentContext(currentView)} uid={auth.currentUser?.uid} onLaunch={launchFromAgent}/>}</>;
+
 }
