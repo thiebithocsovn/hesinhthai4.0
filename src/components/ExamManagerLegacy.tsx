@@ -7,6 +7,7 @@ import TeacherQuestionBank, { type BankSelection } from './TeacherQuestionBank';
 import TeacherExamCalendar from './TeacherExamCalendar';
 import TeacherExamAnalytics from './TeacherExamAnalytics';
 import { assessExamReadiness } from '../lib/examReadiness';
+import { EXAM_PROFILES, isExamProfile, questionGroup, type ExamProfile } from '../lib/examCandidateWorkspace';
 import { filterTeacherExams, type TeacherExamStatusFilter } from '../lib/teacherExamWorkspace';
 import OMRScanner from './OMRScanner';
 import ExamReceiptDialog from './ExamReceiptDialog';
@@ -109,6 +110,7 @@ interface Exam {
   classNames?: Record<string, string>;
   accessVersionCode?: string;
   roundScoreToInteger?: boolean;
+  examProfile?: ExamProfile;
 }
 
 interface StudentClass {
@@ -470,6 +472,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     setEditingExam({
       id: createSecureExamAccessCode(),
       title: 'Kỳ thi mới',
+      examProfile: 'school',
       durationMinutes: 45,
       questions: [],
       status: 'draft',
@@ -506,6 +509,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     setEditingExam({
       id: createSecureExamAccessCode(),
       title: 'Đề tổng hợp từ ngân hàng câu hỏi',
+      examProfile: 'school',
       durationMinutes: 45,
       questions,
       status: 'draft',
@@ -3163,6 +3167,40 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                         ))}
                       </ul>}
                   <p className="mt-3 text-xs text-slate-500">Bản nháp vẫn được lưu bình thường. Khi mở thi, hệ thống chặn các lỗi nghiêm trọng và yêu cầu xác nhận các cảnh báo.</p>
+                </section>
+                <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <h4 className="text-base font-bold text-slate-900">Loại hình khảo thí & cấu trúc đề</h4>
+                  <label className="block text-sm font-semibold text-slate-700" htmlFor="exam-profile">Chế độ giao diện thí sinh</label>
+                  <select id="exam-profile" disabled={editingExam.status !== 'draft'}
+                    value={isExamProfile(editingExam.examProfile) ? editingExam.examProfile : ''}
+                    onChange={event => {
+                      if (editingExam.status !== 'draft') return;
+                      const next = { ...editingExam };
+                      if (isExamProfile(event.target.value)) next.examProfile = event.target.value;
+                      else delete next.examProfile;
+                      setEditingExam(next);
+                    }}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm disabled:bg-slate-100">
+                    <option value="">Tương thích đề cũ – xem toàn bộ</option>
+                    {Object.entries(EXAM_PROFILES).map(([key,profile]) => <option key={key} value={key}>{profile.label}</option>)}
+                  </select>
+                  <p className="text-sm text-slate-600">{isExamProfile(editingExam.examProfile) ? EXAM_PROFILES[editingExam.examProfile].description : 'Giữ bố cục đề hiện tại. Không đổi cách chấm điểm.'}</p>
+                  {editingExam.status !== 'draft' && <p className="text-xs text-amber-800">Không đổi chế độ giao diện sau khi đã công bố để tránh ảnh hưởng lượt thi.</p>}
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {Array.from(editingExam.questions.reduce((map, question) => {
+                      const label = questionGroup(question);
+                      const current = map.get(label) || { count: 0, points: 0 };
+                      map.set(label, { count: current.count + 1, points: current.points + questionMaxPoints(question) });
+                      return map;
+                    }, new Map<string, { count: number; points: number }>())).map(([label,stat]) =>
+                      <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs font-medium text-slate-600">{label}</p>
+                        <p className="mt-1 text-lg font-bold text-slate-900">{stat.count} câu</p>
+                        <p className="text-xs text-slate-500">{formatPoints(stat.points)} điểm cấu hình</p>
+                      </div>)}
+                  </div>
+                  {editingExam.examProfile === 'thpt' && <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">Dùng Question Studio → Đúng/Sai nhiều ý cho câu gồm nhiều mệnh đề. Thang chấm và số câu phụ thuộc môn thi; kiểm tra quy định trước khi sử dụng. Chế độ này không tự chuyển điểm thành điểm thi tốt nghiệp chính thức.</p>}
+                  <p className="text-xs text-slate-500">Cấu hình mới là tùy chọn; đề cũ, mã đề, bài nộp và điểm đã lưu không được chuyển đổi.</p>
                 </section>
                 {/* Exam Settings */}
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">

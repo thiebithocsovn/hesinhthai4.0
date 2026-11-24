@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { EXAM_PROFILES, examProgress, isExamProfile, questionGroup, type ExamProfile } from '../lib/examCandidateWorkspace';
 import { ArrowLeft, BookOpen, CalendarDays, CheckCircle, Clock, Eye, EyeOff, FileText, GraduationCap, LoaderCircle, Printer, X } from 'lucide-react';
 import { collection, doc, documentId, getDoc, getDocFromServer, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -85,6 +86,7 @@ interface UnifiedExam {
   isShuffled?: boolean;
   shuffledVersions?: { code: string; questions: UnifiedExamQuestion[] }[];
   roundScoreToInteger?: boolean;
+  examProfile?: ExamProfile;
 }
 
 interface StudentAccount {
@@ -184,6 +186,23 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   const resumeWriteGenerationRef = useRef(0);
   const [receiptHtml, setReceiptHtml] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [flagged, setFlagged] = useState<Set<string>>(() => new Set());
+  const [showAll, setShowAll] = useState(false);
+  const [retryDraft, setRetryDraft] = useState(0);
+  const progress = useMemo(() => examProgress(activeExam?.questions || [], answers), [activeExam, answers]);
+  const profile = isExamProfile(activeExam?.examProfile) ? EXAM_PROFILES[activeExam.examProfile] : null;
+  const oneAtATime = Boolean(profile) && !showAll;
+  const safeIndex = Math.max(0, Math.min(currentIndex, (activeExam?.questions.length || 1) - 1));
+  useEffect(() => { setCurrentIndex(0); setFlagged(new Set()); setShowAll(false); }, [activeExam?.id, currentStudent?.id]);
+  const jumpToQuestion = (index: number) => {
+    setCurrentIndex(index);
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById('candidate-question-' + index);
+      target?.scrollIntoView({ block: 'start', behavior: 'instant' });
+      target?.focus({ preventScroll: true });
+    });
+  };
 
 
   useEffect(() => {
@@ -274,7 +293,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
     setCheatEvents(snapshot.cheatEvents);
     setTimeRemaining(remainingExamSeconds(snapshot.startedAt, snapshot.exam.durationMinutes));
     setDraftSupported(true);
-    setDraftStatus('saved');
+    setDraftStatus('idle');
     setAutoSubmitted(false);
     setLoginError('');
     setStatus('taking');
@@ -568,17 +587,18 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       return;
     }
     setDraftStatus('saving');
+    let obsolete = false;
     const timer = window.setTimeout(() => {
       const sessionId = `${currentStudent.id}_${activeExam.id}`;
       void updateDoc(doc(db, 'exam_sessions', sessionId), {
         draftAnswers, draftCheatEvents: cheatEvents, lastActive: new Date().toISOString(),
-      }).then(() => setDraftStatus('saved')).catch(error => {
+      }).then(() => { if (!obsolete) setDraftStatus('saved'); }).catch(error => {
         console.error('Không thể đồng bộ bản nháp:', error);
-        setDraftStatus('error');
+        if (!obsolete) setDraftStatus('error');
       });
     }, 500);
-    return () => window.clearTimeout(timer);
-  }, [status, examLive, draftSupported, activeExam?.id, currentStudent?.id, answers, cheatEvents]);
+    return () => { obsolete = true; window.clearTimeout(timer); };
+  }, [status, examLive, draftSupported, activeExam?.id, currentStudent?.id, answers, cheatEvents, retryDraft]);
 
   useEffect(() => {
     if (status !== 'taking' || !activeExam || !startedAtRef.current) return;
@@ -816,14 +836,34 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
 
       {status === 'taking' && activeExam && (
         <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col p-4 md:p-6">
-          <div className="sticky top-[65px] z-20 mb-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div><h2 className="font-bold text-slate-800">{activeExam.title}</h2><p className="text-xs text-slate-500">Đã trả lời {Object.keys(answers).length}/{activeExam.questions.length} câu</p></div><div className={`flex items-center gap-2 rounded-xl px-4 py-2 font-mono text-xl font-bold ${timeRemaining !== null && timeRemaining < 300 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-700'}`}><Clock className="h-5 w-5" />{timeRemaining !== null ? formatTime(timeRemaining) : '00:00'}</div></div>
-          <fieldset disabled={submitting || !examLive} className="space-y-5 pb-28">
+          <div className="sticky top-[65px] z-20 mb-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div><h2 className="font-bold text-slate-800">{activeExam.title}</h2><p className="text-xs text-slate-500">Đã hoàn thành {progress.complete}/{activeExam.questions.length} câu{progress.partial > 0 ? ' · ' + progress.partial + ' câu còn thiếu ý' : ''}</p></div><div className={`flex items-center gap-2 rounded-xl px-4 py-2 font-mono text-xl font-bold ${timeRemaining !== null && timeRemaining < 300 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-700'}`}><Clock className="h-5 w-5" />{timeRemaining !== null ? formatTime(timeRemaining) : '00:00'}</div></div>
+          <section aria-label="Điều hướng câu hỏi" className="mb-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div><h3 className="text-sm font-bold text-slate-900">Danh sách câu hỏi</h3><p className="text-xs text-slate-500">{profile?.label || 'Chế độ đề cũ'} · {progress.empty} chưa trả lời · {progress.partial} chưa đủ ý{progress.observed ? ' · ' + progress.observed + ' chấm tại lớp' : ''}</p></div>
+              {profile && <button type="button" onClick={() => setShowAll(v => !v)} className="rounded-lg border px-3 py-2 text-xs font-semibold">{oneAtATime ? 'Xem toàn bộ đề' : 'Xem từng câu'}</button>}
+            </div>
+            <div className="max-h-40 overflow-y-auto">
+              <div className="flex flex-wrap gap-1.5">{activeExam.questions.map((question,index) => {
+                const state = progress.states[index];
+                const marked = flagged.has(question.id);
+                return <button key={question.id} type="button" onClick={() => jumpToQuestion(index)}
+                  aria-current={safeIndex === index ? 'step' : undefined}
+                  aria-label={'Câu ' + (index+1) + ': ' + (state === 'complete' ? 'đã trả lời' : state === 'partial' ? 'chưa đủ ý' : state === 'observed' ? 'chấm tại lớp' : 'chưa trả lời') + (marked ? ', đánh dấu' : '')}
+                  className={'relative min-h-10 min-w-10 rounded-lg border px-2 text-sm font-semibold ' + (state === 'complete' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : state === 'partial' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 bg-white text-slate-700') + (safeIndex === index ? ' ring-2 ring-blue-600 ring-offset-1' : '')}>
+                  {index+1}{marked && <span aria-hidden="true" className="absolute right-0.5 top-0 text-xs text-amber-600">★</span>}
+                </button>;
+              })}</div>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">Xanh: hoàn thành · Vàng: chưa đủ ý · Trắng: chưa trả lời/chấm tại lớp · ★: xem lại (trong phiên hiện tại)</p>
+          </section>
+          <fieldset disabled={submitting || !examLive} className="space-y-5 pb-44">
             {activeExam.questions.map((question, index) => {
               const engine = engineQuestionForExam(question);
               return (
-                <section key={question.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+                <section key={question.id} id={'candidate-question-' + index} tabIndex={-1} hidden={oneAtATime && index !== safeIndex} className="scroll-mt-40 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
                   <div className="mb-4 flex flex-wrap items-center gap-2"><span className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-bold text-white">Câu {index + 1}</span>{engine && <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">{questionTypeLabel(engine)}</span>}{question.type === 'essay' && <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">Tự luận</span>}{question.type === 'practical' && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Thực hành</span>}{examUsesWeightedScoring(activeExam) && <span className="ml-auto text-xs font-semibold text-slate-500">{formatPoints(questionMaxPoints(question))} điểm</span>}</div>
-                  <div className="mb-5 text-base font-medium leading-7 text-slate-800" dangerouslySetInnerHTML={{ __html: question.text }} />
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-medium text-slate-500">{questionGroup(question)}</span><button type="button" aria-pressed={flagged.has(question.id)} onClick={() => setFlagged(previous => { const next = new Set(previous); if (next.has(question.id)) next.delete(question.id); else next.add(question.id); return next; })} className={'rounded-lg border px-3 py-2 text-xs font-semibold ' + (flagged.has(question.id) ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 text-slate-600')}>{flagged.has(question.id) ? '★ Đã đánh dấu' : '☆ Đánh dấu xem lại'}</button></div>
+                  <div className="mb-5 break-words text-base font-medium leading-7 text-slate-800 [&_img]:max-w-full" dangerouslySetInnerHTML={{ __html: question.text }} />
                   {isManualQuestion(question) ? (
                     <ExamManualStudentQuestion question={question} answer={answers[question.id]} onChange={value => setAnswers(previous => { const next = { ...previous }; if (value === undefined || value === '') delete next[question.id]; else next[question.id] = value; return next; })} />
                   ) : engine ? (
@@ -838,8 +878,12 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
                 </section>
               );
             })}
+            {oneAtATime && <div className="flex justify-between gap-3">
+              <button type="button" disabled={safeIndex === 0} onClick={() => jumpToQuestion(safeIndex-1)} className="rounded-xl border bg-white px-5 py-3 font-semibold disabled:opacity-40">← Câu trước</button>
+              <button type="button" disabled={safeIndex >= activeExam.questions.length-1} onClick={() => jumpToQuestion(safeIndex+1)} className="rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white disabled:opacity-40">Câu tiếp →</button>
+            </div>}
           </fieldset>
-          <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 p-4 backdrop-blur"><div className="mx-auto flex max-w-4xl items-center justify-between"><div><span className="text-sm text-slate-500">{!examLive ? 'Mất kết nối máy chủ: bài làm đang tạm khóa.' : !draftSupported ? 'Hệ thống chưa bật lưu nháp trên Firebase; cần giáo viên cập nhật cấu hình.' : draftStatus === 'error' ? 'Bản nháp chưa được đồng bộ – hãy kiểm tra mạng.' : draftStatus === 'saving' ? 'Đang đồng bộ bài làm…' : 'Bài làm được lưu tự động.'}</span>{loginError && <p role="alert" className="text-sm text-red-600">{loginError}</p>}</div><button type="button" disabled={submitting || !examLive} onClick={() => setShowSubmitConfirm(true)} className="rounded-xl bg-blue-600 px-7 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Đang lưu bài…' : 'Nộp bài'}</button></div></div>
+          <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 p-4 backdrop-blur"><div className="mx-auto flex max-w-4xl items-center justify-between"><div><span className="text-sm text-slate-500">{!examLive ? 'Mất kết nối máy chủ: bài làm đang tạm khóa.' : !draftSupported ? 'Hệ thống chưa bật lưu nháp trên Firebase; cần giáo viên cập nhật cấu hình.' : draftStatus === 'error' ? 'Bản nháp chưa được đồng bộ – hãy kiểm tra mạng.' : draftStatus === 'saving' ? 'Đang đồng bộ bài làm…' : draftStatus === 'saved' ? 'Máy chủ đã xác nhận lưu bản nháp.' : 'Đang chờ đồng bộ bản nháp.'}</span>{draftStatus === 'error' && draftSupported && examLive && <button type="button" onClick={() => setRetryDraft(v => v+1)} className="ml-2 text-sm font-semibold text-blue-700 underline">Thử đồng bộ lại</button>}{loginError && <p role="alert" className="text-sm text-red-600">{loginError}</p>}</div><button type="button" disabled={submitting || !examLive} onClick={() => setShowSubmitConfirm(true)} className="rounded-xl bg-blue-600 px-7 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Đang lưu bài…' : 'Nộp bài'}</button></div></div>
         </main>
       )}
 
@@ -864,7 +908,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       )}
 
       {showReceipt && receiptHtml && <ExamReceiptDialog html={receiptHtml} onClose={() => setShowReceipt(false)} />}
-      {showSubmitConfirm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"><div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl"><h3 className="text-xl font-bold">Xác nhận nộp bài</h3><p className="my-4 text-sm text-slate-500">Sau khi nộp, em không thể thay đổi đáp án.</p><div className="flex justify-center gap-3"><button type="button" onClick={() => setShowSubmitConfirm(false)} className="rounded-lg px-5 py-2 text-slate-600 hover:bg-slate-100">Hủy</button><button type="button" disabled={submitting} onClick={() => { setShowSubmitConfirm(false); void submitExam(); }} className="rounded-lg bg-blue-600 px-5 py-2 font-semibold text-white">Nộp bài</button></div></div></div>}
+      {showSubmitConfirm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"><div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl"><h3 className="text-xl font-bold">Xác nhận nộp bài</h3><p className="my-4 text-sm text-slate-500">Sau khi nộp, em không thể thay đổi đáp án. {progress.empty + progress.partial > 0 && <strong className="block mt-2 text-amber-800">Còn {progress.empty} câu chưa trả lời, {progress.partial} câu chưa đủ ý.</strong>}</p><div className="flex justify-center gap-3"><button type="button" onClick={() => setShowSubmitConfirm(false)} className="rounded-lg px-5 py-2 text-slate-600 hover:bg-slate-100">Hủy</button><button type="button" disabled={submitting} onClick={() => { setShowSubmitConfirm(false); void submitExam(); }} className="rounded-lg bg-blue-600 px-5 py-2 font-semibold text-white">Nộp bài</button></div></div></div>}
       {cheatWarning && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-red-900/40 p-4 backdrop-blur-sm"><div className="w-full max-w-sm rounded-2xl border-2 border-red-400 bg-white p-6 text-center shadow-xl"><div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600"><X className="h-7 w-7" /></div><h3 className="text-lg font-bold">Cảnh báo</h3><p className="my-3 text-sm text-slate-600">{cheatWarning}</p><button type="button" onClick={() => setCheatWarning('')} className="w-full rounded-xl bg-red-600 px-4 py-2.5 font-bold text-white">Tôi đã hiểu</button></div></div>}
     </div>
   );

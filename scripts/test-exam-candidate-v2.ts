@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { answerState, examProgress, isExamProfile, questionGroup, type ProgressQuestion } from '../src/lib/examCandidateWorkspace';
+import { protectExamForAccess, openProtectedExamAccess } from '../src/lib/examPrivacy';
+import { stripTeacherOnlyFields } from '../src/lib/examManualGrading';
+const choice: ProgressQuestion = { id:'q1', options:['A','B'] };
+const text: ProgressQuestion = {id:'q2',type:'short_answer'};
+const matrix: ProgressQuestion = {id:'q3',type:'question_engine',engineQuestion:{id:'q3',prompt:'Question',points:1,payload:{type:'true_false_matrix',statements:[{id:'a',text:'A',correct:true},{id:'b',text:'B',correct:false}]}}};
+assert.equal(answerState(choice, 0),'complete');
+assert.equal(answerState(choice, 2),'empty');
+assert.equal(answerState(text,'  '),'empty');
+assert.equal(answerState(matrix,[false,null]),'partial');
+assert.equal(answerState(matrix,[true,false]),'complete');
+assert.equal(answerState(matrix,[null,null]),'empty');
+assert.equal(answerState({id:'m',type:'matching',matchingPairs:[{id:'a'},{id:'b'}]}, {a:'b'}),'partial');
+assert.equal(answerState({id:'e',type:'practical',practicalMode:'observe'}, undefined),'observed');
+assert.deepEqual(examProgress([choice,text,matrix], {q1:0,q2:'  ',q3:[false,null],other:100}),{states:['complete','empty','partial'],complete:1,partial:1,empty:1,observed:0});
+assert.equal(isExamProfile(undefined),false);
+assert.equal(isExamProfile('thpt'),true);
+assert.equal(isExamProfile('__proto__'),false);
+assert.equal(questionGroup(matrix),'Đúng / Sai');
+// Prove the optional profile survives the existing protected-exam transport.
+const oldExam = {id:'exam-legacy',title:'Đề cũ',teacherId:'teacher-one',durationMinutes:45,questions:[{id:'q1',type:'essay',sampleAnswer:'teacher only'}],status:'published' as const,createdAt:'2026-01-01'};
+const newExam = {...oldExam,examProfile:'thpt' as const};
+for (const exam of [oldExam,newExam]) {
+  const clean = stripTeacherOnlyFields(exam);
+  const packet = await protectExamForAccess(clean,'123456789012');
+  const opened = await openProtectedExamAccess<typeof clean>(packet,'123456789012');
+  assert.deepEqual(opened,clean);
+  assert.equal('sampleAnswer' in opened.questions[0],false);
+  assert.equal('examProfile' in opened,'examProfile' in exam);
+}
+const manager = readFileSync(new URL('../src/components/ExamManagerLegacy.tsx',import.meta.url),'utf8');
+const runner = readFileSync(new URL('../src/components/UnifiedStudentExamRunner.tsx',import.meta.url),'utf8');
+assert.ok(manager.includes('examProfile?: ExamProfile') && runner.includes('examProfile?: ExamProfile'));
+assert.ok(manager.includes("editingExam.status !== 'draft'"));
+assert.ok(runner.includes('Boolean(profile) && !showAll'));
+assert.ok(runner.includes("if (!obsolete) setDraftStatus('saved')"));
+assert.ok(runner.includes('progress.empty + progress.partial > 0'));
+console.info('Candidate V2: old exams, progress, incomplete matrix, false/zero, profile and draft confirmation checks passed.');
