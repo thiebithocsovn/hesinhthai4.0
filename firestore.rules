@@ -382,6 +382,102 @@ service cloud.firestore {
       allow delete: if mayAccess(existing(), 'teacherId');
     }
 
+
+    // Exam council staff: a separate least-privilege workspace. Legacy exams,
+    // results, sessions and student documents retain their original access rules.
+    function councilExam(examId) {
+      return get(/databases/$(database)/documents/exams/$(examId)).data;
+    }
+
+    function councilStaffProfile(uid) {
+      return get(/databases/$(database)/documents/teachers/$(uid)).data;
+    }
+
+    function staffAssignmentRoleKind(role, kind) {
+      return (role == 'Chủ tịch' && kind == 'decision') ||
+        (role == 'Phó chủ tịch' && kind == 'coordination') ||
+        (role == 'Thư ký' && kind == 'minutes') ||
+        (role == 'Trưởng ban coi thi' && kind == 'supervision') ||
+        (role == 'Giám thị' && kind == 'room_report') ||
+        (role == 'Cán bộ chấm thi' && kind == 'grading_report') ||
+        (role == 'Kỹ thuật viên' && kind == 'technical_report') ||
+        (role == 'Hỗ trợ' && kind == 'support_report');
+    }
+
+    function staffAssignmentMatchesCouncil(data) {
+      let exam = councilExam(data.examId);
+      let plan = exam.councilPlan;
+      let profile = councilStaffProfile(data.staffUid);
+      return exam.teacherId == data.teacherId &&
+        exam.status in ['draft', 'published'] &&
+        plan.version == 1 && plan.updatedAt == data.councilRevision &&
+        plan.schoolName == data.schoolName &&
+        plan.name == data.councilName && plan.site == data.site &&
+        data.memberIndex is int && data.memberIndex >= 0 &&
+        data.memberIndex < plan.members.size() &&
+        plan.members[data.memberIndex].teacherUid == data.staffUid &&
+        plan.members[data.memberIndex].name == data.staffName &&
+        plan.members[data.memberIndex].role == data.role &&
+        plan.members[data.memberIndex].room == data.room &&
+        profile.id == data.staffUid && profile.status == 'active' &&
+        profile.school == data.schoolName;
+    }
+
+    function staffAssignmentOwnerCanManage(data) {
+      return isAdmin() || (isActiveTeacher() && isOwner(data.teacherId));
+    }
+
+    function staffAssignmentCreateIsSafe(assignmentId) {
+      let data = incoming();
+      return data.keys().hasAll([
+          'examId','teacherId','staffUid','staffName','role','kind','room',
+          'examTitle','schoolName','councilName','site','councilRevision','memberIndex',
+          'state','report','updatedAt','grantedAt','grantedBy'
+        ]) &&
+        data.keys().hasOnly([
+          'examId','teacherId','staffUid','staffName','role','kind','room',
+          'examTitle','schoolName','councilName','site','councilRevision','memberIndex',
+          'state','report','updatedAt','grantedAt','grantedBy'
+        ]) &&
+        isValidId(data.examId) && isValidId(data.teacherId) && isValidId(data.staffUid) &&
+        assignmentId == data.examId + '~' + data.staffUid &&
+        data.staffName is string && data.staffName.size() > 0 && data.staffName.size() <= 160 &&
+        data.schoolName is string && data.schoolName.size() > 0 && data.schoolName.size() <= 160 &&
+        data.councilName is string && data.councilName.size() > 0 && data.councilName.size() <= 160 &&
+        data.site is string && data.site.size() > 0 && data.site.size() <= 160 &&
+        data.examTitle is string && data.examTitle.size() > 0 && data.examTitle.size() <= 240 &&
+        data.councilRevision is string && data.councilRevision.size() <= 64 &&
+        data.room is string && data.room.size() <= 80 &&
+        ((data.role == 'Giám thị' && data.room.size() > 0) ||
+         (data.role != 'Giám thị' && data.room == '')) &&
+        staffAssignmentRoleKind(data.role,data.kind) &&
+        data.state == 'pending' && data.report == '' &&
+        data.grantedBy == request.auth.uid &&
+        data.grantedAt == request.time && data.updatedAt == request.time &&
+        councilExam(data.examId).status == 'draft' &&
+        councilExam(data.examId).title == data.examTitle &&
+        staffAssignmentMatchesCouncil(data) &&
+        (isAdmin() || councilStaffProfile(data.teacherId).school == data.schoolName);
+    }
+
+    match /exam_staff_assignments/{assignmentId} {
+      // Queries by staffUid or teacherId must be scoped to the signed-in UID.
+      // Assignees can read only their own task, never student answers or scores.
+      allow read: if isAdmin() || (isActiveTeacher() &&
+        (isOwner(existing().teacherId) || isOwner(existing().staffUid)));
+      allow create: if staffAssignmentOwnerCanManage(incoming()) &&
+        staffAssignmentCreateIsSafe(assignmentId);
+      // No update path for roles, room, member, school or grant metadata.
+      allow update: if isActiveTeacher() && isOwner(existing().staffUid) &&
+        staffAssignmentMatchesCouncil(existing()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['state','report','updatedAt']) &&
+        incoming().state in ['ready','issue','completed'] &&
+        incoming().report is string && incoming().report.size() <= 2000 &&
+        (incoming().state != 'issue' || incoming().report.size() > 0) &&
+        incoming().updatedAt == request.time;
+      allow delete: if staffAssignmentOwnerCanManage(existing());
+    }
+
     match /public_exam_schedules/{scheduleId} {
       // Public notices contain metadata only: no exam code, questions, answers or roster.
       allow read: if existing().status == 'published';
