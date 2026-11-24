@@ -434,7 +434,9 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
         const questions=originalVersion===codeVersion?exam.questions:
           codeVersion==='Gốc'?exam.shuffledVersions?.find(v=>v.code===originalVersion)?.questions:undefined;
         if(!questions){setLoginError('Mã đề không khớp phiên thi cũ. Hãy nhập lại đúng mã thi ban đầu.');return;}
-        const restoredExam={...exam,questions};
+        const restoredExam={...exam,questions:questions.map(question=>question.type==='matching'&&question.matchingPairs?{
+          ...question,shuffledRight:question.matchingPairs.map(pair=>({id:pair.id,right:pair.right})).sort(()=>Math.random()-0.5)
+        }:question)};
         const restoredStudent:StudentAccount={...recovery.student,code:''};
         const submittedKey=createTeacherStorageKey(`submitted_exam_${restoredStudent.id}_${exam.id}`,exam.teacherId);
         if(sessionStorage.getItem(submittedKey)==='1'){setLoginError('Em đã nộp bài, không thể đăng nhập lại.');return;}
