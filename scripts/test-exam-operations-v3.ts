@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { eligibleRoster,makeRooms,blueprintRows,buildOperationsCsv,normalizeLevel } from '../src/lib/examOperations';
+import { eligibleRoster,makeRooms,blueprintRows,buildOperationsCsv,normalizeLevel,summarizeRoomSessions } from '../src/lib/examOperations';
 const roster=[{id:'b',name:'B',classId:'c',teacherId:'owner'},{id:'a',name:'A',classId:'c',teacherId:'owner'},{id:'foreign',name:'Foreign',classId:'c',teacherId:'other'},{id:'guest',name:'Guest',classId:'c',teacherId:'owner',examId:'exam'},{id:'a',name:'A',classId:'c',teacherId:'owner'},{id:'d',name:'D',classId:'d',teacherId:'owner'}];
 const original=JSON.stringify(roster);
 const selected=eligibleRoster(roster,[{id:'c',name:'8A',teacherId:'owner'},{id:'d',name:'8B',teacherId:'owner'}],'owner',['c']);
@@ -17,6 +17,10 @@ const rows=blueprintRows([{id:'a',type:'multiple_choice',points:0.5},{id:'b',typ
 assert.deepEqual(rows.map(r=>r.counts),[[1,0,0,0,1],[0,0,1,0,0]]);
 assert.equal(rows.reduce((s,r)=>s+r.points,0),3.5);
 assert.ok(buildOperationsCsv([['=HYPERLINK("bad")','A,B']]).includes("'=HYPERLINK"));
+const monitorRooms=makeRooms(selected,24);
+const status=summarizeRoomSessions(monitorRooms,[{studentId:'a',status:'submitted',lastActive:'2026-11-24T00:00:00Z'},{studentId:'a',status:'taking',lastActive:'2026-11-24T00:00:10Z'},{studentId:'b',status:'taking',lastActive:'2026-11-24T00:00:00Z'},{studentId:'unassigned',status:'taking',lastActive:'2026-11-24T00:01:40Z'}],Date.parse('2026-11-24T00:02:00Z'),90000);
+assert.deepEqual(status,{summaries:[{name:'Phòng 01',planned:2,submitted:1,online:0,disconnected:1,notSeen:0}],unassigned:1});
+assert.equal(summarizeRoomSessions(monitorRooms,[],Date.now(),90000).summaries[0].notSeen,2);
 const manager=readFileSync(new URL('../src/components/ExamManagerLegacy.tsx',import.meta.url),'utf8');
 assert.ok(manager.includes('const { operationsPlan: _privateOperationsPlan, ...candidateExam } = authorized.exam'));
 assert.ok(manager.includes('protectExamForAccess(stripTeacherOnlyFields(candidateExam), authorized.code)'));
