@@ -14,7 +14,7 @@ export function isWindowApp(id: string): id is WindowAppId {
   return (WINDOW_APPS as readonly string[]).includes(id);
 }
 type Layout = 'normal' | 'maximized' | 'left' | 'right';
-export type WorkspaceWindow = { id: WindowAppId; layout: Layout; minimized: boolean; x: number; y: number };
+export type WorkspaceWindow = { id: WindowAppId; layout: Layout; minimized: boolean; x: number; y: number; width: number; height: number };
 const TITLES: Record<WindowAppId, string> = {
   'excel-merger': 'Gộp tệp Excel',
   'pdf-merger': 'Tách, gộp file PDF',
@@ -25,7 +25,7 @@ export function openWindow(previous: WorkspaceWindow[], id: WindowAppId): Worksp
   const existing = previous.find(item => item.id === id);
   if (existing) return [...previous.filter(item => item.id !== id), { ...existing, minimized: false }];
   const offset = (previous.length % 4) * 3;
-  return [...previous, { id, layout: 'normal', minimized: false, x: 8 + offset, y: 4 + offset }];
+  return [...previous, { id, layout: 'normal', minimized: false, x: 8 + offset, y: 4 + offset, width: 80, height: 86 }];
 }
 export function useEduWindows() {
   const [windows, setWindows] = useState<WorkspaceWindow[]>([]);
@@ -68,19 +68,20 @@ type Controls = ReturnType<typeof useEduWindows>;
 export function EduWindowLayer({ controls }: { controls: Controls }) {
   const area = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: WindowAppId; pointer: number; sx: number; sy: number; x: number; y: number } | null>(null);
+  const resize = useRef<{ id: WindowAppId; pointer: number; sx: number; sy: number; width: number; height: number } | null>(null);
   const [compact, setCompact] = useState(() => window.innerWidth < 768);
   useEffect(() => {
     const handle = () => setCompact(window.innerWidth < 768);
     window.addEventListener('resize', handle);
     return () => window.removeEventListener('resize', handle);
   }, []);
-  return <div ref={area} className="pointer-events-none fixed inset-x-0 top-20 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-[15]" aria-label="Không gian đa nhiệm">
+  return <div ref={area} className="pointer-events-none fixed inset-x-0 top-0 md:top-20 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-[15]" aria-label="Không gian đa nhiệm">
     {controls.windows.map((item, index) => {
       const maximized = compact || item.layout === 'maximized';
-      const style: React.CSSProperties = maximized ? { inset: 0 } : item.layout === 'left' ? { left: 0, top: 0, width: '50%', height: '100%' } : item.layout === 'right' ? { right: 0, top: 0, width: '50%', height: '100%' } : { left: item.x + '%', top: item.y + '%', width: '80%', height: '86%' };
+      const style: React.CSSProperties = maximized ? { inset: 0 } : item.layout === 'left' ? { left: 0, top: 0, width: '50%', height: '100%' } : item.layout === 'right' ? { right: 0, top: 0, width: '50%', height: '100%' } : { left: item.x + '%', top: item.y + '%', width: item.width + '%', height: item.height + '%' };
       const active = controls.windows.filter(w => !w.minimized).at(-1)?.id === item.id;
       const button = 'rounded-md p-1.5 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-indigo-500';
-      return <section key={item.id} data-edu-window={item.id} aria-label={TITLES[item.id]} aria-hidden={item.minimized || undefined} onPointerDown={() => controls.focus(item.id)} style={{ ...style, zIndex: index + 1, display: item.minimized ? 'none' : 'flex' }} className={'pointer-events-auto absolute min-h-0 flex-col overflow-hidden rounded-xl border bg-white text-slate-900 shadow-2xl ' + (active ? 'border-indigo-400' : 'border-slate-300')}>
+      return <section key={item.id} data-edu-window={item.id} aria-label={TITLES[item.id]} aria-hidden={item.minimized || undefined} onPointerDown={() => controls.focus(item.id)} onFocusCapture={() => controls.focus(item.id)} style={{ ...style, zIndex: index + 1, display: item.minimized ? 'none' : 'flex' }} className={'pointer-events-auto absolute min-h-0 flex-col overflow-hidden rounded-xl border bg-white text-slate-900 shadow-2xl ' + (active ? 'border-indigo-400' : 'border-slate-300')}>
         <header className="flex shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-100 px-2 py-1">
           <div className="flex min-w-0 flex-1 touch-none select-none items-center gap-2 px-1 py-1.5" onDoubleClick={() => controls.patch(item.id, { layout: item.layout === 'maximized' ? 'normal' : 'maximized' })} onPointerDown={event => {
             if (compact || item.layout !== 'normal' || event.button !== 0) return;
@@ -91,7 +92,7 @@ export function EduWindowLayer({ controls }: { controls: Controls }) {
             if (!d || d.id !== item.id || d.pointer !== event.pointerId || !area.current) return;
             const rect = area.current.getBoundingClientRect();
             if (!rect.width || !rect.height) return;
-            controls.patch(item.id, { x: Math.max(0, Math.min(20, d.x + (event.clientX - d.sx) / rect.width * 100)), y: Math.max(0, Math.min(14, d.y + (event.clientY - d.sy) / rect.height * 100)) });
+            controls.patch(item.id, { x: Math.max(0, Math.min(100 - item.width, d.x + (event.clientX - d.sx) / rect.width * 100)), y: Math.max(0, Math.min(100 - item.height, d.y + (event.clientY - d.sy) / rect.height * 100)) });
           }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}>
             <Monitor className="h-4 w-4 shrink-0 text-indigo-600"/><span className="truncate text-xs font-semibold sm:text-sm">{TITLES[item.id]}</span>
           </div>
@@ -103,6 +104,14 @@ export function EduWindowLayer({ controls }: { controls: Controls }) {
         <div className="relative flex min-h-0 flex-1 flex-col overflow-auto bg-slate-50" style={{ contain: 'layout paint' }}>
           <AppBoundary><Suspense fallback={<p className="p-6 text-center text-sm text-slate-600">Đang mở ứng dụng…</p>}><WindowContent id={item.id} onBack={() => controls.close(item.id)}/></Suspense></AppBoundary>
         </div>
+        {!compact && item.layout === 'normal' && <div aria-hidden="true" title="Kéo để đổi kích thước" className="absolute bottom-0 right-0 z-10 h-5 w-5 cursor-nwse-resize touch-none rounded-tl-lg border-l border-t border-slate-300 bg-slate-200" onPointerDown={event => {
+          event.preventDefault(); resize.current = { id: item.id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, width: item.width, height: item.height };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }} onPointerMove={event => {
+          const r = resize.current; const rect = area.current?.getBoundingClientRect();
+          if (!r || r.id !== item.id || r.pointer !== event.pointerId || !rect?.width || !rect.height) return;
+          controls.patch(item.id, { width: Math.max(40, Math.min(100 - item.x, r.width + (event.clientX - r.sx) / rect.width * 100)), height: Math.max(35, Math.min(100 - item.y, r.height + (event.clientY - r.sy) / rect.height * 100)) });
+        }} onPointerUp={() => { resize.current = null; }} onPointerCancel={() => { resize.current = null; }} onLostPointerCapture={() => { resize.current = null; }}/>}
       </section>;
     })}
   </div>;
