@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { inspectStudentName,checkStudentNameAgainstRoster,auditClassNames } from '../src/lib/studentNameAgent';
+import {createPrivateStudentRosterDirectory,createStudentRosterLookupKey} from '../src/lib/teacherIsolation';
+assert.equal(inspectStudentName('  đỖ  diệu HƯƠNG ').name,'Đỗ Diệu Hương');
+assert.equal(inspectStudentName('dương').full,false);
+assert.equal(inspectStudentName('Nguyen Van An').hasVietnameseMarks,false);
+const owner='teacher',classId='class-a',exam='exam-a';
+const registered={id:'a',name:'Nguyễn Văn An',teacherId:owner,classId};
+const unmarked={id:'b',name:'Nguyen Van An',teacherId:owner,classId,selfEnrolled:true};
+const foreign={id:'c',name:'Nguyễn Văn Ân',teacherId:'other',classId};
+const findings=auditClassNames(owner,classId,[registered,foreign],[registered,unmarked,foreign]);
+assert.deepEqual(findings.get('b'),{kind:'possible-spelling',suggestion:'Nguyễn Văn An'});
+assert.equal(findings.has('c'),false);
+assert.equal(auditClassNames(owner,classId,[registered],[registered,{...registered,id:'d'}]).get('a')?.kind,'duplicate');
+const directory=await createPrivateStudentRosterDirectory(owner,exam,[registered]);
+assert.equal(await checkStudentNameAgainstRoster('nguyễn văn an',owner,exam,classId,directory),'matched');
+assert.equal(await checkStudentNameAgainstRoster('Nguyen Van An',owner,exam,classId,directory),'unmatched');
+const duplicate=await createPrivateStudentRosterDirectory(owner,exam,[registered,{...registered,id:'d'}]);
+assert.equal(await checkStudentNameAgainstRoster(registered.name,owner,exam,classId,duplicate),'ambiguous');
+assert.equal(duplicate[await createStudentRosterLookupKey(owner,exam,registered.name,classId)].id,'');
+assert.equal(JSON.stringify(directory).includes('Nguyễn'),false);
+console.log('Student name agent: normalization, evidence-based suggestions, class scoping, duplicate prevention, no plaintext roster exposure passed.');
+
+const openDuplicates=await createPrivateStudentRosterDirectory(owner,exam,[{...registered,selfEnrolled:true},{...registered,id:'d',selfEnrolled:true}]);
+assert.equal(await checkStudentNameAgainstRoster(registered.name,owner,exam,classId,openDuplicates),'ambiguous');
+assert.equal(await checkStudentNameAgainstRoster('Lê Thị Mai',owner,exam,classId,openDuplicates),'open');

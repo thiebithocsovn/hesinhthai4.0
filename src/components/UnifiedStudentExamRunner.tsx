@@ -10,6 +10,8 @@ import {
   type ExamResumeState,
 } from '../lib/examResume';
 import { formatStudentName, isFullStudentName } from '../lib/studentNameNormalization';
+import { inspectStudentName, checkStudentNameAgainstRoster } from '../lib/studentNameAgent';
+import { readTeacherRecovery } from '../lib/examTeacherRecovery';
 import { getExamStudentClasses, guestExamStudentRecord, withExamStudentClass } from '../lib/examStudentClasses';
 import { buildStudentExamSchedule, canStudentEnterExam, formatExamScheduleDate, getExamScheduleState } from '../lib/examSchedule';
 import {
@@ -145,6 +147,19 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
   const [classError, setClassError] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
+  const [recoveryFile,setRecoveryFile]=useState<File|null>(null);
+  const [recoveryCode,setRecoveryCode]=useState('');
+  const nameInspection=useMemo(()=>inspectStudentName(studentName),[studentName]);
+  const [nameMatch,setNameMatch]=useState<'unavailable'|'matched'|'ambiguous'|'unmatched'|'open'>('unavailable');
+  useEffect(()=>{
+    setNameMatch('unavailable');
+    if(!classExam||classExam.code!==examCode.trim()||!selectedClassId||!nameInspection.full)return;
+    let cancelled=false;
+    const timer=window.setTimeout(()=>{
+      void checkStudentNameAgainstRoster(nameInspection.name,classExam.exam.teacherId,classExam.exam.id,selectedClassId,classExam.exam.studentDirectory||{}).then(value=>{if(!cancelled)setNameMatch(value);}).catch(()=>{if(!cancelled)setNameMatch('unavailable');});
+    },250);
+    return()=>{cancelled=true;window.clearTimeout(timer);};
+  },[classExam,examCode,selectedClassId,nameInspection.name,nameInspection.full]);
   const [showExamCode, setShowExamCode] = useState(false);
   const [showLoginHelp, setShowLoginHelp] = useState(false);
   const [schedule, setSchedule] = useState<PublicExamSchedule[]>([]);
@@ -409,9 +424,34 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
         return;
       }
 
+      if(recoveryFile||recoveryCode.trim()){
+        if(!recoveryFile||!recoveryCode.trim()||recoveryFile.size>4*1024*1024){
+          setLoginError('Chọn tệp khôi phục hợp lệ (tối đa 4 MB) và nhập mã giáo viên cấp.');return;
+        }
+        const recovery=await readTeacherRecovery(await recoveryFile.text(),recoveryCode,exam,normalizedName,selectedClass?.id);
+        const originalVersion=recovery.examVersion;
+        const codeVersion=exam.accessVersionCode||'Gốc';
+        const questions=originalVersion===codeVersion?exam.questions:
+          codeVersion==='Gốc'?exam.shuffledVersions?.find(v=>v.code===originalVersion)?.questions:undefined;
+        if(!questions){setLoginError('Mã đề không khớp phiên thi cũ. Hãy nhập lại đúng mã thi ban đầu.');return;}
+        const restoredExam={...exam,questions:questions.map(question=>question.type==='matching'&&question.matchingPairs?{
+          ...question,shuffledRight:question.matchingPairs.map(pair=>({id:pair.id,right:pair.right})).sort(()=>Math.random()-0.5)
+        }:question)};
+        const restoredStudent:StudentAccount={...recovery.student,code:''};
+        const submittedKey=createTeacherStorageKey(`submitted_exam_${restoredStudent.id}_${exam.id}`,exam.teacherId);
+        if(sessionStorage.getItem(submittedKey)==='1'){setLoginError('Em đã nộp bài, không thể đăng nhập lại.');return;}
+        await rejoinExamSession({...recovery,exam:restoredExam,student:restoredStudent},normalizedCode);
+        setRecoveryFile(null);setRecoveryCode('');
+        return;
+      }
+
       const lookupKey = await createStudentRosterLookupKey(exam.teacherId, exam.id, normalizedName);
       const classLookupKey = selectedClass ? await createStudentRosterLookupKey(exam.teacherId, exam.id, normalizedName, selectedClass.id) : lookupKey;
       const roster = exam.studentDirectory?.[classLookupKey] || exam.studentDirectory?.[lookupKey];
+      if(roster?.ambiguous){
+        setLoginError('Có nhiều hồ sơ trùng họ tên trong lớp. Hãy nhờ giáo viên xác minh trước khi thi.');
+        return;
+      }
       if (selectedClass && roster?.classId && roster.classId !== selectedClass.id) {
         setLoginError('Họ tên và lớp chưa khớp với danh sách đăng ký. Hãy kiểm tra với giáo viên.');
         return;
@@ -433,6 +473,10 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       } : undefined;
 
       if (!student) {
+        if(!isFullStudentName(normalizedName)){
+          setLoginError('Em hãy nhập đầy đủ họ và tên bằng chữ, không dùng số hoặc ký hiệu.');
+          return;
+        }
         student = {
           id: await createExamGuestStudentId(exam.teacherId, exam.id, normalizedName, selectedClass?.id),
           code: Math.floor(100000 + Math.random() * 900000).toString(),
@@ -476,7 +520,7 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
       sessionStorage.setItem('examVersion', selectedVersion);
     } catch (error) {
       console.error('Không thể mở bài kiểm tra:', error);
-      setLoginError(describeExamAccessError(error, 'login'));
+      setLoginError(recoveryFile||recoveryCode.trim() ? (error instanceof Error && !('code' in error)?error.message:'Không thể khôi phục phiên thi. Hãy kiểm tra mã, tệp và liên hệ giáo viên.') : describeExamAccessError(error, 'login'));
     } finally {
       setLoginBusy(false);
     }
@@ -788,7 +832,12 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
                 <form onSubmit={login} className="sep-form" aria-busy={loginBusy}>
                   <div className="sep-field">
                     <label htmlFor="sep-student-name">Họ và tên học sinh <span className="sep-required">(*)</span></label>
-                    <input id="sep-student-name" name="studentName" value={studentName} onChange={event => setStudentName(event.target.value)} onBlur={()=>setStudentName(formatStudentName(studentName))} placeholder="Nhập đầy đủ họ và tên" autoComplete="name" required disabled={loginBusy} aria-describedby={loginError ? 'sep-login-error' : undefined} />
+                    <input id="sep-student-name" name="studentName" value={studentName} onChange={event => {setStudentName(event.target.value);setLoginError('');}} onBlur={()=>setStudentName(formatStudentName(studentName))} placeholder="Nhập đầy đủ họ và tên" autoComplete="name" required disabled={loginBusy} aria-describedby={`sep-name-agent${loginError ? ' sep-login-error' : ''}`} />
+                    <div id="sep-name-agent" aria-live="polite" className="mt-1 rounded-lg border border-teal-100 bg-teal-50 px-3 py-2 text-xs text-slate-700">
+                      <span className="font-semibold text-teal-800">Trợ lý nhận diện họ tên</span>
+                      {studentName.trim()?<p className="mt-1 break-words">Họ tên chuẩn hóa: <strong>{nameInspection.name}</strong></p>:<p className="mt-1">Tự viết hoa chữ cái đầu và kiểm tra họ tên theo lớp.</p>}
+                      {studentName.trim()&&!nameInspection.full?<p className="mt-1 text-amber-800">Hãy nhập đầy đủ họ và tên.</p>:nameMatch==='matched'?<p className="mt-1 text-teal-800">Họ tên khớp danh sách lớp. Em hãy kiểm tra lại tên của mình.</p>:nameMatch==='ambiguous'?<p className="mt-1 text-amber-800">Có hồ sơ trùng tên, cần giáo viên xác minh.</p>:nameMatch==='unmatched'?<p className="mt-1 text-amber-800">Chưa khớp danh sách lớp. Kiểm tra lại dấu và chính tả hoặc hỏi giáo viên.</p>:studentName.trim()&&!nameInspection.hasVietnameseMarks?<p className="mt-1 text-amber-800">Kiểm tra dấu tiếng Việt theo tên thật. Không tự suy đoán dấu.</p>:null}
+                    </div>
                   </div>
                   <div className="sep-field">
                     <label htmlFor="sep-exam-code">Mã đăng nhập / mã kỳ thi <span className="sep-required">(*)</span></label>
@@ -807,6 +856,13 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
                     </select>
                     <p id="sep-class-help" className="sep-code-help">{classError || (classExam?.code === examCode.trim() && studentClasses.length === 0 ? 'Giáo viên cần tạo lớp và mở lại kỳ thi để cập nhật danh sách lớp.' : 'Danh sách chỉ gồm các lớp do giáo viên của kỳ thi tạo.')}</p>
                   </div>
+                  <details className="rounded-lg border border-slate-200 p-3 text-sm">
+                    <summary className="cursor-pointer font-semibold text-teal-800">Bị thoát bài thi? Đăng nhập lại</summary>
+                    <p className="mt-2 text-xs text-slate-600">Trên máy cũ chỉ cần nhập lại đúng họ tên, lớp và mã thi. Nếu đã mất bản lưu hoặc đổi máy, xin giáo viên cấp tệp và mã khôi phục. Không đặt lại thời gian.</p>
+                    <label className="mt-2 block text-xs font-medium">Tệp khôi phục<input type="file" accept=".json,application/json" onChange={e=>setRecoveryFile(e.target.files?.[0]||null)} disabled={loginBusy} className="mt-1 block w-full text-xs"/></label>
+                    <label className="mt-2 block text-xs font-medium">Mã khôi phục<input type="password" value={recoveryCode} onChange={e=>setRecoveryCode(e.target.value)} autoComplete="off" disabled={loginBusy} className="mt-1 w-full rounded border p-2"/></label>
+                    {(recoveryFile||recoveryCode)&&<button type="button" onClick={()=>{setRecoveryFile(null);setRecoveryCode('');}} className="mt-2 text-xs font-semibold text-teal-700 underline">Bỏ gói khôi phục</button>}
+                  </details>
                   <p id="sep-code-help" className="sep-code-help">Chưa có mã đăng nhập? Em hãy liên hệ giáo viên phụ trách kỳ thi.</p>
                   {loginError && <div id="sep-login-error" role="alert" className="sep-login-error">{loginError}</div>}
                   <button type="submit" className="sep-submit" disabled={loginBusy}>

@@ -12,6 +12,11 @@ on:
       - 'src/lib/examEnrollmentPlan.ts'
       - 'src/lib/examEnrollmentSync.ts'
       - 'src/lib/studentNameNormalization.ts'
+      - 'src/lib/studentNameAgent.ts'
+      - 'src/lib/teacherIsolation.ts'
+      - 'scripts/test-student-name-agent.ts'
+      - 'src/lib/examTeacherRecovery.ts'
+      - 'scripts/test-exam-teacher-recovery.ts'
       - 'scripts/test-exam-class-enrollment.ts'
       - 'scripts/test-exam-class-attendance.ts'
       - 'scripts/test-security-hardening.ts'
@@ -42,6 +47,7 @@ on:
       - fix/exam-class-roster-20261124
       - feature/exam-roster-enrollment-20261124
       - feature/exam-firebase-enrollment-20261124
+      - feature/exam-student-name-agent-20261124
 
 permissions:
   contents: read
@@ -72,6 +78,8 @@ jobs:
           npm run test:security-hardening
           node --import tsx scripts/test-exam-class-attendance.ts
           node --import tsx scripts/test-exam-class-enrollment.ts
+          node --import tsx scripts/test-student-name-agent.ts
+          node --import tsx scripts/test-exam-teacher-recovery.ts
       - name: Typecheck
         run: npm run lint
       - uses: actions/setup-java@v4

@@ -15,6 +15,7 @@ export interface PrivateStudentRosterEntry {
   id: string;
   classId?: string;
   selfEnrolled?: boolean;
+  ambiguous?: boolean;
 }
 
 export interface PrivateStudentRosterSource {
@@ -184,5 +185,19 @@ export async function createPrivateStudentRosterDirectory(
       return keys;
     }));
 
-  return Object.fromEntries(entries.flat());
+  const directory: Record<string,PrivateStudentRosterEntry> = Object.fromEntries(entries.flat());
+  const byClass = new Map<string,PrivateStudentRosterEntry[]>();
+  // Only conflicting class-scoped records are marked; legacy unclassed
+  // guest records must not hide a registered student's exact class.
+  for(const keys of entries){
+    if(keys.length<2)continue;
+    const [key,entry]=keys[1];
+    const group=byClass.get(key)||[];
+    if(!group.some(item=>item.id===entry.id))group.push(entry);
+    byClass.set(key,group);
+  }
+  for(const [key,group] of byClass){
+    if(group.length>1)directory[key]={id:'',classId:group[0].classId,ambiguous:true,...(group.every(item=>item.selfEnrolled)?{selfEnrolled:true}:{})};
+  }
+  return directory;
 }
