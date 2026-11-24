@@ -14,12 +14,14 @@ export interface TeacherOwnedRecord {
 export interface PrivateStudentRosterEntry {
   id: string;
   classId?: string;
+  selfEnrolled?: boolean;
 }
 
 export interface PrivateStudentRosterSource {
   id: string;
   name: string;
   classId?: string;
+  selfEnrolled?: boolean;
 }
 
 export interface TeacherSessionStorage {
@@ -175,6 +177,7 @@ export async function createPrivateStudentRosterDirectory(
       const entry = {
         id: student.id,
         ...(student.classId ? { classId: student.classId } : {}),
+        ...(student.selfEnrolled === true ? { selfEnrolled: true } : {}),
       };
       const keys = [[lookupKey, entry] as const];
       if (student.classId) keys.push([await createStudentRosterLookupKey(teacherUid, examId, student.name, student.classId), entry]);
