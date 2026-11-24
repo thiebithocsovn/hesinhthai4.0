@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EXAM_PROFILES, examProgress, isExamProfile, questionGroup, type ExamProfile } from '../lib/examCandidateWorkspace';
 import { ArrowLeft, BookOpen, CalendarDays, CheckCircle, Clock, Eye, EyeOff, FileText, GraduationCap, LoaderCircle, Printer, X } from 'lucide-react';
-import { collection, doc, documentId, getDoc, getDocFromServer, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, documentId, getDoc, getDocFromServer, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { describeExamAccessError } from '../lib/examAccessError';
 import {
@@ -9,7 +9,7 @@ import {
   resumeStorageKey, EXAM_RESUME_CODE_SESSION_KEY, EXAM_RESUME_SESSION_KEY,
   type ExamResumeState,
 } from '../lib/examResume';
-import { formatStudentName } from '../lib/studentNameNormalization';
+import { formatStudentName, isFullStudentName } from '../lib/studentNameNormalization';
 import { getExamStudentClasses, guestExamStudentRecord, withExamStudentClass } from '../lib/examStudentClasses';
 import { buildStudentExamSchedule, canStudentEnterExam, formatExamScheduleDate, getExamScheduleState } from '../lib/examSchedule';
 import {
@@ -83,6 +83,7 @@ interface UnifiedExam {
   studentDirectory?: Record<string, PrivateStudentRosterEntry>;
   receiptSettings?: Partial<ExamReceiptSettings>;
   classNames?: Record<string, string>;
+  selfEnrollmentClassIds?: string[];
   accessVersionCode?: string;
   isShuffled?: boolean;
   shuffledVersions?: { code: string; questions: UnifiedExamQuestion[] }[];
@@ -494,39 +495,55 @@ export default function UnifiedStudentExamRunner({ onBack }: UnifiedStudentExamR
         setStatus('closed');
         return;
       }
-      // A guest may CREATE an exam-scoped identity once. The Firestore
-      // update rule denies another creation with the same stable student ID.
-      if (currentStudent.examId === activeExam.id) {
-        try {
-          await setDoc(doc(db, 'students', currentStudent.id), guestExamStudentRecord(currentStudent));
-        } catch (error) {
-          if ((error as { code?: string })?.code === 'permission-denied') {
-            setLoginError('Họ tên này đã đăng ký một lượt thi trong kỳ thi này. Không thể thi lần thứ hai; nếu có nhầm lẫn hãy báo giáo viên.');
-            return;
-          }
-          throw error;
-        }
-      }
       startedAtRef.current = new Date().toISOString();
       const initialSession = {
         id: sessionId, examId: activeExam.id, studentId: currentStudent.id,
         startTime: startedAtRef.current, lastActive: startedAtRef.current,
-        status: 'taking', teacherId: activeExam.teacherId, examVersion,
+        status: 'taking' as const, teacherId: activeExam.teacherId, examVersion,
       };
-      try {
-        await setDoc(doc(db, 'exam_sessions', sessionId), {
-          ...initialSession,
-          draftAnswers: withExamStudentClass({}, currentStudent.classId),
-          draftCheatEvents: { rightClicks: 0, tabChanges: 0, windowResizes: 0 },
-        });
-        setDraftSupported(true);
-      } catch (error) {
-        // Existing live Firestore rules may not yet allow new draft fields.
-        // Continue the exam without silently claiming automatic collection works.
-        if ((error as { code?: string })?.code !== 'permission-denied') throw error;
-        await setDoc(doc(db, 'exam_sessions', sessionId), initialSession);
-        setDraftSupported(false);
-        setDraftStatus('error');
+      const draftSession = {...initialSession,
+        draftAnswers: withExamStudentClass({}, currentStudent.classId),
+        draftCheatEvents: { rightClicks: 0, tabChanges: 0, windowResizes: 0 },
+      };
+      let directEnrollment=false;
+      // New rules allow only a new exam-scoped guest and its first session
+      // in one atomic batch, for classes explicitly open at publication.
+      if(currentStudent.examId===activeExam.id && currentStudent.classId &&
+        activeExam.selfEnrollmentClassIds?.includes(currentStudent.classId) && isFullStudentName(currentStudent.name)){
+        try{
+          const batch=writeBatch(db);
+          batch.set(doc(db,'students',currentStudent.id),{...guestExamStudentRecord(currentStudent),classId:currentStudent.classId,selfEnrolled:true});
+          batch.set(doc(db,'exam_sessions',sessionId),draftSession);
+          await batch.commit();
+          directEnrollment=true;
+          setDraftSupported(true);
+        }catch(error){
+          if((error as {code?:string})?.code!=='permission-denied')throw error;
+          // Older deployed rules or stale publication: retain the existing
+          // exam-scoped flow, without granting a new permission client-side.
+        }
+      }
+      if(!directEnrollment){
+        if (currentStudent.examId === activeExam.id) {
+          try {
+            await setDoc(doc(db, 'students', currentStudent.id), guestExamStudentRecord(currentStudent));
+          } catch (error) {
+            if ((error as { code?: string })?.code === 'permission-denied') {
+              setLoginError('Họ tên này đã đăng ký một lượt thi trong kỳ thi này. Không thể thi lần thứ hai; nếu có nhầm lẫn hãy báo giáo viên.');
+              return;
+            }
+            throw error;
+          }
+        }
+        try {
+          await setDoc(doc(db, 'exam_sessions', sessionId), draftSession);
+          setDraftSupported(true);
+        } catch (error) {
+          if ((error as { code?: string })?.code !== 'permission-denied') throw error;
+          await setDoc(doc(db, 'exam_sessions', sessionId), initialSession);
+          setDraftSupported(false);
+          setDraftStatus('error');
+        }
       }
       sessionStorage.setItem(EXAM_RESUME_CODE_SESSION_KEY, examCode.trim());
       setAnswers({});

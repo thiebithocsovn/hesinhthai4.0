@@ -17,6 +17,7 @@ on:
       - 'scripts/test-security-hardening.ts'
       - 'src/lib/examStaffAccess.ts'
       - 'scripts/test-exam-staff-rules.ts'
+      - 'scripts/test-exam-direct-enrollment-rules.ts'
       - 'firestore.rules'
       - 'src/lib/examManualGrading.ts'
       - 'scripts/test-exam-council.ts'
@@ -40,6 +41,7 @@ on:
       - feature/exam-workspace-design-20261124
       - fix/exam-class-roster-20261124
       - feature/exam-roster-enrollment-20261124
+      - feature/exam-firebase-enrollment-20261124
 
 permissions:
   contents: read
@@ -77,6 +79,6 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Test staff authorization and legacy exam rules against emulator
-        run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:exam-access-rules && node --import tsx scripts/test-exam-staff-rules.ts"
+        run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:exam-access-rules && node --import tsx scripts/test-exam-staff-rules.ts && node --import tsx scripts/test-exam-direct-enrollment-rules.ts"
       - name: Build static site without publishing
         run: npm run build:static

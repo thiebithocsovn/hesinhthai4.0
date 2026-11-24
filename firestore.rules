@@ -144,6 +144,30 @@ service cloud.firestore {
         incoming().code is string && incoming().code.matches('^[0-9]{6}$');
     }
 
+    // Direct class enrollment is create-only, atomic with the first exam session,
+    // and limited to classes explicitly opened by the exam owner at publication.
+    function directClassGuestIsSafe(studentId) {
+      let d = incoming();
+      let exam = get(/databases/$(database)/documents/exams/$(d.examId)).data;
+      let sessionId = studentId + '_' + d.examId;
+      let session = getAfter(/databases/$(database)/documents/exam_sessions/$(sessionId)).data;
+      return d.keys().hasAll(['id','teacherId','name','code','examId','classId','selfEnrolled']) &&
+        d.keys().hasOnly(['id','teacherId','name','code','examId','classId','selfEnrolled']) &&
+        d.id == studentId && studentId.matches('^guest-[a-f0-9]{64}$') &&
+        isValidId(d.teacherId) && isValidId(d.examId) && isValidId(d.classId) &&
+        d.name is string && d.name.size() > 0 && d.name.size() <= 160 &&
+        d.code is string && d.code.matches('^[0-9]{6}$') && d.selfEnrolled == true &&
+        exam.teacherId == d.teacherId && exam.status == 'published' &&
+        exam.classNames is map && d.classId in exam.classNames &&
+        exam.selfEnrollmentClassIds is list && d.classId in exam.selfEnrollmentClassIds &&
+        get(/databases/$(database)/documents/classes/$(d.classId)).data.teacherId == d.teacherId &&
+        !exists(/databases/$(database)/documents/exam_sessions/$(sessionId)) &&
+        session.id == sessionId && session.studentId == studentId &&
+        session.examId == d.examId && session.teacherId == d.teacherId &&
+        session.status == 'taking' &&
+        session.draftAnswers.__examEnrollment.classId == d.classId;
+    }
+
     function guestResultIsSafe(resultId) {
       return incoming().keys().hasAll([
           'id', 'examId', 'studentId', 'score', 'totalQuestions', 'submittedAt',
@@ -185,7 +209,11 @@ service cloud.firestore {
         incoming().examVersion is string && incoming().examVersion.size() <= 128 &&
         (!('draftAnswers' in incoming()) || incoming().draftAnswers is map) &&
         (!('draftCheatEvents' in incoming()) || incoming().draftCheatEvents is map) &&
-        enrolledStudentBelongsToTeacher(incoming().studentId, incoming().teacherId);
+        (enrolledStudentBelongsToTeacher(incoming().studentId, incoming().teacherId) ||
+          (getAfter(/databases/$(database)/documents/students/$(incoming().studentId)).data.teacherId == incoming().teacherId &&
+           getAfter(/databases/$(database)/documents/students/$(incoming().studentId)).data.examId == incoming().examId &&
+           getAfter(/databases/$(database)/documents/students/$(incoming().studentId)).data.selfEnrolled == true &&
+           getAfter(/databases/$(database)/documents/students/$(incoming().studentId)).data.classId == incoming().draftAnswers.__examEnrollment.classId));
     }
 
     function publicPlatformStatsAreSafe(statId, data) {
@@ -524,7 +552,7 @@ service cloud.firestore {
       allow read: if mayAccess(existing(), 'teacherId');
       allow create: if isAdmin() || ownsField(incoming(), 'teacherId') || (
         !isSignedIn() &&
-        guestStudentIsSafe(studentId) &&
+        (guestStudentIsSafe(studentId) || directClassGuestIsSafe(studentId)) &&
         publishedExamBelongsToTeacher(incoming().examId, incoming().teacherId)
       );
       allow update: if isAdmin() || (

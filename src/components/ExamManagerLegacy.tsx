@@ -114,6 +114,7 @@ interface Exam {
   studentDirectory?: Record<string, PrivateStudentRosterEntry>;
   receiptSettings?: Partial<ExamReceiptSettings>;
   classNames?: Record<string, string>;
+  selfEnrollmentClassIds?: string[];
   accessVersionCode?: string;
   roundScoreToInteger?: boolean;
   examProfile?: ExamProfile;
@@ -195,6 +196,11 @@ async function synchronizeExamPublication(exam: Exam, previousExam: Exam = exam,
   // A denied public write must never leave the teacher UI showing an open exam.
   const batch = writeBatch(db);
   if (savePrivateExam) batch.set(doc(db, 'exams', exam.id), exam);
+  else if (exam.status === 'published') {
+    // Refresh only enrollment metadata for old already-open exams. The access
+    // payload and private allowlist commit together, never overwrite questions.
+    batch.update(doc(db, 'exams', exam.id), {classNames: exam.classNames || {}, selfEnrollmentClassIds: exam.selfEnrollmentClassIds || []});
+  }
   const previousCodes = [previousExam.id, ...(previousExam.shuffledVersions || []).map(version => version.code)];
   if (exam.status !== 'published') {
     if (previousExam.status === 'published') {
