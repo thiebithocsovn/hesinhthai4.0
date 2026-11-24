@@ -58,7 +58,7 @@ jobs:
               throw new Error("Firestore deployment target no longer matches the reviewed database.");
             }
             const rules = fs.readFileSync("firestore.rules", "utf8");
-            for (const collection of ["public_exam_schedules", "public_exam_access", "exam_sessions", "results", "students"]) {
+            for (const collection of ["public_exam_schedules", "public_exam_access", "exam_sessions", "results", "students", "exam_staff_assignments"]) {
               if (!rules.includes("match /" + collection + "/")) {
                 throw new Error("Required exam access collection is missing: " + collection);
               }
@@ -81,7 +81,7 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Test student, teacher and private exam access against reviewed rules
-        run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:exam-access-rules && EXAM_RULES_FILE=firestore.learning-wall.rules npm run test:exam-access-rules"
+        run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:exam-access-rules && EXAM_RULES_FILE=firestore.learning-wall.rules npm run test:exam-access-rules && node --import tsx scripts/test-exam-staff-rules.ts"
 
       - name: Authenticate deployment to the exact Firebase project
         shell: bash
