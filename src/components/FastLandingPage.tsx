@@ -27,6 +27,7 @@ import {
 } from '../ecosystem';
 
 import { EduWindowLayer, useEduWindows, isWindowApp, type LauncherId } from './EduWorkspace';
+import EduAgentDock from './EduAgentDock';
 
 const PlatformFooter = lazy(() => import('./PlatformFooter'));
 
@@ -267,6 +268,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
         </section>
       </main>
       {props.account && <EduWindowLayer controls={workspace}/>}
+      <EduAgentDock desktop context={workspace.windows.filter(w => !w.minimized).at(-1)?.id || 'desktop'} uid={props.account ? props.workspaceKey : undefined} onLaunch={props.account ? launch : undefined}/>
       {start && <div className="fixed inset-0 z-20 bg-black/35" onClick={() => setStart(false)} aria-hidden="true"/>}
       {start && <section aria-label="Start Menu Edu AI" className={'fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-1/2 z-30 max-h-[calc(100dvh-6rem-env(safe-area-inset-bottom))] w-[calc(100%_-_1rem)] max-w-4xl -translate-x-1/2 overflow-y-auto rounded-3xl border p-4 shadow-2xl backdrop-blur-xl sm:p-6 ' + panel}>
         <div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="text-xl font-bold">Start</h2><p className={'text-xs ' + subtle}>Edu AI · Trung tâm ứng dụng</p></div><button type="button" aria-label="Đóng Start" onClick={() => setStart(false)} className={'rounded-xl p-2 ' + tile}><X className="h-5 w-5"/></button></div>
@@ -289,6 +291,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
             {(category === 'all' || category === 'firebase') && matches('Thời khóa biểu xếp lịch giáo viên') && <button type="button" data-smart-timetable-public-card="true" onClick={() => pinMode ? togglePin('smart-timetable') : launch('smart-timetable')} className={'flex min-h-24 flex-col items-center justify-center gap-2 rounded-xl border p-2 text-center ' + tile}><span className="rounded-xl bg-teal-600 p-2.5 text-white"><CalendarRange className="h-5 w-5"/></span><h3 className="text-xs font-semibold">Thời khóa biểu</h3>{pinMode && <span className="text-[10px]">{pins.includes('smart-timetable')?'Đã ghim':'Ghim'}</span>}</button>}
           </div>
           {(drawGroup || (searchTerm && matches('Vòng quay may mắn Bốc thẻ tương tác'))) && <div className={'mt-3 flex flex-wrap gap-2 rounded-xl border p-3 ' + tile}>{catalog.filter(app => app.id === 'lucky-draw' || app.id === 'lucky-draw-cards').map(app => <button key={app.id} type="button" data-edu-pin-mode={pinMode ? "true" : undefined} data-edu-launch={app.id} onClick={() => pinMode ? togglePin(app.id) : launch(app.id)} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"><h3>{app.name}</h3></button>)}</div>}
+          {(category === 'all' || category === 'ai') && matches('Edu AI Agent điều phối trợ lý') && <button type="button" onClick={()=>{setStart(false);window.dispatchEvent(new Event('edu-ai:open-agent'));}} className={'mt-3 flex w-full items-center gap-3 rounded-2xl border p-3 text-left '+tile}><span className="rounded-xl bg-indigo-700 p-2.5 text-white"><Brain className="h-6 w-6"/></span><div><h3 className="text-sm font-bold">Edu AI Agent</h3><p className={'text-xs '+subtle}>Điều phối 6 vai trò · Kế hoạch liên ứng dụng</p></div><ArrowRight className="ml-auto h-4 w-4"/></button>}
           {(category === 'all' || category === 'ai') && matches('AI Giáo viên trợ lý Edu AI Agent') && <button type="button" data-edu-pin-mode={pinMode ? "true" : undefined} data-edu-launch="chatbot" onClick={() => pinMode ? togglePin('chatbot') : launch('chatbot')} className={'mt-3 flex w-full items-center gap-3 rounded-2xl border p-3 text-left ' + tile}><span className="rounded-xl bg-violet-600 p-2.5 text-white"><Sparkles className="h-6 w-6"/></span><div><h3 className="text-sm font-bold">AI Giáo viên</h3><p className={'text-xs ' + subtle}>Trợ lý AI · Soạn và tích hợp kế hoạch giáo dục</p></div><ArrowRight className="ml-auto h-4 w-4"/></button>}
         </section>
         <div className="mt-4"><DeferredFooter {...props} /></div>
