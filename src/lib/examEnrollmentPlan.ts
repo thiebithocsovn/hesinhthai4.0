@@ -17,7 +17,8 @@ export function planClassEnrollment(owner:string,classId:string,students:readonl
   for(const row of rows){
     const student=byId.get(row.studentId)!;
     let reason='';
-    if(student.classId)reason='Đã thuộc lớp khác';
+    if(student.enrollmentExcluded)reason='Đã được giáo viên loại khỏi danh sách tự động';
+    else if(student.classId)reason='Đã thuộc lớp khác';
     else if(!student.examId||student.examId!==row.examId)reason='Chưa xác minh được hồ sơ đăng ký thi';
     else if(!isFullStudentName(student.name))reason='Cần kiểm tra họ tên đầy đủ';
     else if((names.get(normalizeStudentRosterName(student.name))?.size||0)>1)reason='Trùng họ tên – cần giáo viên xác minh';
