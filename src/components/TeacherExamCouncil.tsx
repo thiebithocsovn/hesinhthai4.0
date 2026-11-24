@@ -89,9 +89,12 @@ function CouncilEditor({exam,teachers,ready,access,currentUser,onEdit}:{exam:Cou
   const [site,setSite]=useState(previous?.site||'');
   const [members,setMembers]=useState<CouncilMember[]>(previous?.members||[]);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
+  const adminOwnExam=access.role==='administrator' && exam.teacherId===access.ownerUid && !owner;
+  const availableSchools=groupSchools(teachers).filter(group=>group.key);
   const effectiveSchool=school||owner?.school||'';
+  const schoolAnchor=availableSchools.find(group=>group.key===schoolKey(effectiveSchool))?.teachers[0];
   const rooms=exam.operationsPlan?.rooms.map(r=>r.name)||[];
-  const editable=exam.status==='draft'&&ready&&!!owner&&canAccessTeacherOwnedRecord(access,exam);
+  const editable=exam.status==='draft'&&ready&&(!!owner||adminOwnExam)&&canAccessTeacherOwnedRecord(access,exam);
   const selectable=teachers.filter(t=>t.status==='active'&&schoolKey(t.school)===schoolKey(effectiveSchool)&&!!schoolKey(effectiveSchool));
   const plan:CouncilPlan={version:1,name:name.trim(),schoolName:effectiveSchool.trim(),site:site.trim(),members:members.map(m=>({...m,name:m.name.trim()})),updatedAt:new Date().toISOString()};
   const problems=validateCouncil(plan,rooms);
@@ -109,7 +112,13 @@ function CouncilEditor({exam,teachers,ready,access,currentUser,onEdit}:{exam:Cou
         if(fresh.councilPlan?.updatedAt!==previous?.updatedAt)throw new Error('Kế hoạch đã được cập nhật ở nơi khác. Tải lại trước khi lưu.');
         if(!fresh.teacherId)throw new Error('Thiếu tài khoản sở hữu kỳ thi.');
         const profile=await tx.get(doc(db,'teachers',fresh.teacherId));
-        if(!profile.exists()||schoolKey(profile.data().school)!==schoolKey(plan.schoolName))throw new Error('Trường tổ chức phải khớp hồ sơ giáo viên sở hữu kỳ thi.');
+        if (profile.exists()) {
+          if(schoolKey(profile.data().school)!==schoolKey(plan.schoolName))throw new Error('Trường tổ chức phải khớp hồ sơ giáo viên sở hữu kỳ thi.');
+        } else {
+          if(scope.role!=='administrator'||fresh.teacherId!==scope.ownerUid||!schoolAnchor)throw new Error('Chưa có trường tổ chức đã xác minh.');
+          const anchor=await tx.get(doc(db,'teachers',schoolAnchor.id));
+          if(!anchor.exists()||schoolKey(anchor.data().school)!==schoolKey(plan.schoolName))throw new Error('Trường đã thay đổi trong danh mục.');
+        }
         for(const member of plan.members.filter(m=>m.teacherUid)){
           const t=await tx.get(doc(db,'teachers',member.teacherUid!));
           if(!t.exists()||t.data().status!=='active'||schoolKey(t.data().school)!==schoolKey(plan.schoolName)||String(t.data().name||t.data().username||'Chưa có tên').trim()!==member.name)throw new Error('Hồ sơ thành viên đã thay đổi: '+member.name);
@@ -123,11 +132,12 @@ function CouncilEditor({exam,teachers,ready,access,currentUser,onEdit}:{exam:Cou
   };
   const exportPlan=()=>download('Hoi_dong_'+exam.id.replace(/[^a-zA-Z0-9_-]/g,'_'),[['Kỳ thi',exam.title],['Hội đồng',previous?.name],['Trường',previous?.schoolName],['Điểm thi',previous?.site],['Họ tên','Nhiệm vụ','Phòng','Nguồn'],...(previous?.members||[]).map(m=>[m.name,m.role,m.room,m.teacherUid?'Hồ sơ tài khoản':'Khai báo thủ công'])]);
   return <div className="mt-4 space-y-4">
-    <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Phân công nghiệp vụ phục vụ danh sách/biên bản; không cấp quyền đăng nhập, mở đề, chấm điểm hay xem dữ liệu của người khác. Hội đồng chỉ sửa khi kỳ thi còn nháp. Trường phải khớp hồ sơ của chủ sở hữu.</p>
+    <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Phân công nghiệp vụ phục vụ danh sách/biên bản; không cấp quyền đăng nhập, mở đề, chấm điểm hay xem dữ liệu của người khác. Hội đồng chỉ sửa khi kỳ thi còn nháp. Trường phải khớp hồ sơ của chủ sở hữu; nếu đề do quản trị viên không có hồ sơ giáo viên tạo, được chọn một trường đã đăng ký.</p>
+    {ready&&!owner&&!adminOwnExam&&<p role="status" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">Chưa xác định được hồ sơ giáo viên sở hữu kỳ thi. Không thể lưu hội đồng.</p>}
     <fieldset disabled={!editable||busy} className="space-y-3">
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-sm font-semibold">Tên hội đồng<input maxLength={160} value={name} onChange={e=>setName(e.target.value)} className={'mt-1 '+input}/></label>
-        <label className="text-sm font-semibold">Trường tổ chức<input value={effectiveSchool} readOnly className={'mt-1 '+input}/>{owner?.school&&schoolKey(effectiveSchool)!==schoolKey(owner.school)&&<button type="button" className="mt-1 text-xs text-teal-700 underline" onClick={()=>setSchool(owner.school)}>Cập nhật theo hồ sơ hiện tại</button>}</label>
+        <label className="text-sm font-semibold">Trường tổ chức{adminOwnExam?<select value={effectiveSchool} onChange={e=>setSchool(e.target.value)} className={'mt-1 '+input}><option value="">Chọn trường đã đăng ký</option>{availableSchools.map(group=><option key={group.key} value={group.name}>{group.name}</option>)}</select>:<input value={effectiveSchool} readOnly className={'mt-1 '+input}/>}{owner?.school&&schoolKey(effectiveSchool)!==schoolKey(owner.school)&&<button type="button" className="mt-1 text-xs text-teal-700 underline" onClick={()=>setSchool(owner.school)}>Cập nhật theo hồ sơ hiện tại</button>}</label>
         <label className="text-sm font-semibold">Điểm thi<input maxLength={160} value={site} onChange={e=>setSite(e.target.value)} className={'mt-1 '+input}/></label>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-semibold">Thành viên ({members.length})</h4><button type="button" disabled={members.length>=100} className={button} onClick={()=>setMembers(old=>[...old,{id:crypto.randomUUID(),name:'',role:'Giám thị',room:''}])}><Plus size={15} className="mr-1 inline"/>Thêm thành viên</button></div>
