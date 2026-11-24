@@ -6,6 +6,8 @@ on:
       - 'src/components/ExamManagerLegacy.tsx'
       - 'src/components/UnifiedStudentExamRunner.tsx'
       - 'src/lib/examCandidateWorkspace.ts'
+      - 'src/lib/examOperations.ts'
+      - 'scripts/test-exam-operations-v3.ts'
       - 'scripts/test-exam-candidate-v2.ts'
       - 'src/components/TeacherExam*.tsx'
       - 'src/lib/teacherExamWorkspace.ts'
@@ -19,6 +21,7 @@ on:
     branches:
       - feature/exam-teacher-workspace-20261123
       - feature/exam-candidate-v2-20261124
+      - feature/exam-operations-v3-20261124
 
 permissions:
   contents: read
@@ -36,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps --ignore-scripts
       - name: Test teacher dashboard and old data compatibility
-        run: npm run test:exam-workspace && npm run test:exam-professional && node --import tsx scripts/test-exam-candidate-v2.ts
+        run: npm run test:exam-workspace && npm run test:exam-professional && node --import tsx scripts/test-exam-candidate-v2.ts && node --import tsx scripts/test-exam-operations-v3.ts
       - name: Test student portal, isolation and exam access
         run: |
           npm run test:teacher-isolation
