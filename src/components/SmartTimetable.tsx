@@ -709,6 +709,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
           <TimetableAgentPanel
             key={agentHandoff.revision}
             initialCommand={agentHandoff.command}
+            onConsumeInitialCommand={() => setAgentHandoff(previous => ({ ...previous, command: '' }))}
             scenario={scenario}
             solution={solution}
             busy={busy}
@@ -738,7 +739,7 @@ export default function SmartTimetable({ onBack, storageKey, initialWorkspace, o
         )}
         </React.Suspense>
       </fieldset>
-      {!trialMode && agentUid && <EduAgentDock context="smart-timetable" uid={agentUid} onTimetableCommand={command => {
+      {!trialMode && agentUid && <EduAgentDock context="smart-timetable" uid={agentUid} timetableBusy={busy} onTimetableCommand={command => {
         if (busy) return;
         setAgentHandoff(previous => ({ command, revision: previous.revision + 1 }));
         navigatePage('agent');
