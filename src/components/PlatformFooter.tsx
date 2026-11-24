@@ -51,6 +51,7 @@ import {
 } from '../lib/plickerPwa';
 
 interface PlatformFooterProps {
+  compact?: boolean;
   onTeacherRegister: () => void;
   onTeacherLogin: () => void;
   onStudentLogin: () => void;
@@ -208,6 +209,7 @@ function usePlatformMetrics(): PublicPlatformMetrics {
 }
 
 export default function PlatformFooter({
+  compact = false,
   onTeacherRegister,
   onTeacherLogin,
   onStudentLogin,
@@ -286,6 +288,26 @@ export default function PlatformFooter({
       accent: 'from-lime-400 to-emerald-500',
     },
   ];
+
+  if (compact) return (
+    <section aria-label="Thông tin chung" className="rounded-2xl border border-slate-500/25 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold">Thông tin chung</h2>
+        <span className="text-[10px] opacity-75">{metrics.isFirebaseConnected ? 'Dữ liệu tổng hợp và thiết bị' : 'Dữ liệu công bố / thiết bị'}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {cards.map(card => <div key={card.label} className="min-w-0 rounded-xl border border-slate-500/20 p-2.5">
+          <div className="flex items-center gap-2"><card.icon className="h-4 w-4 shrink-0 opacity-70"/><span className="text-base font-bold">{formatPlatformCount(card.label === 'Ứng dụng giáo dục' ? ECOSYSTEM_APPLICATIONS.length + 1 : card.value)}</span></div>
+          <p className="mt-1 text-[11px]">{card.label === 'Ứng dụng giáo dục' ? 'Chức năng giáo dục' : card.label}</p>
+        </div>)}
+      </div>
+      <p className="mt-2 text-[10px] opacity-70">Lượt truy cập và trực tuyến có thể chỉ phản ánh thiết bị hiện tại khi chưa có số liệu toàn hệ thống. Dấu — là chưa có số liệu xác minh.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+        {!installed && <button type="button" onClick={() => void installPlatform()} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-500/30 px-3 py-2 font-semibold"><Download className="h-4 w-4"/>Cài Edu AI</button>}
+        <a href="mailto:tuyenthcskimhy@gmail.com" className="inline-flex items-center gap-1.5 underline"><Mail className="h-4 w-4"/>Hỗ trợ</a>
+      </div>
+    </section>
+  );
 
   return (
     <footer className="relative overflow-hidden border-t border-slate-800 bg-slate-950 text-slate-300">

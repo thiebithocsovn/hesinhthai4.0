@@ -252,7 +252,8 @@ ok(footer.includes('cachePublicPlatformSnapshot(window.localStorage, published)'
 ok(footer.includes('PLATFORM_SNAPSHOT_REFRESH_INTERVAL_MS'), 'Public aggregates use a bounded refresh schedule.');
 ok(footer.includes('serverTimestamp()'), 'Authorized administrator publication keeps trusted server timestamps.');
 ok(app.includes('publishPlatformRegistrationMetrics(profiles)'), 'Verified administrators publish aggregate-only registration statistics.');
-ok(app.includes('<PlatformFooter'), 'The new community footer is rendered on the homepage.');
+const eduDesktop = readFileSync(new URL('../src/components/FastLandingPage.tsx', import.meta.url), 'utf8');
+ok(app.includes('<FastLandingPage') && eduDesktop.includes('<PlatformFooter') && eduDesktop.includes('compact'), 'The shared Edu AI desktop renders community metrics in Start.');
 ok(!footer.includes('href="#"'), 'Footer actions use real navigation instead of dead placeholder links.');
 
 console.info(`Privacy-safe homepage community statistics: ${checks} checks passed.`);

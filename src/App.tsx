@@ -5,7 +5,8 @@ import { collection, onSnapshot, doc, setDoc, getDocFromServer } from 'firebase/
 import { createUserWithEmailAndPassword, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithCredential, signInWithEmailAndPassword, signOut, type User as FirebaseUser } from 'firebase/auth';
 import { db, auth } from './firebase';
 import { ECOSYSTEM_APPLICATIONS, ECOSYSTEM_DEPENDENCY_LABELS, type EcosystemApplicationId } from './ecosystem';
-import PlatformFooter, { publishPlatformRegistrationMetrics } from './components/PlatformFooter';
+import { publishPlatformRegistrationMetrics } from './components/PlatformFooter';
+import FastLandingPage from './components/FastLandingPage';
 import { isAdministratorAlias, readRememberedAdministratorEmail, rememberVerifiedAdministratorEmail, resolveAdministratorLoginEmail } from './lib/adminAuth';
 import { createPlickerLaunchPath, readRequestedApplication, selectApplicationManifest } from './lib/plickerPwa';
 import { synchronizeTeacherBrowserSession } from './lib/teacherIsolation';
@@ -483,7 +484,7 @@ export default function App() {
             <div className="bg-indigo-500 p-1.5 rounded text-white">
               <BookOpen className="w-6 h-6" />
             </div>
-            <span className="font-bold text-2xl text-white">Lớp Học Thông Minh 4.0</span>
+            <span className="font-bold text-2xl text-white">Edu AI</span>
           </div>
           
           {/* Image Content */}
@@ -705,318 +706,18 @@ export default function App() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* Registration Modal */}
-      {isRegisterModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center p-6 border-b border-slate-100">
-              <h2 className="text-xl font-bold text-slate-900">Đăng ký tài khoản</h2>
-              <button 
-                onClick={() => setIsRegisterModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); setIsRegisterModalOpen(false); }}>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">1. Họ và tên</label>
-                  <input type="text" required className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Nhập họ và tên của bạn" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">2. Đơn vị công tác</label>
-                  <input type="text" required className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Trường học / Trung tâm / Tổ chức" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">3. Địa chỉ công tác</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <input type="text" required className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Xã / Phường" />
-                    <input type="text" required className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Tỉnh / Thành phố" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">4. Email đăng ký</label>
-                  <input type="email" required className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="example@email.com" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">5. Số điện thoại liên hệ</label>
-                  <input type="tel" required className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="09xx xxx xxx" />
-                </div>
-                <div className="pt-4">
-                  <button type="submit" className="w-full bg-indigo-600 text-white font-medium py-2.5 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
-                    Hoàn tất đăng ký
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Logo */}
-            <div className="flex items-center gap-2">
-              <div className="bg-indigo-600 p-2 rounded-lg text-white">
-                <BookOpen className="w-6 h-6" />
-              </div>
-              <span className="font-bold text-xl tracking-tight text-indigo-950">Lớp Học Thông Minh 4.0</span>
-            </div>
-
-            {/* Navigation and Auth */}
-            <div className="flex items-center gap-8">
-              <nav className="hidden md:flex items-center gap-6">
-                <a href="#gioi-thieu" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Giới thiệu</a>
-                <a href="#san-pham" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Sản phẩm</a>
-                <a href="#bang-gia" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Bảng giá</a>
-              </nav>
-
-              <div className="flex items-center gap-4">
-                <button 
-                  onClick={() => setCurrentView('student_exam')}
-                  className="text-sm font-medium text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-full transition-colors hidden sm:flex items-center gap-2"
-                >
-                  <User className="w-4 h-4" />
-                  Học sinh đăng nhập
-                </button>
-                <div className="w-px h-6 bg-slate-200 hidden sm:block"></div>
-                <button 
-                  onClick={() => navigateToAuth('login')}
-                  className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors hidden sm:block"
-                >
-                  Giáo viên
-                </button>
-                <button 
-                  onClick={() => navigateToAuth('register')}
-                  className="text-sm font-medium bg-indigo-600 text-white px-4 py-2 rounded-full hover:bg-indigo-700 transition-colors shadow-sm"
-                >
-                  Đăng ký
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main>
-        {/* Hero Section */}
-        <section
-          className="relative isolate overflow-hidden bg-cover bg-center bg-no-repeat pt-32 pb-24 px-4 sm:px-6 lg:px-8"
-          style={{ backgroundImage: `url("${import.meta.env.BASE_URL}homepage-classroom-background.jpg")` }}
-        >
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/70 via-black/55 to-black/70"
-          />
-
-          <div className="relative max-w-7xl mx-auto text-center z-10">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-black/25 border border-white/35 text-white text-sm font-medium mb-8 backdrop-blur-sm">
-              <Zap className="w-4 h-4 text-yellow-400" />
-              <span>Cơ hội đầu tư phát triển cùng giáo dục Việt Nam</span>
-            </div>
-            <h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-6 leading-tight drop-shadow-lg">
-              Định hình tương lai giáo dục <br className="hidden md:block" />
-              <span className="text-amber-200 drop-shadow-lg">Giơ tay là điều khiển, học là cuốn</span>
-            </h1>
-            <p className="text-lg md:text-xl text-white/90 max-w-3xl mx-auto mb-10 drop-shadow-md">
-              Nền tảng tương tác trực tuyến tích hợp nhận diện cử chỉ (gesture recognition) — điều khiển nội dung bằng tay, tối ưu trải nghiệm dạy–học theo thời gian thực.
-            </p>
-            <div className="flex flex-col sm:flex-row justify-center gap-4">
-              <button 
-                onClick={() => setCurrentView('student_exam')}
-                className="flex items-center justify-center gap-2 bg-emerald-500 text-white px-8 py-4 rounded-full text-lg font-bold hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/30 transform hover:-translate-y-1"
-              >
-                <User className="w-5 h-5" />
-                Học sinh đăng nhập
-              </button>
-              <button 
-                onClick={() => navigateToAuth('register')}
-                className="flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-4 rounded-full text-lg font-bold hover:from-blue-500 hover:to-indigo-500 transition-all shadow-lg shadow-blue-500/30 transform hover:-translate-y-1"
-              >
-                Giáo viên đăng ký <ArrowRight className="w-5 h-5" />
-              </button>
-            </div>
-            
-            {/* Verified ecosystem metrics */}
-            <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto border-t border-white/25 pt-10">
-              <div>
-                <div className="text-4xl font-bold text-white mb-2">{ECOSYSTEM_APPLICATIONS.length}</div>
-                <div className="text-sm text-white/85">Ứng dụng giáo dục</div>
-              </div>
-              <div>
-                <div className="text-4xl font-bold text-white mb-2">{ECOSYSTEM_APPLICATIONS.filter(application => application.dependency === 'browser').length}</div>
-                <div className="text-sm text-white/85">Công cụ chạy trên thiết bị</div>
-              </div>
-              <div>
-                <div className="text-4xl font-bold text-white mb-2">21</div>
-                <div className="text-sm text-white/85">Điểm nhận dạng bàn tay</div>
-              </div>
-              <div>
-                <div className="text-4xl font-bold text-white mb-2">A–D</div>
-                <div className="text-sm text-white/85">Chọn đáp án bằng cử chỉ</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Products Section */}
-        <section id="san-pham" className="py-24 bg-slate-50 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5 pointer-events-none"></div>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="text-center mb-20">
-              <h2 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">Hệ sinh thái sản phẩm</h2>
-              <p className="text-lg text-slate-600 max-w-2xl mx-auto">Giải pháp giáo dục toàn diện, ứng dụng công nghệ tiên tiến giúp tối ưu hóa trải nghiệm dạy và học.</p>
-            </div>
-
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {ECOSYSTEM_APPLICATIONS.map(application => {
-                const ProductIcon = PRODUCT_ICONS[application.id];
-                const needsServer = application.dependency === 'ai-server';
-
-                return (
-                  <button
-                    key={application.id}
-                    type="button"
-                    onClick={() => launchApplication(application.id)}
-                    className="group relative flex min-h-64 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-8 text-left transition-all duration-300 hover:border-indigo-400 hover:shadow-xl"
-                  >
-                    <div className="mb-6 flex w-full items-start justify-between gap-3">
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-500 text-white shadow-lg shadow-indigo-500/20 transition-transform group-hover:-translate-y-1">
-                        <ProductIcon className="h-7 w-7" />
-                      </div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${needsServer ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                        {ECOSYSTEM_DEPENDENCY_LABELS[application.dependency]}
-                      </span>
-                    </div>
-                    <span className="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">{application.category}</span>
-                    <h3 className="mb-3 text-xl font-bold text-slate-900 transition-colors group-hover:text-indigo-700">{application.name}</h3>
-                    <p className="text-sm leading-6 text-slate-600">{application.description}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        {/* Pricing Section */}
-        <section id="bang-gia" className="py-20 bg-slate-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-16">
-              <h2 className="text-3xl font-bold text-slate-900 mb-4">Bảng giá linh hoạt</h2>
-              <p className="text-slate-600 max-w-2xl mx-auto">Lựa chọn gói giải pháp phù hợp nhất với quy mô trường học hoặc trung tâm của bạn.</p>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-              {/* Basic Plan */}
-              <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">Cơ bản</h3>
-                <p className="text-slate-500 text-sm mb-6">Dành cho giáo viên cá nhân</p>
-                <div className="mb-6">
-                  <span className="text-4xl font-bold text-slate-900">Miễn phí</span>
-                </div>
-                <ul className="space-y-4 mb-8">
-                  <li className="flex items-center gap-3 text-slate-600">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                    <span>Tối đa 50 học sinh</span>
-                  </li>
-                  <li className="flex items-center gap-3 text-slate-600">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                    <span>Lớp học ảo 40 phút</span>
-                  </li>
-                  <li className="flex items-center gap-3 text-slate-600">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                    <span>Quản lý bài tập cơ bản</span>
-                  </li>
-                </ul>
-                <button 
-                  onClick={() => navigateToAuth('register')}
-                  className="w-full py-3 px-4 bg-indigo-50 text-indigo-600 font-medium rounded-xl hover:bg-indigo-100 transition-colors"
-                >
-                  Đăng ký ngay
-                </button>
-              </div>
-
-              {/* Pro Plan */}
-              <div className="bg-indigo-600 rounded-3xl p-8 border border-indigo-500 shadow-xl relative transform md:-translate-y-4">
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gradient-to-r from-pink-500 to-violet-500 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-                  Phổ biến nhất
-                </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Chuyên nghiệp</h3>
-                <p className="text-indigo-200 text-sm mb-6">Dành cho trung tâm đào tạo</p>
-                <div className="mb-6">
-                  <span className="text-4xl font-bold text-white">499.000đ</span>
-                  <span className="text-indigo-200">/tháng</span>
-                </div>
-                <ul className="space-y-4 mb-8">
-                  <li className="flex items-center gap-3 text-indigo-50">
-                    <CheckCircle2 className="w-5 h-5 text-indigo-300 flex-shrink-0" />
-                    <span>Không giới hạn học sinh</span>
-                  </li>
-                  <li className="flex items-center gap-3 text-indigo-50">
-                    <CheckCircle2 className="w-5 h-5 text-indigo-300 flex-shrink-0" />
-                    <span>Lớp học ảo không giới hạn</span>
-                  </li>
-                  <li className="flex items-center gap-3 text-indigo-50">
-                    <CheckCircle2 className="w-5 h-5 text-indigo-300 flex-shrink-0" />
-                    <span>Trợ giảng AI cơ bản</span>
-                  </li>
-                </ul>
-                <button 
-                  onClick={() => navigateToAuth('register')}
-                  className="w-full py-3 px-4 bg-white text-indigo-600 font-medium rounded-xl hover:bg-slate-50 transition-colors shadow-sm"
-                >
-                  Dùng thử 14 ngày
-                </button>
-              </div>
-
-              {/* Enterprise Plan */}
-              <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">Doanh nghiệp</h3>
-                <p className="text-slate-500 text-sm mb-6">Dành cho trường học, tổ chức</p>
-                <div className="mb-6">
-                  <span className="text-4xl font-bold text-slate-900">Liên hệ</span>
-                </div>
-                <ul className="space-y-4 mb-8">
-                  <li className="flex items-center gap-3 text-slate-600">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                    <span>Mọi tính năng gói Pro</span>
-                  </li>
-                  <li className="flex items-center gap-3 text-slate-600">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                    <span>Tên miền & Logo riêng</span>
-                  </li>
-                  <li className="flex items-center gap-3 text-slate-600">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                    <span>Tích hợp API hệ thống khác</span>
-                  </li>
-                  <li className="flex items-center gap-3 text-slate-600">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                    <span>Hỗ trợ kỹ thuật 24/7</span>
-                  </li>
-                </ul>
-                <button 
-                  onClick={() => navigateToAuth('register')}
-                  className="w-full py-3 px-4 bg-indigo-50 text-indigo-600 font-medium rounded-xl hover:bg-indigo-100 transition-colors"
-                >
-                  Nhận báo giá
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      <PlatformFooter
-        onTeacherRegister={() => navigateToAuth('register')}
-        onTeacherLogin={() => navigateToAuth('login')}
-        onStudentLogin={() => setCurrentView('student_exam')}
-        onOpenProduct={launchApplication}
-      />
-    </div>
-  );
+  return <FastLandingPage
+    onTeacherLogin={() => currentUser && auth.currentUser ? setCurrentView('admin') : navigateToAuth('login')}
+    onTeacherRegister={() => navigateToAuth('register')}
+    onStudentLogin={() => setCurrentView('student_exam')}
+    onOpenProduct={launchApplication}
+    account={currentUser === 'admin' ? { name: 'Quản trị viên', email: auth.currentUser?.email || '' } : currentUser ? { name: currentUser.name, school: currentUser.school, email: currentUser.email } : undefined}
+    onSignOut={currentUser ? () => {
+      void signOut(auth).then(() => {
+        setCurrentUser(null);
+        setTeachers([]);
+        synchronizeTeacherBrowserSession(sessionStorage, null);
+      }).catch(error => setAuthMessage(describeAuthError(error)));
+    } : undefined}
+  />;
 }
