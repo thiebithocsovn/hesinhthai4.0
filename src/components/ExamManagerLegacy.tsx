@@ -4,6 +4,8 @@ import { RichTextEditor } from './RichTextEditor';
 import TeacherExamNavigation, { type TeacherWorkspaceView } from './TeacherExamNavigation';
 import TeacherExamOverview from './TeacherExamOverview';
 import TeacherExamOperations from './TeacherExamOperations';
+import TeacherExamCouncil from './TeacherExamCouncil';
+import type { CouncilPlan } from '../lib/examCouncil';
 import { type ExamOperationsPlan, eligibleRoster, makeRooms, normalizeLevel, summarizeRoomSessions } from '../lib/examOperations';
 import TeacherQuestionBank, { type BankSelection } from './TeacherQuestionBank';
 import TeacherExamCalendar from './TeacherExamCalendar';
@@ -114,6 +116,7 @@ interface Exam {
   roundScoreToInteger?: boolean;
   examProfile?: ExamProfile;
   operationsPlan?: ExamOperationsPlan;
+  councilPlan?: CouncilPlan;
 }
 
 interface StudentClass {
@@ -209,10 +212,9 @@ async function synchronizeExamPublication(exam: Exam, previousExam: Exam = exam,
     authorizedExams.push({ code: version.code, exam: selectedVersion });
   }
   for (const authorized of authorizedExams) {
-    // Room assignments and teacher blueprint are private. Never expose them in the candidate payload.
-    const { operationsPlan: _privateOperationsPlan, ...candidateExam } = authorized.exam;
+    // The shared sanitizer strips all teacher-only metadata before encryption.
     batch.set(doc(db, PUBLIC_EXAM_ACCESS_COLLECTION, await createExamAccessDocumentId(authorized.code)),
-      await protectExamForAccess(stripTeacherOnlyFields(candidateExam), authorized.code));
+      await protectExamForAccess(stripTeacherOnlyFields(authorized.exam), authorized.code));
   }
   const schedule = await createPublicExamSchedule(exam);
   batch.set(doc(db, PUBLIC_EXAM_SCHEDULES_COLLECTION, schedule.id), schedule);
@@ -227,7 +229,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const [appMode, setAppMode] = useState<'landing' | 'teacher' | 'student'>(initialMode);
   // The overview reuses the existing 'exams' subscription. No extra roster/result reads.
   const [teacherTab, setTeacherTab] = useState<'exams' | 'students' | 'monitoring' | 'results' | 'scanning'>('exams');
-  const [examPage, setExamPage] = useState<'overview' | 'list' | 'calendar' | 'bank'>('overview');
+  const [examPage, setExamPage] = useState<'overview' | 'list' | 'calendar' | 'bank' | 'council'>('overview');
   const [studentsPage, setStudentsPage] = useState<'roster' | 'operations'>('roster');
   const [studentsServerReady,setStudentsServerReady] = useState(false);
   const [classesServerReady,setClassesServerReady] = useState(false);
@@ -2110,10 +2112,10 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   }
 
   const currentWorkspaceView: TeacherWorkspaceView = teacherTab === 'exams'
-    ? (examPage === 'overview' ? 'overview' : examPage === 'calendar' ? 'calendar' : examPage === 'bank' ? 'bank' : 'exams')
+    ? (examPage === 'overview' ? 'overview' : examPage === 'calendar' ? 'calendar' : examPage === 'bank' ? 'bank' : examPage === 'council' ? 'council' : 'exams')
     : teacherTab === 'results' && resultsPage === 'analytics' ? 'analytics' : teacherTab === 'students' && studentsPage === 'operations' ? 'operations' : teacherTab;
   const navigateTeacherView = (view: TeacherWorkspaceView) => {
-    if (view === 'overview' || view === 'exams' || view === 'calendar' || view === 'bank') {
+    if (view === 'overview' || view === 'exams' || view === 'calendar' || view === 'bank' || view === 'council') {
       setTeacherTab('exams');
       setExamPage(view === 'exams' ? 'list' : view);
       return;
@@ -2170,6 +2172,9 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
         {/* Main Content */}
         <div className="flex-1 overflow-auto p-6 md:p-8">
           <TeacherExamPrintStation key={auth.currentUser?.uid || 'guest'} exams={exams} authenticatedUid={resolveTeacherAccessScope(currentUser, auth.currentUser?.uid).role === 'guest' ? '' : auth.currentUser?.uid || ''} />
+          {teacherTab === 'exams' && examPage === 'council' && (
+            <TeacherExamCouncil key={auth.currentUser?.uid || 'guest'} exams={exams} currentUser={currentUser} onEdit={openExamFromWorkspace}/>
+          )}
           {teacherTab === 'exams' && examPage === 'overview' && (
             <TeacherExamOverview
               exams={exams}

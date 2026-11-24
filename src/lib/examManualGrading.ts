@@ -304,11 +304,12 @@ export function stripTeacherOnlyFields<E extends { questions: GradableQuestion[]
     const { sampleAnswer: _hidden, ...rest } = question;
     return rest as Q;
   });
+  const { operationsPlan: _privateOperationsPlan, councilPlan: _privateCouncilPlan, ...candidate } = exam as E & { operationsPlan?: unknown; councilPlan?: unknown };
   return {
-    ...exam,
+    ...candidate,
     questions: clean(exam.questions),
     ...(exam.shuffledVersions ? { shuffledVersions: exam.shuffledVersions.map(version => ({ ...version, questions: clean(version.questions) })) } : {}),
-  };
+  } as E;
 }
 
 const STOP_WORDS = new Set(['những', 'được', 'trong', 'không', 'nhưng', 'cũng', 'hoặc', 'người', 'mình', 'chúng', 'này', 'khi', 'các', 'với', 'của', 'cho', 'một', 'là', 'và', 'thì', 'có', 'để', 'em', 'hãy', 'ý']);

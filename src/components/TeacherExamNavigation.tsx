@@ -1,6 +1,6 @@
-import { Activity, BarChart3, BookOpenText, CalendarDays, ClipboardList, GraduationCap, LayoutDashboard, LayoutGrid, ScanLine, Users, type LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, BookOpenText, Building2, CalendarDays, ClipboardList, GraduationCap, LayoutDashboard, LayoutGrid, ScanLine, Users, type LucideIcon } from 'lucide-react';
 
-export type TeacherWorkspaceView = 'overview' | 'exams' | 'calendar' | 'bank' | 'operations' | 'students' | 'monitoring' | 'results' | 'analytics' | 'scanning';
+export type TeacherWorkspaceView = 'overview' | 'exams' | 'calendar' | 'bank' | 'council' | 'operations' | 'students' | 'monitoring' | 'results' | 'analytics' | 'scanning';
 
 interface NavigationItem {
   id: TeacherWorkspaceView;
@@ -11,6 +11,7 @@ interface NavigationItem {
 
 const ITEMS: NavigationItem[] = [
   { id: 'overview', label: 'Tổng quan', icon: LayoutDashboard, group: 'Quản lý' },
+  { id: 'council', label: 'Trường & hội đồng thi', icon: Building2, group: 'Quản lý' },
   { id: 'exams', label: 'Kỳ thi & đề thi', icon: ClipboardList, group: 'Quản lý' },
   { id: 'bank', label: 'Ngân hàng câu hỏi', icon: BookOpenText, group: 'Quản lý' },
   { id: 'calendar', label: 'Lịch thi', icon: CalendarDays, group: 'Quản lý' },
