@@ -1,0 +1,115 @@
+name: Verified one-time Firebase exam rules release
+on:
+  push:
+    branches: [release/firebase-exam-rules-20261124]
+    paths: ['.github/workflows/firebase-verified-exam-release-20261124.yml']
+permissions:
+  contents: read
+concurrency:
+  group: hesinhthai-production-firestore-rules
+  cancel-in-progress: false
+jobs:
+  deploy-reviewed-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PROJECT_ID: gen-lang-client-0870957273
+      DATABASE_ID: ai-studio-51fdfd5e-caf8-4640-bdd8-404753ba685e
+      REVIEWED_COMMIT: 0c67460450967952220e9fd9b83a446500b4c5c5
+      LIVE_BACKUP_COMMIT: c30e502c871e9ed2f31ad94efb50276f8f40464f
+      LIVE_BACKUP_SHA256: 579c1ca7873d2ec9c9f7277c84e7fbad0c402c9e502c76087f39aa475e01eef8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact reviewed commit and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$REVIEWED_COMMIT"
+          test "$(git diff --name-only "$REVIEWED_COMMIT" HEAD)" = '.github/workflows/firebase-verified-exam-release-20261124.yml'
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const target=JSON.parse(fs.readFileSync("firebase.json","utf8")).firestore;
+            if(target.length!==1||target[0].database!==process.env.DATABASE_ID||target[0].rules!=="firestore.rules")throw Error("Wrong database target");
+          '
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - name: Re-run reviewed rules tests
+        run: npx --yes firebase-tools@^15.17.0 emulators:exec --project demo-learning-wall --config firebase.learning-wall.json --only firestore "npm run test:exam-access-rules && EXAM_RULES_FILE=firestore.learning-wall.rules npm run test:exam-access-rules && node --import tsx scripts/test-exam-staff-rules.ts && node --import tsx scripts/test-exam-direct-enrollment-rules.ts"
+      - name: Verify live backup, deploy exact rules, confirm production source
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-rules-exam-release.json
+        run: |
+          set -euo pipefail
+          test -n "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" || { echo 'Missing configured deployment credential'; exit 1; }
+          umask 077
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS" .firebase-exam-rule-verify.mjs' EXIT
+          cat > .firebase-exam-rule-verify.mjs <<'NODE'
+          import {GoogleAuth} from 'google-auth-library';
+          import {createHash} from 'node:crypto';
+          import {readFileSync} from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          const norm=s=>s.replace(/\r\n/g,'\n').trimEnd();
+          const sha=s=>createHash('sha256').update(norm(s)).digest('hex');
+          const target=sha(readFileSync('firestore.rules','utf8'));
+          const backup=sha(execFileSync('git',['show',process.env.LIVE_BACKUP_COMMIT+':firestore.rules'],{encoding:'utf8'}));
+          if(backup!==process.env.LIVE_BACKUP_SHA256)throw Error('Verified rollback source hash mismatch');
+          const credentials=JSON.parse(readFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS,'utf8'));
+          if(credentials.project_id!==process.env.PROJECT_ID)throw Error('Credential project mismatch');
+          const auth=new GoogleAuth({credentials,scopes:['https://www.googleapis.com/auth/firebase']});
+          const client=await auth.getClient();
+          const get=async path=>{
+            const response=await client.request({url:'https://firebaserules.googleapis.com/v1/'+path,method:'GET'});
+            return response.data;
+          };
+          const liveHash=async()=>{
+            const release=await get('projects/'+process.env.PROJECT_ID+'/releases/cloud.firestore/'+process.env.DATABASE_ID);
+            const rules=await get(release.rulesetName);
+            const files=rules.source?.files||[];
+            if(files.length!==1||typeof files[0].content!=='string')throw Error('Unexpected live rules source');
+            return sha(files[0].content);
+          };
+          try{
+            if(process.argv[2]==='before'){
+              const live=await liveHash();
+              if(live===target){console.log('ALREADY_DEPLOYED');process.exit(0);}
+              if(live!==backup)throw Error('Live rules changed since backup. Refusing to overwrite.');
+              console.log('BACKUP_VERIFIED');
+            }else{
+              for(let i=0;i<6;i++){
+                if(await liveHash()===target){console.log('PRODUCTION_RULES_VERIFIED '+target);process.exit(0);}
+                await new Promise(resolve=>setTimeout(resolve,5000));
+              }
+              throw Error('New live rules hash not confirmed');
+            }
+          }catch(error){
+            // Do not serialize SDK error objects, headers, response bodies or credentials.
+            console.error('Rules verification failed: '+(error instanceof Error&&/^(Live rules changed|Unexpected live rules source|New live rules hash)/.test(error.message)?error.message:'Google Rules API request or verification failed'));
+            process.exit(1);
+          }
+          NODE
+          status="$(node .firebase-exam-rule-verify.mjs before)"
+          echo "$status"
+          if [[ "$status" = 'BACKUP_VERIFIED' ]]; then
+            npm run deploy:firestore
+          elif [[ "$status" != 'ALREADY_DEPLOYED' ]]; then
+            echo 'Unknown preflight state; no deployment'; exit 1
+          fi
+          node .firebase-exam-rule-verify.mjs after
+          echo '### Verified named Firestore rules release' >> "$GITHUB_STEP_SUMMARY"
+          echo "Reviewed commit: $REVIEWED_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+          echo "Rollback source: $LIVE_BACKUP_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+          echo "Database: $DATABASE_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo 'No document migration or deletion performed.' >> "$GITHUB_STEP_SUMMARY"
