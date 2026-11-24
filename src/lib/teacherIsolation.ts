@@ -197,7 +197,7 @@ export async function createPrivateStudentRosterDirectory(
     byClass.set(key,group);
   }
   for(const [key,group] of byClass){
-    if(group.length>1)directory[key]={id:'',classId:group[0].classId,ambiguous:true};
+    if(group.length>1)directory[key]={id:'',classId:group[0].classId,ambiguous:true,...(group.every(item=>item.selfEnrolled)?{selfEnrolled:true}:{})};
   }
   return directory;
 }
