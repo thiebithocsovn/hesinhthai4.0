@@ -746,7 +746,7 @@ export default function App() {
     } : undefined}
   />;
   };
-  const showAgent = Boolean(currentUser && auth.currentUser && !['landing','auth','admin','student_exam'].includes(currentView));
+  const showAgent = Boolean(currentUser && auth.currentUser && !['landing','auth','admin','student_exam'].includes(currentView) && !(currentView === 'learning-wall' && /^#wall=[a-f0-9]{48}$/.test(window.location.hash)));
   return <>{renderCurrentView()}{showAgent && <EduAgentDock context={resolveAgentContext(currentView)} uid={auth.currentUser?.uid} onLaunch={launchFromAgent}/>}</>;
 
 }
