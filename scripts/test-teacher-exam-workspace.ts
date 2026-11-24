@@ -40,3 +40,11 @@ assert.ok(entry.includes('ExamManagerLegacy') && entry.includes('UnifiedStudentE
 assert.ok(dashboard.includes('summarizeTeacherExams(exams, now)') && !dashboard.includes('collection(db,'), 'Dashboard relies only on already-fetched exams.');
 assert.ok(navigation.includes('aria-current') && navigation.includes('compact'), 'Navigation supports desktop and mobile.');
 console.info('Teacher exam workspace: backward compatibility and presentation checks passed.');
+
+const station = readFileSync(new URL('../src/components/TeacherExamPrintStation.tsx', import.meta.url), 'utf8');
+assert.ok(station.includes('useState(false)') && station.includes('hidden={!expanded}') && station.includes('aria-expanded={expanded}'), 'Print controls are collapsed by default and keyboard accessible.');
+assert.ok(station.includes('station && <button type="button" onClick={stop}'), 'Stop control remains visible when settings are collapsed.');
+assert.ok(manager.includes('workspaceCounts = summarizeTeacherExams(exams, Date.now())') && manager.includes('aria-pressed={examStatusFilter===value}'), 'State summary cards use the existing exam filter.');
+assert.ok(manager.includes('setExamSearch(\'\');setExamStatusFilter(\'all\');'), 'Reset filters restores all exams.');
+assert.ok(manager.includes('handleShuffleExam(exam.id)') && manager.includes('handleExportAnswers(exam.id)') && manager.includes('finalizeClosedExamSessions(exam)') && manager.includes('setExamToDelete(exam.id)'), 'All old actions remain connected.');
+console.info('Compact workspace controls, existing actions and print station regression checks passed.');

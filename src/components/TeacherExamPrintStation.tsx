@@ -16,6 +16,7 @@ export default function TeacherExamPrintStation({ exams, authenticatedUid }: Pro
     try { const stored = sessionStorage.getItem(sessionKey); const parsed = stored ? JSON.parse(stored) : null; return parsed && Array.isArray(parsed.baselineIds) ? parsed : null; } catch { return null; }
   });
   const [selectedId, setSelectedId] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const [ready, setReady] = useState(false);
   const [baselineReady, setBaselineReady] = useState(false);
   const baselineRef = useRef<string[]>([]);
@@ -135,8 +136,19 @@ export default function TeacherExamPrintStation({ exams, authenticatedUid }: Pro
   const stop = () => { setStation(null); try { sessionStorage.removeItem(sessionKey); } catch {} setMessage('Đã dừng nhận lệnh in mới. Phiếu đang xử lý sẽ hoàn tất.'); };
 
   if (!authenticatedUid) return null;
-  return <section className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4" aria-label="Máy in giáo viên">
-    <h3 className="flex items-center gap-2 font-bold text-blue-900"><Printer size={20} />Máy giáo viên: nhận bài → chấm → tự in phiếu ký</h3>
+  return <section className="mb-4 rounded-xl border border-slate-200 bg-white" aria-label="Máy in giáo viên">
+    <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Printer size={18}/></span>
+        <div className="min-w-0"><h3 className="text-sm font-bold text-slate-900">Trạm in phiếu ký</h3>
+          <p className="truncate text-xs text-slate-500">{station ? (selected?.title || 'Kỳ thi đã chọn') : 'Nhận bài, chấm và gửi lệnh in tại máy giáo viên'}</p></div>
+      </div>
+      <span role="status" className={'rounded-full px-2.5 py-1 text-xs font-semibold '+(station?'bg-emerald-50 text-emerald-800':'bg-slate-100 text-slate-600')}>{station?'Đã bật trạm':'Chưa bật'}</span>
+      {station && <button type="button" onClick={stop} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">Dừng trạm in</button>}
+      <button type="button" aria-expanded={expanded} aria-controls="teacher-print-station-settings" onClick={()=>setExpanded(v=>!v)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{expanded?'Thu gọn':'Cấu hình trạm in'}</button>
+    </div>
+    {station && !expanded && message && <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-600" role="status">{message}</p>}
+    <div id="teacher-print-station-settings" hidden={!expanded} className="border-t border-slate-100 px-4 pb-4 pt-2">
     <p className="mt-2 text-sm text-slate-600">Cấu hình Chrome và máy in một lần, bật trạm trước giờ thi và giữ cửa sổ giáo viên này mở. Máy học sinh chỉ nộp bài. Mỗi bài được xếp hàng và gửi lệnh lần lượt.</p>
     {selected && receiptSignTiming(selected) === 'after-grading' && <p className="mt-2 rounded-lg bg-white/70 p-2 text-sm text-violet-900">Đề có tự luận / thực hành: mỗi phiếu ký được in <b>một lần</b>, ngay khi thầy cô chấm xong bài của em đó (kể cả bài nộp trước khi bật trạm nếu được chấm trong lúc trạm đang bật). Học sinh chỉ ký một lần trên phiếu có điểm cuối cùng.</p>}
     <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -149,5 +161,6 @@ export default function TeacherExamPrintStation({ exams, authenticatedUid }: Pro
     <p className="mt-2 text-xs text-slate-600">Chỉ tự in các bài nộp từ lúc bật trạm. Trình duyệt thường vẫn hiện hộp thoại; bộ cấu hình dành cho Chrome 144 trở lên giúp in không cần bấm In. Trạng thái “đã gửi” ghi nhận lệnh trình duyệt, không xác nhận giấy đã ra; hãy kiểm tra hàng đợi Windows khi máy in hết giấy hoặc mất kết nối.</p>
     {message && <p className="mt-3 text-sm font-medium text-blue-900" role="status">{message}</p>}
     {!!entries.length && <ul className="mt-2 space-y-1 text-sm">{entries.map(item => <li key={item.id} className={item.status === 'failed' || item.status === 'uncertain' ? 'text-red-700' : 'text-slate-700'}>{item.message}</li>)}</ul>}
+    </div>
   </section>;
 }
