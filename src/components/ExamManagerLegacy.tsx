@@ -274,17 +274,17 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     setRecoveryBusy(true);setRecoveryNotice('');setRecoveryPacket(null);
     try{
       const scope=resolveTeacherAccessScope(currentUser,auth.currentUser?.uid);
-      if(!canAccessTeacherOwnedRecord(scope,session))throw Error('Không có quyền đối với phiên thi này.');
+      if(!isValidTeacherUid(session.teacherId)||!canAccessTeacherOwnedRecord(scope,session))throw Error('Không có quyền đối với phiên thi này.');
       const [e,st,ss,result]=await Promise.all([
         getDocFromServer(doc(db,'exams',session.examId)),getDocFromServer(doc(db,'students',session.studentId)),
-        getDocFromServer(doc(db,'exam_sessions',session.id)),getDocFromServer(doc(db,'results',session.id)),
+        getDocFromServer(doc(db,'exam_sessions',session.id)),getDocsFromServer(query(collection(db,'results'),where('teacherId','==',session.teacherId),where('examId','==',session.examId),where('studentId','==',session.studentId))),
       ]);
       if(!e.exists()||!st.exists()||!ss.exists())throw Error('Thiếu dữ liệu phiên thi.');
       const exam={...e.data(),id:e.id} as Exam;
       const student={...st.data(),id:st.id} as StudentAccount;
       const live={...ss.data(),id:ss.id} as ExamSession;
       if(![exam,student,live].every(row=>canAccessTeacherOwnedRecord(scope,row)))throw Error('Dữ liệu không thuộc phạm vi quản lý.');
-      const recovery=buildTeacherRecovery(exam,student,live,result.exists());
+      const recovery=buildTeacherRecovery(exam,student,live,!result.empty);
       const packet=await encryptTeacherRecovery(recovery);
       setRecoveryPacket({...packet,name:recovery.student.name});
       setRecoveryNotice('Đã tạo gói khôi phục từ bản nháp máy chủ, có hiệu lực sử dụng trong 10 phút và không kéo dài thời gian thi.');
