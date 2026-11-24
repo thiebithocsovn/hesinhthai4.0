@@ -4,7 +4,7 @@ import { RichTextEditor } from './RichTextEditor';
 import TeacherExamNavigation, { type TeacherWorkspaceView } from './TeacherExamNavigation';
 import TeacherExamOverview from './TeacherExamOverview';
 import TeacherExamOperations from './TeacherExamOperations';
-import { type ExamOperationsPlan, eligibleRoster, makeRooms, normalizeLevel } from '../lib/examOperations';
+import { type ExamOperationsPlan, eligibleRoster, makeRooms, normalizeLevel, summarizeRoomSessions } from '../lib/examOperations';
 import TeacherQuestionBank, { type BankSelection } from './TeacherQuestionBank';
 import TeacherExamCalendar from './TeacherExamCalendar';
 import TeacherExamAnalytics from './TeacherExamAnalytics';
@@ -251,6 +251,15 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
   const [classReceiptSessionsLoading, setClassReceiptSessionsLoading] = useState(false);
   const [classReceiptSessionsError, setClassReceiptSessionsError] = useState('');
   const [activeSessions, setActiveSessions] = useState<ExamSession[]>([]);
+  const [sessionsServerReady,setSessionsServerReady] = useState(false);
+  const [sessionsError,setSessionsError] = useState('');
+  const [monitorNow,setMonitorNow] = useState(Date.now());
+  useEffect(() => {
+    if (teacherTab !== 'monitoring') return;
+    setMonitorNow(Date.now());
+    const id = window.setInterval(() => setMonitorNow(Date.now()),10000);
+    return () => window.clearInterval(id);
+  },[teacherTab]);
   const restoredPublishedExamIds = useRef(new Set<string>());
   const [publicationError, setPublicationError] = useState('');
   const [publicationRetry, setPublicationRetry] = useState(0);
@@ -272,6 +281,8 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     setIsResultsDeleteOpen(false);
     setClassReceiptExamId(null);
     setActiveSessions([]);
+    setSessionsServerReady(false);
+    setSessionsError('');
     if (accessScope.role === 'guest') {
       return;
     }
@@ -324,21 +335,29 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
     }
 
     let pendingSessions: ExamSession[] | null = null;
+    let pendingSessionsReady = false;
     let sessionUpdateTimer: NodeJS.Timeout | null = null;
 
     if (teacherTab === 'monitoring') {
-      subscriptions.push(onSnapshot(sessionsQuery, (snapshot: any) => {
+      subscriptions.push(onSnapshot(sessionsQuery, {includeMetadataChanges:true}, (snapshot: any) => {
+        pendingSessionsReady = !snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites;
         pendingSessions = filterTeacherOwnedRecords(accessScope,
           snapshot.docs.map((item: any) => ({ id: item.id, ...item.data() } as ExamSession)));
         if (!sessionUpdateTimer) {
           sessionUpdateTimer = setTimeout(() => {
             if (pendingSessions) {
               setActiveSessions(pendingSessions);
+              setSessionsServerReady(pendingSessionsReady);
+              setSessionsError('');
             }
             sessionUpdateTimer = null;
           }, 2000);
         }
-      }, () => setActiveSessions([])));
+      }, () => {
+        if (sessionUpdateTimer) clearTimeout(sessionUpdateTimer);
+        sessionUpdateTimer = null;pendingSessions = null;
+        setActiveSessions([]);setSessionsServerReady(false);setSessionsError('Không thể tải phiên thi. Kiểm tra kết nối và quyền tài khoản.');
+      }));
     }
 
     return () => {
@@ -2648,14 +2667,32 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                 </div>
               </div>
 
+              {!sessionsServerReady && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{sessionsError || 'Đang xác nhận dữ liệu phiên thi với máy chủ; số liệu có thể chưa đầy đủ.'}</p>}
+              {(() => {
+                const exam = exams.find(item => item.id === (selectedExamIdForResults || exams[0]?.id));
+                const rooms = exam?.operationsPlan?.rooms || [];
+                if (!rooms.length) return null;
+                const state = summarizeRoomSessions(rooms,activeSessions.filter(session => session.examId === exam?.id && session.teacherId === exam?.teacherId),monitorNow,EXAM_SESSION_ONLINE_WINDOW_MS);
+                return <section className="mb-4 rounded-xl border bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold text-slate-900">Tiến độ theo phòng đã lập</h3><span className="text-xs text-slate-500">{state.unassigned} học sinh có phiên thi ngoài kế hoạch</span></div>
+                  <p className="mb-3 text-xs text-slate-500">Chưa có phiên không đồng nghĩa vắng mặt. Mất kết nối dựa trên hoạt động cuối của phiên; không tự động kết luận vi phạm.</p>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {state.summaries.map(room => <article key={room.name} className="rounded-lg border bg-slate-50 p-3">
+                      <div className="mb-2 flex justify-between gap-2"><strong>{room.name}</strong><span className="text-xs text-slate-500">{room.planned} dự kiến</span></div>
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-emerald-600" style={{width:(room.planned ? 100*room.submitted/room.planned : 0)+'%'}} /></div>
+                      <div className="mt-3 grid grid-cols-2 gap-1 text-xs"><span>Đã nộp: <b>{room.submitted}</b></span><span>Đang kết nối: <b>{room.online}</b></span><span>Mất kết nối: <b>{room.disconnected}</b></span><span>Chưa có phiên: <b>{room.notSeen}</b></span></div>
+                    </article>)}
+                  </div>
+                </section>;
+              })()}
               <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {(() => {
                   const selected = activeSessions.filter(session => session.examId === (selectedExamIdForResults || exams[0]?.id));
                   const taking = selected.filter(session => session.status === 'taking');
-                  const online = taking.filter(session => Date.now() - new Date(session.lastActive).getTime() < EXAM_SESSION_ONLINE_WINDOW_MS);
+                  const online = taking.filter(session => monitorNow - new Date(session.lastActive).getTime() < EXAM_SESSION_ONLINE_WINDOW_MS);
                   return ([
                     ['Tổng lượt vào thi', selected.length],
-                    ['Đang làm bài', taking.length],
+                    ['Đang kết nối', online.length],
                     ['Đã nộp bài', selected.filter(session => session.status === 'submitted').length],
                     ['Mất kết nối', taking.length - online.length],
                   ] as const).map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -2682,7 +2719,7 @@ export default function ExamManager({ onBack, initialMode = 'landing', currentUs
                       .map(session => {
                         const student = students.find(s => s.id === session.studentId);
                         const studentClass = classes.find(c => c.id === student?.classId);
-                        const isOnline = new Date().getTime() - new Date(session.lastActive).getTime() < EXAM_SESSION_ONLINE_WINDOW_MS;
+                        const isOnline = monitorNow - new Date(session.lastActive).getTime() < EXAM_SESSION_ONLINE_WINDOW_MS;
                         
                         return (
                           <tr key={session.id} className="hover:bg-slate-50">
