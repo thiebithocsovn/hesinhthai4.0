@@ -176,28 +176,6 @@ export default function ProductTrialController() {
   }), []);
 
   useEffect(() => {
-    const requestedAuth = new URLSearchParams(window.location.search).get('auth');
-    if (requestedAuth !== 'login' && requestedAuth !== 'register') return;
-
-    let attempts = 0;
-    const timer = window.setInterval(() => {
-      attempts += 1;
-      const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
-      const expectedText = requestedAuth === 'register' ? 'Đăng ký' : 'Giáo viên';
-      const target = buttons.find(button => button.textContent?.trim() === expectedText);
-      if (target) {
-        window.clearInterval(timer);
-        target.click();
-        window.history.replaceState(window.history.state, '', import.meta.env.BASE_URL);
-      } else if (attempts > 40) {
-        window.clearInterval(timer);
-      }
-    }, 50);
-
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
     const rewritePricingTrialLabel = () => {
       document.querySelectorAll<HTMLButtonElement>('button').forEach(button => {
         if (button.textContent?.trim() === 'Dùng thử 14 ngày') button.textContent = 'Dùng thử';

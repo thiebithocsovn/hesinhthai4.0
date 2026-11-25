@@ -24,7 +24,7 @@
     "test:question-engine": "node --import tsx scripts/test-question-engine.ts",
     "test:question-pptx": "node --import tsx scripts/test-question-pptx-export.ts",
     "test:question-exam-bridge": "node --import tsx scripts/test-question-exam-bridge.ts",
-    "test:platform": "node --import tsx scripts/test-platform.ts && node --import tsx scripts/test-edu-workspace.ts && node --import tsx scripts/test-edu-agent.ts",
+    "test:platform": "node --import tsx scripts/test-platform.ts && node --import tsx scripts/test-edu-workspace.ts && node --import tsx scripts/test-edu-agent.ts && node --import tsx scripts/test-edu-public-auth.ts",
     "test:edu-agent": "node --import tsx scripts/test-edu-agent.ts",
     "test:edu-workspace": "node --import tsx scripts/test-edu-workspace.ts",
     "test:auth-flow": "node --import tsx scripts/test-auth-flow.ts",

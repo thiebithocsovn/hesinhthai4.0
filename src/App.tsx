@@ -7,6 +7,7 @@ import { db, auth } from './firebase';
 import { ECOSYSTEM_APPLICATIONS, ECOSYSTEM_DEPENDENCY_LABELS, type EcosystemApplicationId } from './ecosystem';
 import { publishPlatformRegistrationMetrics } from './components/PlatformFooter';
 import FastLandingPage from './components/FastLandingPage';
+import EduPublicLanding from './components/EduPublicLanding';
 import EduAgentDock from './components/EduAgentDock';
 import { resolveAgentContext, type AgentAppId } from './lib/eduAgentCore';
 import { isAdministratorAlias, readRememberedAdministratorEmail, rememberVerifiedAdministratorEmail, resolveAdministratorLoginEmail } from './lib/adminAuth';
@@ -73,6 +74,7 @@ export default function App() {
     if (new URLSearchParams(window.location.search).get('app') === 'learning-wall') return 'learning-wall';
     if (new URLSearchParams(window.location.search).get('app') === 'kpi-manager') return 'kpi-manager';
     if (requestedApplication === 'plicker') return 'admin';
+    if (['login', 'register'].includes(new URLSearchParams(window.location.search).get('auth') || '')) return 'auth';
     const saved = sessionStorage.getItem('currentView');
     try {
       const restored = saved ? JSON.parse(saved) : 'landing';
@@ -84,7 +86,7 @@ export default function App() {
     }
   });
   const [initialExam, setInitialExam] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>(() => new URLSearchParams(window.location.search).get('auth') === 'register' ? 'register' : 'login');
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -191,6 +193,8 @@ export default function App() {
 
   useEffect(() => {
     sessionStorage.setItem('currentView', JSON.stringify(currentView));
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('auth')) { url.searchParams.delete('auth'); window.history.replaceState(window.history.state, '', url.toString()); }
   }, [currentView]);
 
   useEffect(() => {
@@ -404,6 +408,7 @@ export default function App() {
       }
       setCurrentView('landing');
     }} onLogout={() => {
+      setAuthMode('login');
       void signOut(auth);
       setCurrentUser(null);
       setTeachers([]);
@@ -488,53 +493,19 @@ export default function App() {
     return <PdfMerger onBack={() => setCurrentView('landing')} />;
   }
 
-  if (currentView === 'auth') {
+  if (currentView === 'landing' && !authReady) {
+    return <EduPublicLanding onTeacherLogin={() => navigateToAuth('login')} onTeacherRegister={() => navigateToAuth('register')} onStudentLogin={() => setCurrentView('student_exam')} />;
+  }
+
+  if (currentView === 'auth' || (currentView === 'landing' && !currentUser)) {
     return (
       <>
-      <div className="min-h-screen flex font-sans text-slate-900 bg-white">
-        {/* Left Panel - Teacher Focus */}
-        <div className="hidden lg:flex lg:w-1/2 bg-slate-900 flex-col justify-between relative overflow-hidden p-12">
-          {/* Decorative background elements */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute -top-1/2 -right-1/2 w-full h-full bg-gradient-to-b from-indigo-500/20 to-transparent rounded-full blur-3xl transform rotate-12"></div>
-            <div className="absolute -bottom-1/2 -left-1/2 w-full h-full bg-gradient-to-t from-blue-500/20 to-transparent rounded-full blur-3xl transform -rotate-12"></div>
-          </div>
-
-          {/* Logo */}
-          <div 
-            className="flex items-center gap-2 cursor-pointer relative z-10"
-            onClick={() => setCurrentView('landing')}
-          >
-            <div className="bg-indigo-500 p-1.5 rounded text-white">
-              <BookOpen className="w-6 h-6" />
+      <EduPublicLanding authMode={authMode} onTeacherLogin={() => navigateToAuth('login')} onTeacherRegister={() => navigateToAuth('register')} onStudentLogin={() => setCurrentView('student_exam')}>
+          <div className="w-full">
+            <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+              <button type="button" onClick={()=>setAuthMode('login')} aria-pressed={authMode === 'login'} className={'rounded-lg px-3 py-2 text-sm font-semibold '+(authMode === 'login' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600')}>Đăng nhập</button>
+              <button type="button" onClick={()=>setAuthMode('register')} aria-pressed={authMode === 'register'} className={'rounded-lg px-3 py-2 text-sm font-semibold '+(authMode === 'register' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600')}>Đăng ký</button>
             </div>
-            <span className="font-bold text-2xl text-white">Edu AI</span>
-          </div>
-          
-          {/* Image Content */}
-          <div className="relative z-10 w-full flex-grow flex items-center justify-center mt-8">
-            <div className="relative w-full max-w-lg aspect-[4/3] rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10">
-              <img 
-                src="https://images.unsplash.com/photo-1577896851231-70ef18881754?q=80&w=2070&auto=format&fit=crop" 
-                alt="Giáo viên giảng dạy" 
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent"></div>
-              <div className="absolute bottom-0 left-0 right-0 p-8">
-                <h2 className="text-2xl font-bold text-white mb-2">Nâng tầm giảng dạy</h2>
-                <p className="text-slate-300">Công cụ thông minh giúp giáo viên tối ưu hóa thời gian và nâng cao chất lượng bài giảng.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Panel - Auth Form */}
-        <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
-          <div className="w-full max-w-md">
-            <h2 className="text-2xl font-bold text-center mb-8 text-slate-800 uppercase">
-              {authMode === 'login' ? 'Đăng nhập' : 'Đăng ký'}
-            </h2>
 
             {authMessage && (
               <div className="mb-5 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm leading-6 text-indigo-800" role="status">
@@ -675,8 +646,7 @@ export default function App() {
               )}
             </div>
           </div>
-        </div>
-      </div>
+      </EduPublicLanding>
 
       {/* Forgot Password Modal */}
       {isForgotPasswordModalOpen && (
@@ -730,15 +700,17 @@ export default function App() {
     );
   }
 
+  if (!currentUser || !auth.currentUser) return <EduPublicLanding onTeacherLogin={() => navigateToAuth('login')} onTeacherRegister={() => navigateToAuth('register')} onStudentLogin={() => setCurrentView('student_exam')} />;
   return <FastLandingPage key={currentUser && auth.currentUser ? auth.currentUser.uid : 'guest'}
     workspaceKey={currentUser && auth.currentUser ? auth.currentUser.uid : 'guest'}
     onTeacherLogin={() => { setInitialExam(false); if (currentUser && auth.currentUser) setCurrentView('admin'); else navigateToAuth('login'); }}
     onTeacherRegister={() => navigateToAuth('register')}
     onStudentLogin={() => setCurrentView('student_exam')}
     onOpenProduct={launchApplication}
-    account={currentUser === 'admin' ? { name: 'Quản trị viên', email: auth.currentUser?.email || '' } : currentUser ? { name: currentUser.name, school: currentUser.school, email: currentUser.email } : undefined}
+    account={currentUser === 'admin' ? { name: 'Quản trị viên', email: auth.currentUser.email || '' } : { name: currentUser.name, school: currentUser.school, email: currentUser.email }}
     onSignOut={currentUser ? () => {
       void signOut(auth).then(() => {
+        setAuthMode('login');
         setCurrentUser(null);
         setTeachers([]);
         synchronizeTeacherBrowserSession(sessionStorage, null);

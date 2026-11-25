@@ -1,6 +1,5 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
-import type { EcosystemApplicationId } from '../ecosystem';
-import FastLandingPage from './FastLandingPage';
+import EduPublicLanding from './EduPublicLanding';
 
 const ProductTrialController = lazy(() => import('./ProductTrialController'));
 const QuestionStudioLibraryPortal = lazy(() => import('./QuestionStudioLibraryPortal'));
@@ -60,7 +59,7 @@ export default function PlatformBootstrap() {
   const [runtimeActive, setRuntimeActive] = useState(runtimeRequiredImmediately);
 
   useEffect(() => {
-    if (runtimeActive || !hasFirebaseSessionHint()) return;
+    if (runtimeActive) return;
 
     let unsubscribe: (() => void) | undefined;
     let cancelled = false;
@@ -70,6 +69,7 @@ export default function PlatformBootstrap() {
     };
 
     const inspectSession = async () => {
+      if (!hasFirebaseSessionHint()) { if (!cancelled) setRuntimeActive(true); return; }
       try {
         const [{ auth }, { onAuthStateChanged }] = await Promise.all([
           import('../firebase'),
@@ -77,10 +77,11 @@ export default function PlatformBootstrap() {
         ]);
         if (cancelled) return;
         unsubscribe = onAuthStateChanged(auth, user => {
-          if (user && !cancelled) setRuntimeActive(true);
+          if (!cancelled) setRuntimeActive(true);
         });
       } catch (error) {
         console.info('Không thể khôi phục phiên Firebase trong Fast Landing.', error);
+        if (!cancelled) setRuntimeActive(true);
       }
     };
 
@@ -119,17 +120,6 @@ export default function PlatformBootstrap() {
     setRuntimeActive(true);
   };
 
-  const openProduct = (applicationId: EcosystemApplicationId) => {
-    if (applicationId === 'exam-manager') {
-      const url = new URL(import.meta.env.BASE_URL, window.location.origin);
-      url.searchParams.set('auth', 'register');
-      window.history.replaceState(window.history.state, '', url.toString());
-      activate('landing');
-      return;
-    }
-    activate(applicationId);
-  };
-
   const openAuth = (mode: 'login' | 'register') => {
     const url = new URL(import.meta.env.BASE_URL, window.location.origin);
     url.searchParams.set('auth', mode);
@@ -151,11 +141,10 @@ export default function PlatformBootstrap() {
   if (!runtimeActive) {
     return (
       <>
-        <FastLandingPage
+        <EduPublicLanding
           onTeacherLogin={() => openAuth('login')}
           onTeacherRegister={() => openAuth('register')}
           onStudentLogin={() => activate('student_exam')}
-          onOpenProduct={openProduct}
         />
         <Suspense fallback={null}>
           <SmartTimetablePublicPortal />
