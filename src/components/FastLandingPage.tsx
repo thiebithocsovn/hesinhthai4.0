@@ -247,6 +247,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
           <button type="button" onClick={confirmNavigation(props.onStudentLogin)} className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">Học sinh</button>
           <button type="button" onClick={confirmNavigation(props.onTeacherLogin)} className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">Thư viện giáo viên</button>
 
+          {props.onSignOut && <button type="button" onClick={confirmNavigation(props.onSignOut)} title="Đăng xuất" aria-label="Đăng xuất" className="rounded-lg bg-white/10 p-2 hover:bg-white/20"><Power className="h-5 w-5"/></button>}
           <button type="button" aria-label="Cá nhân hóa" title="Cá nhân hóa" onClick={openSettings} className="rounded-lg bg-white/10 p-2 hover:bg-white/20"><Settings className="h-5 w-5"/></button>
         </div>
       </header>
