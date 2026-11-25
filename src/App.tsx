@@ -408,6 +408,7 @@ export default function App() {
       }
       setCurrentView('landing');
     }} onLogout={() => {
+      setAuthMode('login');
       void signOut(auth);
       setCurrentUser(null);
       setTeachers([]);
@@ -709,6 +710,7 @@ export default function App() {
     account={currentUser === 'admin' ? { name: 'Quản trị viên', email: auth.currentUser.email || '' } : { name: currentUser.name, school: currentUser.school, email: currentUser.email }}
     onSignOut={currentUser ? () => {
       void signOut(auth).then(() => {
+        setAuthMode('login');
         setCurrentUser(null);
         setTeachers([]);
         synchronizeTeacherBrowserSession(sessionStorage, null);
