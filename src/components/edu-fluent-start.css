@@ -75,3 +75,35 @@
   [data-edu-ai-desktop] .edu-start-menu, [data-edu-ai-desktop] .edu-start-scrim, [data-edu-ai-desktop] .edu-fluent-button, [data-edu-ai-desktop] .edu-app-icon, [data-edu-ai-desktop] .edu-task-icon { transition:none !important; }
   [data-edu-ai-desktop] .edu-app-tile:hover .edu-app-icon, [data-edu-ai-desktop] .edu-task-icon:hover, [data-edu-ai-desktop] .edu-fluent-button:active { transform:none; }
 }
+
+/* Open desktop surface: no greeting, promotional cards or shortcut containers. */
+[data-edu-ai-desktop] .edu-desktop-surface { min-height:0; }
+[data-edu-ai-desktop] .edu-desktop-shortcuts {
+  display:grid; grid-auto-flow:column; grid-template-rows:repeat(5, 88px);
+  grid-auto-columns:100px; align-content:start; gap:4px;
+  max-width:100%; background:transparent; border:0;
+}
+[data-edu-ai-desktop] .edu-desktop-shortcuts:empty { display:none; }
+[data-edu-ai-desktop] .edu-desktop-shortcut {
+  display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+  gap:6px; padding:6px 4px; min-width:0; border:1px solid transparent; border-radius:9px;
+  background:transparent; color:white; transition:background-color 140ms ease,border-color 140ms ease,transform 160ms ease;
+}
+[data-edu-ai-desktop] .edu-desktop-shortcut .edu-app-icon { width:44px; height:44px; }
+[data-edu-ai-desktop] .edu-desktop-shortcut:hover { background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.16); }
+[data-edu-ai-desktop] .edu-desktop-shortcut:active { transform:scale(.96); }
+[data-edu-ai-desktop] .edu-desktop-shortcut:focus-visible { outline:2px solid white; outline-offset:1px; }
+[data-edu-ai-desktop] .edu-desktop-label { font-size:11px; line-height:1.25; text-align:center; font-weight:550; text-shadow:0 1px 3px #000,0 1px 8px #000; overflow-wrap:anywhere; }
+@media (max-height:740px) and (min-width:641px) {
+  [data-edu-ai-desktop] .edu-desktop-shortcuts { grid-template-rows:repeat(4,88px); }
+}
+@media (max-height:600px) and (min-width:641px) {
+  [data-edu-ai-desktop] .edu-desktop-shortcuts { grid-template-rows:repeat(3,84px); }
+}
+@media (max-width:640px) {
+  [data-edu-ai-desktop] .edu-desktop-shortcuts { grid-auto-flow:row; grid-template-rows:none; grid-template-columns:repeat(3,minmax(0,1fr)); grid-auto-rows:88px; width:min(100%,330px); }
+}
+@media (prefers-reduced-motion:reduce) {
+  [data-edu-ai-desktop] .edu-desktop-shortcut { transition:none; }
+  [data-edu-ai-desktop] .edu-desktop-shortcut:active { transform:none; }
+}
