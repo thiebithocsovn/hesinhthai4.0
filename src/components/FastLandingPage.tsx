@@ -189,7 +189,10 @@ export default function FastLandingPage(props: FastLandingPageProps) {
     const dep = id === 'smart-timetable' ? 'firebase' : app?.dependency || '';
     return (category === 'all' || dep === category || (category === 'ai' && (dep.includes('ai') || id === 'chatbot'))) && matches(labelFor(id) + ' ' + (app?.description || '') + (id === 'smart-timetable' ? ' xep lich giao vien tkb' : ''));
   });
-  const renderAppIcon = (id: LauncherId, size = 23) => { const Icon = iconFor(id); return <span className="edu-app-icon" style={{ background: APP_GRADIENTS[id] }}><Icon size={size} strokeWidth={1.8}/></span>; };
+  const wallIconUrl = import.meta.env.BASE_URL + 'icons/learning-wall-owl.svg';
+  const renderAppIcon = (id: LauncherId, size = 23) => {
+    if (id === 'learning-wall') return <span className="edu-app-icon overflow-hidden" style={{background:'#f8f9fd'}}><img src={wallIconUrl} alt="" draggable={false} className="h-full w-full object-contain"/></span>;
+    const Icon = iconFor(id); return <span className="edu-app-icon" style={{ background: APP_GRADIENTS[id] }}><Icon size={size} strokeWidth={1.8}/></span>; };
   const openAgent = () => { setStart(false); setTasks(false); setSettings(false); window.dispatchEvent(new Event('edu-ai:open-agent')); };
   const togglePin = (id: LauncherId) => {
     const next = pins.includes(id) ? pins.filter(pin => pin !== id) : [...pins, id];
@@ -316,7 +319,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
           </section>
           {!pinMode && !searchTerm && !allApps && <div className="mt-4 grid gap-3 sm:grid-cols-[1.25fr_1fr]">
             <section><h3 className="mb-2 flex items-center gap-2 text-sm font-bold"><Clock3 className="h-4 w-4"/>Mở gần đây</h3>
-              {recent.length ? <div className="space-y-1">{recent.slice(0,3).map(id=>{const Icon=iconFor(id);return <button key={id} type="button" data-edu-launch={id} onClick={()=>launch(id)} className="edu-fluent-button flex w-full items-center gap-2 p-2 text-left"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white" style={{background:APP_GRADIENTS[id]}}><Icon className="h-4 w-4"/></span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{labelFor(id)}</span><span className="edu-fluent-muted block text-[10px]">Ứng dụng gần đây</span></span><ArrowRight className="h-3.5 w-3.5 shrink-0"/></button>})}</div>:<p className="edu-fluent-muted p-2 text-xs leading-5">Ứng dụng bạn mở sẽ xuất hiện tại đây.</p>}
+              {recent.length ? <div className="space-y-1">{recent.slice(0,3).map(id=>{const Icon=iconFor(id);return <button key={id} type="button" data-edu-launch={id} onClick={()=>launch(id)} className="edu-fluent-button flex w-full items-center gap-2 p-2 text-left"><span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg text-white" style={{background:id==='learning-wall'?'#f8f9fd':APP_GRADIENTS[id]}}>{id==='learning-wall'?<img src={wallIconUrl} alt="" draggable={false} className="h-full w-full object-contain"/>:<Icon className="h-4 w-4"/>}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{labelFor(id)}</span><span className="edu-fluent-muted block text-[10px]">Ứng dụng gần đây</span></span><ArrowRight className="h-3.5 w-3.5 shrink-0"/></button>})}</div>:<p className="edu-fluent-muted p-2 text-xs leading-5">Ứng dụng bạn mở sẽ xuất hiện tại đây.</p>}
             </section>
             <section className="edu-start-agent flex flex-col justify-between gap-2">
               <div className="flex items-center gap-2"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-sky-500 text-white shadow-md"><Brain className="h-6 w-6"/></div><div><h3 className="text-sm font-bold">Edu AI Agent</h3><p className="edu-fluent-muted text-[11px]">6 vai trò hỗ trợ chuyên môn</p></div></div>
