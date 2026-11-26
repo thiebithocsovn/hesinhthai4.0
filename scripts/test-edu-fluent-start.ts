@@ -25,9 +25,11 @@ assert.ok(css.includes('repeat(3,minmax(0,1fr))'));
 console.log('Fluent Start menu: app coverage, motion, accessible controls and privacy checks passed.');
 
 const desktop = home.slice(home.indexOf('<main aria-label="Màn hình nền Edu AI"'), home.indexOf('</main>',home.indexOf('<main aria-label="Màn hình nền Edu AI"')));
-assert.ok(desktop.includes('edu-desktop-shortcuts'));
-assert.ok(desktop.includes('pins.map(id'));
-assert.ok(desktop.includes('launch(id)'));
+const shortcuts=readFileSync(new URL('../src/components/DesktopShortcuts.tsx',import.meta.url),'utf8');
+assert.ok(desktop.includes('<DesktopShortcuts'));
+assert.ok(shortcuts.includes('edu-desktop-shortcuts'));
+assert.ok(shortcuts.includes('pins.map(id'));
+assert.ok(shortcuts.includes('launch(id)'));
 assert.ok(!desktop.includes('Xin chào,'));
 assert.ok(!desktop.includes('Truy cập nhanh'));
 assert.ok(!desktop.includes('Đổi hình nền'));
