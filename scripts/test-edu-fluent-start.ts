@@ -60,3 +60,10 @@ assert.ok(shortcuts.includes('suppress.current===id'));
 assert.ok(home.includes(':desktop-layout-v1'));
 assert.ok(home.includes('Sắp xếp lại biểu tượng mặc định'));
 console.log('Desktop movement: snap, swap, clamp, resize and persistence regression checks passed.');
+
+const desktopHeader=home.slice(home.indexOf('      <header'),home.indexOf('      </header>'));
+assert.ok(!desktopHeader.includes('Thư viện giáo viên'));
+assert.ok(!desktopHeader.includes('onTeacherLogin'));
+assert.ok(home.includes('data-edu-system-management="true"'));
+assert.ok(home.includes('Quản trị hệ thống'));
+assert.ok(home.includes('showSystemManagement'));
