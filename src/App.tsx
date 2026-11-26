@@ -8,6 +8,7 @@ import { ECOSYSTEM_APPLICATIONS, ECOSYSTEM_DEPENDENCY_LABELS, type EcosystemAppl
 import { publishPlatformRegistrationMetrics } from './components/PlatformFooter';
 import FastLandingPage from './components/FastLandingPage';
 import EduPublicLanding from './components/EduPublicLanding';
+import { VIETNAM_PROVINCES, isVietnamProvince } from './lib/vietnamProvinces';
 import EduAgentDock from './components/EduAgentDock';
 import { resolveAgentContext, type AgentAppId } from './lib/eduAgentCore';
 import { isAdministratorAlias, readRememberedAdministratorEmail, rememberVerifiedAdministratorEmail, resolveAdministratorLoginEmail } from './lib/adminAuth';
@@ -313,6 +314,8 @@ export default function App() {
     const formData = new FormData(e.currentTarget);
     const email = String(formData.get('email') || '').trim().toLowerCase();
     const password = String(formData.get('password') || '');
+    const province = String(formData.get('province') || '');
+    if (!isVietnamProvince(province)) { setAuthMessage('Vui lòng chọn tỉnh/thành phố của đơn vị công tác.'); return; }
     setAuthBusy(true);
     setAuthMessage('');
 
@@ -324,6 +327,7 @@ export default function App() {
         username: email,
         email,
         school: String(formData.get('school') || '').trim(),
+        province,
         level: String(formData.get('level') || ''),
         status: 'inactive',
       };
@@ -570,7 +574,7 @@ export default function App() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                   </div>
-                  <input type="text" required className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm" placeholder="Địa chỉ: xã, tỉnh..." />
+                  <select name="province" required defaultValue="" aria-label="Tỉnh/thành phố của trường" className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none text-sm"><option value="" disabled>Chọn tỉnh/thành phố của trường</option>{VIETNAM_PROVINCES.map(p=><option key={p} value={p}>{p}</option>)}</select>
                 </div>
 
                 <div className="relative">
