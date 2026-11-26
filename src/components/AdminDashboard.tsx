@@ -1,6 +1,7 @@
 import React, { lazy, useState, useRef, useEffect, useMemo } from 'react';
 import EduAgentDock from './EduAgentDock';
 import TeacherDirectory from './TeacherDirectory';
+import { VIETNAM_PROVINCES, isVietnamProvince } from '../lib/vietnamProvinces';
 import { resolveAgentContext, type AgentAppId } from '../lib/eduAgentCore';
 import { Users, Plus, Trash2, Key, LogOut, Search, Edit2, ShieldCheck, BookOpen, CheckCircle, Lock, Unlock, Library, Gift, Target, QrCode, Camera, X, LayoutDashboard, FolderPlus, UserPlus, Star, ArrowLeft, MoreVertical, Clock, Bookmark, Globe, Filter, MessageCircle, CheckSquare, ChevronUp, ChevronDown, Settings, ClipboardCheck, ChartColumnIncreasing, MonitorPlay, MessageSquare, Hand, FileSpreadsheet, FileText, Eye, EyeOff } from 'lucide-react';
 import { Teacher } from '../types';
@@ -174,7 +175,7 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [newTeacher, setNewTeacher] = useState<Partial<Teacher>>({
-    name: '', username: '', email: '', school: '', level: 'THPT', status: 'active'
+    name: '', username: '', email: '', school: '', province: '', level: 'THPT', status: 'active'
   });
   const [newTeacherPassword, setNewTeacherPassword] = useState('');
   const [newTeacherPasswordConfirmation, setNewTeacherPasswordConfirmation] = useState('');
@@ -507,6 +508,7 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
   const handleAddTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     const email = (newTeacher.email || '').trim().toLowerCase();
+    if (!isVietnamProvince(newTeacher.province)) { setTeacherAccountError('Vui lòng chọn tỉnh/thành phố của trường.'); return; }
     const validationError = validateTeacherCredentials(
       email,
       newTeacherPassword,
@@ -527,6 +529,7 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
           username: (newTeacher.username || '').trim(),
           email,
           school: (newTeacher.school || '').trim(),
+          province: newTeacher.province || '',
           level: newTeacher.level || 'THPT',
           status: newTeacher.status as 'active' | 'inactive' || 'active',
         };
@@ -534,7 +537,7 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
         await setDoc(doc(db, 'teachers', userId), teacher);
       });
       setIsAddModalOpen(false);
-      setNewTeacher({ name: '', username: '', email: '', school: '', level: 'THPT', status: 'active' });
+      setNewTeacher({ name: '', username: '', email: '', school: '', province: '', level: 'THPT', status: 'active' });
       setNewTeacherPassword('');
       setNewTeacherPasswordConfirmation('');
       setShowNewTeacherPassword(false);
@@ -692,7 +695,7 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
         {activeTab === 'teachers' ? (
           accessScope.role === 'administrator' ? <TeacherDirectory
             teachers={teachers}
-            onAdd={() => setIsAddModalOpen(true)}
+            onAdd={(region) => { setNewTeacher(previous => ({...previous, province: region?.province || '', school: region?.school || ''})); setIsAddModalOpen(true); }}
             onEdit={openEditModal}
             onPassword={handleResetPassword}
             onToggle={handleToggleStatus}
@@ -1559,6 +1562,7 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
                 />
                 <p className="mt-1 text-xs text-slate-500">Giáo viên đăng nhập bằng email và mật khẩu được cấp.</p>
               </div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Tỉnh/thành phố của trường</label><select aria-label="Tỉnh/thành phố của trường" required value={newTeacher.province || ''} onChange={e=>setNewTeacher({...newTeacher,province:e.target.value})} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"><option value="">Chọn tỉnh/thành phố</option>{VIETNAM_PROVINCES.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Đơn vị công tác</label>
                 <input 
@@ -1677,6 +1681,7 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
                   placeholder="Nhập địa chỉ email"
                 />
               </div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Tỉnh/thành phố của trường</label><select aria-label="Tỉnh/thành phố của trường"  value={editingTeacher.province || ''} onChange={e=>setEditingTeacher({...editingTeacher,province:e.target.value})} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"><option value="">Chưa xác định tỉnh</option>{VIETNAM_PROVINCES.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Đơn vị công tác</label>
                 <input 
