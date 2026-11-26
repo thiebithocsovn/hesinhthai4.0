@@ -1,0 +1,3 @@
+// Provincial names under Resolution 202/2025/QH15 (12 June 2025).
+export const VIETNAM_PROVINCES = ['An Giang','Bắc Ninh','Cà Mau','Cần Thơ','Cao Bằng','Đà Nẵng','Đắk Lắk','Điện Biên','Đồng Nai','Đồng Tháp','Gia Lai','Hà Nội','Hà Tĩnh','Hải Phòng','Hưng Yên','Huế','Khánh Hòa','Lai Châu','Lâm Đồng','Lạng Sơn','Lào Cai','Nghệ An','Ninh Bình','Phú Thọ','Quảng Ngãi','Quảng Ninh','Quảng Trị','Sơn La','Tây Ninh','Thái Nguyên','Thanh Hóa','Thành phố Hồ Chí Minh','Tuyên Quang','Vĩnh Long'] as const;
+export const isVietnamProvince = (value: unknown): value is typeof VIETNAM_PROVINCES[number] => typeof value==='string' && (VIETNAM_PROVINCES as readonly string[]).includes(value);
