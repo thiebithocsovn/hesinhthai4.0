@@ -181,7 +181,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
     return (category === 'all' || dep === category || (category === 'ai' && (dep.includes('ai') || id === 'chatbot'))) && matches(labelFor(id) + ' ' + (app?.description || '') + (id === 'smart-timetable' ? ' xep lich giao vien tkb' : ''));
   });
   const renderAppIcon = (id: LauncherId, size = 23) => { const Icon = iconFor(id); return <span className="edu-app-icon" style={{ background: APP_GRADIENTS[id] }}><Icon size={size} strokeWidth={1.8}/></span>; };
-  const openAgent = () => { setStart(false); window.dispatchEvent(new Event('edu-ai:open-agent')); };
+  const openAgent = () => { setStart(false); setTasks(false); setSettings(false); window.dispatchEvent(new Event('edu-ai:open-agent')); };
   const togglePin = (id: LauncherId) => {
     const next = pins.includes(id) ? pins.filter(pin => pin !== id) : [...pins, id];
     setPins(next); saveLauncherList(personalKey + ':pins', next);
@@ -235,7 +235,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
     const timer = window.setInterval(() => setClock(new Date()), 30000);
     const update = () => setOnline(navigator.onLine);
     const esc = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setStart(previous => { if (previous) startButtonRef.current?.focus({ preventScroll: true }); return false; }); setSettings(false); setTasks(false); }
+      if (event.key === 'Escape') { if (menuRef.current?.dataset.open === 'true') startButtonRef.current?.focus({ preventScroll: true }); setStart(false); setSettings(false); setTasks(false); }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault(); setSettings(false); setTasks(false); setStart(true); setQuery(''); setCategory('all'); setAllApps(false); setPinMode(false); setInfoOpen(false);
       }
@@ -295,8 +295,8 @@ export default function FastLandingPage(props: FastLandingPageProps) {
           </div>
           <label className="edu-start-search">
             <Search className="edu-fluent-muted h-5 w-5 shrink-0"/>
-            <input ref={searchRef} aria-label="Tìm ứng dụng" placeholder="Tìm ứng dụng, AI Agent..." value={query} onChange={event=>setQuery(event.target.value)} onKeyDown={event=>{if(event.key==='Enter' && visibleIds.length===1 && !pinMode){event.preventDefault();launch(visibleIds[0]);}}}/>
-            {query ? <button type="button" aria-label="Xóa tìm kiếm" onClick={()=>{setQuery('');searchRef.current?.focus();}} className="edu-fluent-button p-1"><X className="h-4 w-4"/></button> : <Sparkles className="h-5 w-5 text-indigo-500"/>}
+            <input ref={searchRef} aria-label="Tìm ứng dụng" placeholder="Tìm ứng dụng, AI Agent..." value={query} onChange={event=>{setQuery(event.target.value);setCategory('all');}} onKeyDown={event=>{if(event.key==='Enter' && visibleIds.length===1 && !pinMode){event.preventDefault();launch(visibleIds[0]);}}}/>
+            {query ? <button type="button" aria-label="Xóa tìm kiếm" onClick={()=>{setQuery('');setCategory('all');searchRef.current?.focus();}} className="edu-fluent-button p-1"><X className="h-4 w-4"/></button> : <Sparkles className="h-5 w-5 text-indigo-500"/>}
           </label>
         </div>
         <div className="edu-start-body">
