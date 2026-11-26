@@ -266,21 +266,13 @@ export default function FastLandingPage(props: FastLandingPageProps) {
           <button type="button" aria-label="Cá nhân hóa" title="Cá nhân hóa" onClick={openSettings} className="rounded-lg bg-white/10 p-2 hover:bg-white/20"><Settings className="h-5 w-5"/></button>
         </div>
       </header>
-      <main className="relative flex flex-1 flex-col items-center justify-center px-5 pb-24 pt-10 sm:px-8">
-        <div className="mx-auto max-w-3xl text-center">
-          <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl border border-white/20 bg-white/10 shadow-2xl backdrop-blur-md"><Brain className="h-12 w-12" style={{color:theme.accent}}/></div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[.25em] text-white/75">Không gian làm việc</p>
-          <h1 className="text-3xl font-semibold tracking-tight drop-shadow-lg sm:text-5xl">Xin chào, {props.account.name}</h1>
-          {props.account.school && <p className="mt-3 text-sm text-white/80">{props.account.school}</p>}
-          <div className="mt-7 flex flex-wrap justify-center gap-3">
-            <button type="button" onClick={openStart} className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-slate-900 shadow-xl hover:bg-slate-100"><Grid2X2 className="h-5 w-5"/>Mở Start</button>
-            <button type="button" onClick={openSettings} className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-black/20 px-5 py-3 font-semibold text-white hover:bg-black/35"><Image className="h-5 w-5"/>Đổi hình nền</button>
-          </div>
-        </div>
-        <section aria-label="Ứng dụng đã ghim" className="mt-10 w-full max-w-3xl rounded-3xl border border-white/15 bg-slate-950/25 p-4 shadow-xl backdrop-blur-md sm:p-5">
-          <div className="mb-3 flex items-center justify-between gap-2"><h2 className="flex items-center gap-2 text-sm font-semibold"><Pin className="h-4 w-4"/>Truy cập nhanh</h2><button type="button" onClick={openStart} className="text-xs text-white/80 hover:text-white">Tất cả ứng dụng →</button></div>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">{pins.slice(0,6).map(id => { const Icon = iconFor(id); return <button key={id} type="button" data-edu-launch={id} onClick={() => launch(id)} className="flex min-h-20 flex-col items-center gap-2 rounded-2xl p-2 hover:bg-white/15"><span className="rounded-xl bg-white/15 p-2.5"><Icon className="h-5 w-5" style={{color:theme.accent}}/></span><span className="line-clamp-2 text-center text-[11px] font-medium">{labelFor(id)}</span></button>; })}</div>
-          {!pins.length && <p className="text-xs text-white/70">Ghim ứng dụng trong Start để truy cập nhanh.</p>}
+      <main aria-label="Màn hình nền Edu AI" className="edu-desktop-surface relative flex flex-1 items-start px-3 pb-24 pt-4 sm:px-5">
+        <h1 className="sr-only">Màn hình nền Edu AI</h1>
+        <section aria-label="Lối tắt trên màn hình nền" className="edu-desktop-shortcuts">
+          {pins.map(id => <button key={id} type="button" data-edu-launch={id} onClick={() => launch(id)} title={labelFor(id)} className="edu-desktop-shortcut">
+            {renderAppIcon(id, 25)}
+            <span className="edu-desktop-label">{labelFor(id)}</span>
+          </button>)}
         </section>
       </main>
       {props.account && <EduWindowLayer controls={workspace}/>}
