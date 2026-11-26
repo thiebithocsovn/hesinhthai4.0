@@ -28,6 +28,8 @@ import {
 
 import { EduWindowLayer, useEduWindows, isWindowApp, type LauncherId } from './EduWorkspace';
 import EduAgentDock from './EduAgentDock';
+import DesktopShortcuts from './DesktopShortcuts';
+import { readDesktopPositions, type DesktopPositions } from '../lib/desktopLayout';
 import './edu-fluent-start.css';
 
 const PlatformFooter = lazy(() => import('./PlatformFooter'));
@@ -141,6 +143,13 @@ export default function FastLandingPage(props: FastLandingPageProps) {
   const workspace = useEduWindows();
   const personalKey = 'edu-ai-launcher-v2:' + (props.workspaceKey || 'guest');
   const [pins, setPins] = useState<LauncherId[]>(() => readLauncherList(personalKey + ':pins', DEFAULT_PINS));
+  const desktopLayoutKey = personalKey + ':desktop-layout-v1';
+  const [desktopPositions,setDesktopPositions] = useState<DesktopPositions>(()=>{try{return readDesktopPositions(window.localStorage,desktopLayoutKey);}catch{return {};}});
+  const updateDesktopPositions = (next:DesktopPositions) => {
+    setDesktopPositions(next);
+    try { localStorage.setItem(desktopLayoutKey,JSON.stringify(next)); }
+    catch { setNotice('Đã đổi vị trí, nhưng trình duyệt chưa lưu được bố cục.'); }
+  };
   const [recent, setRecent] = useState<LauncherId[]>(() => readLauncherList(personalKey + ':recent', []));
   const [pinMode, setPinMode] = useState(false);
   const [tasks, setTasks] = useState(false);
@@ -268,12 +277,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
       </header>
       <main aria-label="Màn hình nền Edu AI" className="edu-desktop-surface relative flex flex-1 items-start px-3 pb-24 pt-4 sm:px-5">
         <h1 className="sr-only">Màn hình nền Edu AI</h1>
-        <section aria-label="Lối tắt trên màn hình nền" className="edu-desktop-shortcuts">
-          {pins.map(id => <button key={id} type="button" data-edu-launch={id} onClick={() => launch(id)} title={labelFor(id)} className="edu-desktop-shortcut">
-            {renderAppIcon(id, 25)}
-            <span className="edu-desktop-label">{labelFor(id)}</span>
-          </button>)}
-        </section>
+        <DesktopShortcuts pins={pins} positions={desktopPositions} onPositions={updateDesktopPositions} launch={launch} labelFor={labelFor} renderIcon={id=>renderAppIcon(id,25)}/>
       </main>
       {props.account && <EduWindowLayer controls={workspace}/>}
       <EduAgentDock desktop context={workspace.windows.filter(w => !w.minimized).at(-1)?.id || 'desktop'} uid={props.account ? props.workspaceKey : undefined} onLaunch={props.account ? launch : undefined}/>
@@ -347,6 +351,9 @@ export default function FastLandingPage(props: FastLandingPageProps) {
           <h3 className="mb-2 mt-5 text-sm font-bold">Hình nền của bạn</h3>
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e=>{void loadWallpaper(e.target.files?.[0]);e.target.value='';}}/>
           <div className="flex flex-wrap gap-2"><button type="button" onClick={()=>fileRef.current?.click()} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white"><Image className="h-4 w-4"/>Tải ảnh từ máy</button><button type="button" onClick={()=>{wallpaperRequest.current++;changePreferences(DEFAULT_PREFS)}} className={'rounded-xl border px-4 py-3 text-sm ' + tile}>Khôi phục mặc định</button></div>
+          <h3 className="mb-2 mt-5 text-sm font-bold">Bố cục biểu tượng Desktop</h3>
+          <p className={'mb-2 text-xs '+subtle}>Kéo thả biểu tượng hoặc dùng Alt + phím mũi tên. Vị trí được lưu theo tài khoản trên trình duyệt này.</p>
+          <button type="button" onClick={()=>{updateDesktopPositions({});setNotice('Đã khôi phục bố cục biểu tượng mặc định.');}} className={'rounded-xl border px-4 py-2.5 text-sm '+tile}>Sắp xếp lại biểu tượng mặc định</button>
           <p className={'mt-3 text-xs ' + subtle}>Tùy chọn lưu trên trình duyệt hiện tại. Không gửi ảnh lên Firebase.</p>
           {notice && <p role="status" className={'mt-2 text-xs ' + subtle}>{notice}</p>}
         </section>
