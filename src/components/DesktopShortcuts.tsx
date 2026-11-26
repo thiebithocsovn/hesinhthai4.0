@@ -21,7 +21,7 @@ export default function DesktopShortcuts({pins,positions,onPositions,launch,labe
   const [announcement,setAnnouncement]=useState('');
   useEffect(()=>{
     const node=area.current;if(!node)return;
-    const measure=()=>{const width=node.clientWidth,height=node.clientHeight;setSize(old=>old.width===width&&old.height===height?old:{width,height});};
+    const measure=()=>{const width=node.clientWidth,height=Math.max(0,window.innerHeight-node.getBoundingClientRect().top-76);setSize(old=>old.width===width&&old.height===height?old:{width,height});};
     measure();
     const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(measure):null;
     observer?.observe(node);window.addEventListener('resize',measure);
@@ -44,7 +44,7 @@ export default function DesktopShortcuts({pins,positions,onPositions,launch,labe
       const moving=drag?.id===id&&drag.moved;
       return <button key={id} type="button" data-edu-launch={id} data-dragging={moving?'true':undefined}
         title={labelFor(id)+' — kéo để di chuyển; Alt + phím mũi tên để đổi vị trí'} aria-label={labelFor(id)}
-        className="edu-desktop-shortcut" style={{gridColumn:cell.col+1,gridRow:cell.row+1,transform:moving?'translate('+drag.dx+'px,'+drag.dy+'px) scale(1.04)':undefined}}
+        className="edu-desktop-shortcut" style={{gridColumn:cell.col+1,gridRow:cell.row+1,transform:moving&&drag?'translate('+drag.dx+'px,'+drag.dy+'px) scale(1.04)':undefined}}
         onPointerDown={e=>{
           if(e.button!==0||!e.isPrimary||active.current)return;
           suppress.current=null;const d={id,pointer:e.pointerId,startX:e.clientX,startY:e.clientY,dx:0,dy:0,moved:false};active.current=d;
@@ -59,7 +59,7 @@ export default function DesktopShortcuts({pins,positions,onPositions,launch,labe
         }}
         onPointerUp={e=>finish(e,true)} onPointerCancel={e=>finish(e,false)}
         onLostPointerCapture={e=>{if(active.current?.pointer===e.pointerId){if(active.current.moved)suppress.current=id;active.current=null;setDrag(null);}}}
-        onClick={e=>{if(e.detail!==0&&suppress.current===id){suppress.current=null;e.preventDefault();e.stopPropagation();return;}launch(id);}}
+        onClick={e=>{if(suppress.current===id&&e.detail!==0){suppress.current=null;e.preventDefault();e.stopPropagation();return;}launch(id);}}
         onKeyDown={e=>{
           if(!e.altKey)return;const offsets:Record<string,[number,number]>={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};const offset=offsets[e.key];if(!offset)return;e.preventDefault();
           onPositions({...positions,...moveDesktopIcon(layout,id,{col:cell.col+offset[0],row:cell.row+offset[1]},grid)});setAnnouncement('Đã lưu vị trí '+labelFor(id));
