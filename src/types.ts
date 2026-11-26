@@ -4,6 +4,7 @@ export interface Teacher {
   username: string;
   email: string;
   school: string;
+  province?: string;
   level: string;
   status: 'active' | 'inactive';
   avatar?: string;
