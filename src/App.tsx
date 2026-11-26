@@ -711,7 +711,7 @@ export default function App() {
     onTeacherRegister={() => navigateToAuth('register')}
     onStudentLogin={() => setCurrentView('student_exam')}
     onOpenProduct={launchApplication}
-    account={currentUser === 'admin' ? { name: 'Quản trị viên', email: auth.currentUser.email || '' } : { name: currentUser.name, school: currentUser.school, email: currentUser.email }}
+    account={currentUser === 'admin' ? { name: 'Quản trị viên', email: auth.currentUser.email || '', isAdmin: true } : { name: currentUser.name, school: currentUser.school, email: currentUser.email }}
     onSignOut={currentUser ? () => {
       void signOut(auth).then(() => {
         setAuthMode('login');
