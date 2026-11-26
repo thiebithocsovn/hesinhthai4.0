@@ -17,6 +17,7 @@ import {
   Smile,
   Target,
   User,
+  ShieldCheck,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
@@ -56,7 +57,7 @@ interface FastLandingPageProps {
   onTeacherRegister: () => void;
   onStudentLogin: () => void;
   onOpenProduct: (applicationId: EcosystemApplicationId) => void;
-  account: { name: string; school?: string; email?: string };
+  account: { name: string; school?: string; email?: string; isAdmin?: boolean };
   onSignOut?: () => void;
   workspaceKey?: string;
 }
@@ -175,6 +176,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
   const catalog = ECOSYSTEM_APPLICATIONS.map(application => ({ ...application, Icon: PRODUCT_ICONS[application.id] }));
   const fluentTheme = light ? 'edu-fluent-light' : 'edu-fluent-dark';
   const matches = (name: string) => normalize(name).includes(searchTerm);
+  const showSystemManagement = !pinMode && (category === 'all' || category === 'firebase') && matches('Quản trị hệ thống quản lý tài khoản giáo viên thư viện giáo viên admin');
   const openTimetable = () => {
     const url = new URL(import.meta.env.BASE_URL, window.location.origin);
     url.searchParams.set('app', 'smart-timetable');
@@ -272,7 +274,6 @@ export default function FastLandingPage(props: FastLandingPageProps) {
         <div className="flex items-center gap-3"><div className="rounded-2xl bg-white/15 p-2.5"><BookOpen className="h-6 w-6" style={{color:theme.accent}} /></div><div><div className="text-xl font-black tracking-tight">Edu AI</div><div className="text-[10px] uppercase tracking-[.2em] text-white/70">Education AI OS</div></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button type="button" onClick={confirmNavigation(props.onStudentLogin)} className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">Học sinh</button>
-          <button type="button" onClick={confirmNavigation(props.onTeacherLogin)} className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">Thư viện giáo viên</button>
 
           {props.onSignOut && <button type="button" onClick={confirmNavigation(props.onSignOut)} title="Đăng xuất" aria-label="Đăng xuất" className="rounded-lg bg-white/10 p-2 hover:bg-white/20"><Power className="h-5 w-5"/></button>}
           <button type="button" aria-label="Cá nhân hóa" title="Cá nhân hóa" onClick={openSettings} className="rounded-lg bg-white/10 p-2 hover:bg-white/20"><Settings className="h-5 w-5"/></button>
@@ -294,11 +295,12 @@ export default function FastLandingPage(props: FastLandingPageProps) {
           </div>
           <label className="edu-start-search">
             <Search className="edu-fluent-muted h-5 w-5 shrink-0"/>
-            <input ref={searchRef} aria-label="Tìm ứng dụng" placeholder="Tìm ứng dụng, AI Agent..." value={query} onChange={event=>{setQuery(event.target.value);setCategory('all');}} onKeyDown={event=>{if(event.key==='Enter' && visibleIds.length===1 && !pinMode){event.preventDefault();launch(visibleIds[0]);}}}/>
+            <input ref={searchRef} aria-label="Tìm ứng dụng" placeholder="Tìm ứng dụng, AI Agent..." value={query} onChange={event=>{setQuery(event.target.value);setCategory('all');}} onKeyDown={event=>{if(event.key==='Enter' && searchTerm && !pinMode){if(showSystemManagement && visibleIds.length===0){event.preventDefault();confirmNavigation(props.onTeacherLogin)();}else if(visibleIds.length===1 && !showSystemManagement){event.preventDefault();launch(visibleIds[0]);}}}}/>
             {query ? <button type="button" aria-label="Xóa tìm kiếm" onClick={()=>{setQuery('');setCategory('all');searchRef.current?.focus();}} className="edu-fluent-button p-1"><X className="h-4 w-4"/></button> : <Sparkles className="h-5 w-5 text-indigo-500"/>}
           </label>
         </div>
         <div className="edu-start-body">
+          {showSystemManagement && <button type="button" data-edu-system-management="true" onClick={confirmNavigation(props.onTeacherLogin)} className="edu-fluent-button mb-4 flex w-full items-center gap-3 border border-current/10 p-3 text-left"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-slate-700 text-white shadow-sm"><ShieldCheck className="h-6 w-6"/></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold">Quản trị hệ thống</span><span className="edu-fluent-muted block text-xs">{props.account.isAdmin ? 'Tài khoản · Trường học · Địa phương' : 'Không gian giáo viên · Công cụ được cấp quyền'}</span></span><ArrowRight className="h-4 w-4 shrink-0"/></button>}
           <section aria-label="Danh mục ứng dụng">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 className="flex items-center gap-2 text-sm font-bold">{searchTerm ? <Search className="h-4 w-4"/> : allApps || pinMode ? <Grid2X2 className="h-4 w-4"/> : <Pin className="h-4 w-4"/>}{searchTerm ? 'Kết quả tìm kiếm' : allApps || pinMode ? 'Tất cả ứng dụng' : 'Ứng dụng đã ghim'}</h3>
@@ -315,7 +317,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
                 {pinMode&&<span className={'absolute right-1 top-1 rounded-full p-1 text-white '+(pins.includes(id)?'bg-indigo-600':'bg-slate-500')}>{pins.includes(id)?<CheckCircle2 className="h-3 w-3"/>:<Pin className="h-3 w-3"/>}</span>}
               </button>)}
             </div>
-            {!visibleIds.length && <p className="edu-fluent-muted py-5 text-center text-sm">{searchTerm?'Không tìm thấy ứng dụng phù hợp.':'Chưa có ứng dụng đã ghim. Chọn Tất cả ứng dụng để thêm.'}</p>}
+            {!visibleIds.length && !(searchTerm && showSystemManagement) && <p className="edu-fluent-muted py-5 text-center text-sm">{searchTerm?'Không tìm thấy ứng dụng phù hợp.':'Chưa có ứng dụng đã ghim. Chọn Tất cả ứng dụng để thêm.'}</p>}
           </section>
           {!pinMode && !searchTerm && !allApps && <div className="mt-4 grid gap-3 sm:grid-cols-[1.25fr_1fr]">
             <section><h3 className="mb-2 flex items-center gap-2 text-sm font-bold"><Clock3 className="h-4 w-4"/>Mở gần đây</h3>
@@ -330,10 +332,10 @@ export default function FastLandingPage(props: FastLandingPageProps) {
           {!searchTerm && !pinMode && !allApps && <div className="mt-3"><button type="button" aria-expanded={infoOpen} onClick={()=>setInfoOpen(value=>!value)} className="edu-fluent-button edu-fluent-muted px-2 py-1.5 text-xs">{infoOpen?'Thu gọn thông tin hệ thống':'Thông tin hệ thống và cài đặt ứng dụng'}</button>{infoOpen&&<DeferredFooter {...props}/>}</div>}
         </div>
         <div className="edu-start-profile flex items-center gap-2">
-          <button type="button" onClick={confirmNavigation(props.onTeacherLogin)} title="Thư viện giáo viên" className="edu-fluent-button flex min-w-0 flex-1 items-center gap-2 p-1 text-left">
+          <div className="flex min-w-0 flex-1 items-center gap-2 p-1 text-left">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-indigo-500 text-white"><User className="h-5 w-5"/></span>
             <span className="min-w-0"><span className="block truncate text-sm font-semibold">{props.account.name}</span><span className="edu-fluent-muted block truncate text-[11px]">{props.account.school || props.account.email || 'Tài khoản giáo viên'}</span></span>
-          </button>
+          </div>
           <button type="button" title="Cài đặt" aria-label="Cài đặt Start" onClick={openSettings} className="edu-fluent-button p-2.5"><Settings className="h-5 w-5"/></button>
           {props.onSignOut&&<button type="button" title="Đăng xuất" aria-label="Đăng xuất khỏi Edu AI" onClick={confirmNavigation(props.onSignOut)} className="edu-fluent-button p-2.5"><Power className="h-5 w-5"/></button>}
         </div>
