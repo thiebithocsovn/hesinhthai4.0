@@ -1,5 +1,6 @@
 import React, { lazy, useState, useRef, useEffect, useMemo } from 'react';
 import EduAgentDock from './EduAgentDock';
+import TeacherDirectory from './TeacherDirectory';
 import { resolveAgentContext, type AgentAppId } from '../lib/eduAgentCore';
 import { Users, Plus, Trash2, Key, LogOut, Search, Edit2, ShieldCheck, BookOpen, CheckCircle, Lock, Unlock, Library, Gift, Target, QrCode, Camera, X, LayoutDashboard, FolderPlus, UserPlus, Star, ArrowLeft, MoreVertical, Clock, Bookmark, Globe, Filter, MessageCircle, CheckSquare, ChevronUp, ChevronDown, Settings, ClipboardCheck, ChartColumnIncreasing, MonitorPlay, MessageSquare, Hand, FileSpreadsheet, FileText, Eye, EyeOff } from 'lucide-react';
 import { Teacher } from '../types';
@@ -168,7 +169,6 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
   const studentsStorageKey = createTeacherStorageKey('students', accessScope.ownerUid);
   const [activeTab, setActiveTab] = useState<'teachers' | 'library'>(initialExam || initialApplication === 'plicker' || currentUser !== 'admin' ? 'library' : 'teachers');
   const [activeLibraryView, setActiveLibraryView] = useState<'main' | 'gesture-class' | 'learning-wall' | 'lucky-draw' | 'lucky-draw-cards' | 'plicker' | 'head-shake-game' | 'chatbot' | 'create-exam' | 'kpi-manager' | 'secret-box' | 'drag-drop-game' | 'excel-merger' | 'pdf-merger'>(initialApplication === 'plicker' ? 'plicker' : initialExam ? 'create-exam' : 'main');
-  const [searchTerm, setSearchTerm] = useState('');
   const libraryFilter = useLibraryFilter();
   useLibraryFont();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -345,33 +345,6 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
       }
     }
   };
-
-  // Sorting State
-  const [sortConfig, setSortConfig] = useState<{ key: keyof Teacher, direction: 'asc' | 'desc' } | null>(null);
-
-  const handleSort = (key: keyof Teacher) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
-
-  const sortedTeachers = useMemo(() => {
-    let sortableTeachers = [...teachers];
-    if (sortConfig !== null) {
-      sortableTeachers.sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) {
-          return sortConfig.direction === 'asc' ? -1 : 1;
-        }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
-          return sortConfig.direction === 'asc' ? 1 : -1;
-        }
-        return 0;
-      });
-    }
-    return sortableTeachers;
-  }, [teachers, sortConfig]);
 
   // Learning Wall State
   const [wallBgColor, setWallBgColor] = useState('#FFD524');
@@ -648,11 +621,6 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
     setIsEditModalOpen(true);
   };
 
-  const filteredTeachers = sortedTeachers.filter(t => 
-    t.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    t.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.username.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col md:flex-row">
@@ -720,140 +688,16 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
       )}
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden pb-16 md:pb-0">
+      <main className="min-w-0 flex-1 flex flex-col overflow-hidden pb-16 md:pb-0">
         {activeTab === 'teachers' ? (
-          <>
-            {/* Header */}
-            <header className="bg-white border-b border-slate-200 px-4 md:px-8 py-4 md:py-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <h1 className="text-xl md:text-2xl font-bold text-slate-800">Quản lý giáo viên</h1>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <div className="relative flex-1 sm:flex-none">
-                  <Search className="w-5 h-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input 
-                    type="text" 
-                    placeholder="Tìm kiếm giáo viên..." 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-full sm:w-64"
-                  />
-                </div>
-                <button 
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm font-medium"
-                >
-                  <Plus className="w-5 h-5" />
-                  Cấp tài khoản
-                </button>
-              </div>
-            </header>
-
-            {/* Content */}
-            <div className="flex-1 overflow-auto p-4 md:p-8">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[800px] md:min-w-0">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-sm uppercase tracking-wider">
-                      <th className="px-6 py-4 font-medium cursor-pointer hover:bg-slate-100" onClick={() => handleSort('name')}>
-                        <div className="flex items-center gap-1">
-                          Họ và tên
-                          {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />) : null}
-                        </div>
-                      </th>
-                      <th className="px-6 py-4 font-medium cursor-pointer hover:bg-slate-100" onClick={() => handleSort('username')}>
-                        <div className="flex items-center gap-1">
-                          Tên đăng nhập
-                          {sortConfig?.key === 'username' ? (sortConfig.direction === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />) : null}
-                        </div>
-                      </th>
-                      <th className="px-6 py-4 font-medium">Đơn vị công tác</th>
-                      <th className="px-6 py-4 font-medium">Cấp học</th>
-                      <th className="px-6 py-4 font-medium cursor-pointer hover:bg-slate-100" onClick={() => handleSort('status')}>
-                        <div className="flex items-center gap-1">
-                          Trạng thái
-                          {sortConfig?.key === 'status' ? (sortConfig.direction === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />) : null}
-                        </div>
-                      </th>
-                      <th className="px-6 py-4 font-medium text-right">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {filteredTeachers.map((teacher) => (
-                      <tr key={teacher.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-slate-900">{teacher.name}</div>
-                          <div className="text-sm text-slate-500">{teacher.email}</div>
-                        </td>
-                        <td className="px-6 py-4 text-slate-600">{teacher.username}</td>
-                        <td className="px-6 py-4 text-slate-600">{teacher.school}</td>
-                        <td className="px-6 py-4 text-slate-600">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {teacher.level}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            teacher.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800'
-                          }`}>
-                            {teacher.status === 'active' ? 'Hoạt động' : 'Khóa'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {teacher.status === 'inactive' ? (
-                              <button 
-                                onClick={() => handleToggleStatus(teacher.id, teacher.status)}
-                                className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
-                                title="Mở khóa tài khoản"
-                              >
-                                <Unlock className="w-5 h-5" />
-                              </button>
-                            ) : (
-                              <button 
-                                onClick={() => handleToggleStatus(teacher.id, teacher.status)}
-                                className="p-2 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg transition-colors"
-                                title="Khóa tài khoản"
-                              >
-                                <Lock className="w-5 h-5" />
-                              </button>
-                            )}
-                            <button 
-                              onClick={() => handleResetPassword(teacher.id)}
-                              className="p-2 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
-                              title="Đặt mật khẩu mới / gửi email khôi phục"
-                              aria-label={`Đặt lại mật khẩu cho ${teacher.name}`}
-                            >
-                              <Key className="w-5 h-5" />
-                            </button>
-                            <button 
-                              onClick={() => openEditModal(teacher)}
-                              className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Chỉnh sửa"
-                            >
-                              <Edit2 className="w-5 h-5" />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteTeacher(teacher.id)}
-                              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Xóa"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {filteredTeachers.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
-                          Không tìm thấy giáo viên nào
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
+          accessScope.role === 'administrator' ? <TeacherDirectory
+            teachers={teachers}
+            onAdd={() => setIsAddModalOpen(true)}
+            onEdit={openEditModal}
+            onPassword={handleResetPassword}
+            onToggle={handleToggleStatus}
+            onDelete={handleDeleteTeacher}
+          /> : <div className="p-8 text-center text-slate-600">Bạn không có quyền quản lý tài khoản giáo viên.</div>
         ) : activeLibraryView === 'main' ? (
           <>
             <header className="lib-header lib-font">
