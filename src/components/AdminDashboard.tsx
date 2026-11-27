@@ -1,4 +1,4 @@
-import { LEARNING_WALL_URL } from '../ecosystem';
+import { openLearningWallWorkspace } from '../ecosystem';
 import React, { lazy, useState, useRef, useEffect, useMemo } from 'react';
 import EduAgentDock from './EduAgentDock';
 import TeacherDirectory from './TeacherDirectory';
@@ -758,9 +758,9 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
                   <h3>Tương tác thẻ Plicker</h3>
                   <p>Công cụ đánh giá trắc nghiệm nhanh sử dụng thẻ mã QR.</p>
                 </LibraryCard>
-                <LibraryCard id="learning-wall" icon={<LayoutDashboard />} onOpen={() => window.location.assign(LEARNING_WALL_URL)}>
+                <LibraryCard id="learning-wall" icon={<LayoutDashboard />} onOpen={() => openLearningWallWorkspace(import.meta.env.BASE_URL)}>
                   <h3>Tường học tập Ai</h3>
-                  <p>Mở website Tường học tập AI độc lập để nộp bài và chấm đa môn.</p>
+                  <p>Mở Tường học tập AI trong cửa sổ hệ điều hành để nộp bài và chấm đa môn.</p>
                 </LibraryCard>
                 <LibraryCard id="head-shake-game" icon={<MonitorPlay />} onOpen={() => setActiveLibraryView('head-shake-game')}>
                   <h3>Trò chơi lắc đầu chọn đáp án</h3>
@@ -1995,7 +1995,7 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
       {currentUser && auth.currentUser && <EduAgentDock context={resolveAgentContext(activeTab === 'teachers' || activeLibraryView === 'main' ? 'admin' : activeLibraryView)} uid={auth.currentUser.uid} onLaunch={id => {
         if (id === 'smart-timetable' || id === 'question-studio') { onAgentLaunch?.(id); return; }
         if (!window.confirm('Mở ứng dụng đề xuất? Hãy lưu công việc đang làm trước khi chuyển.')) return;
-        if (id === 'learning-wall') { window.location.assign(LEARNING_WALL_URL); return; }
+        if (id === 'learning-wall') { openLearningWallWorkspace(import.meta.env.BASE_URL); return; }
         setActiveTab('library');
         setActiveLibraryView(id === 'exam-manager' ? 'create-exam' : id);
       }}/>}
