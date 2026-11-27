@@ -4,7 +4,7 @@ import { Teacher } from './types';
 import { collection, onSnapshot, doc, setDoc, getDocFromServer } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithCredential, signInWithEmailAndPassword, signOut, type User as FirebaseUser } from 'firebase/auth';
 import { db, auth } from './firebase';
-import { ECOSYSTEM_APPLICATIONS, ECOSYSTEM_DEPENDENCY_LABELS, LEARNING_WALL_URL, type EcosystemApplicationId } from './ecosystem';
+import { ECOSYSTEM_APPLICATIONS, ECOSYSTEM_DEPENDENCY_LABELS, LEARNING_WALL_URL, LEARNING_WALL_WORKSPACE_APP, openLearningWallWorkspace, type EcosystemApplicationId } from './ecosystem';
 import { publishPlatformRegistrationMetrics } from './components/PlatformFooter';
 import FastLandingPage from './components/FastLandingPage';
 import EduPublicLanding from './components/EduPublicLanding';
@@ -71,6 +71,7 @@ async function hasAdministratorAccess(user: FirebaseUser): Promise<boolean> {
 export default function App() {
   const requestedApplication = readRequestedApplication(window.location.search);
   const [currentView, setCurrentView] = useState<'landing' | 'auth' | 'admin' | 'student_exam' | 'kpi-manager' | 'chatbot' | 'head-shake-game' | 'lucky-draw' | 'lucky-draw-cards' | 'drag-drop-game' | 'secret-box' | 'gesture-class' | 'question-studio' | 'excel-merger' | 'pdf-merger'>(() => {
+    if (new URLSearchParams(window.location.search).get('app') === LEARNING_WALL_WORKSPACE_APP) return 'landing';
     if (new URLSearchParams(window.location.search).get('app') === 'kpi-manager') return 'kpi-manager';
     if (requestedApplication === 'plicker') return 'admin';
     if (['login', 'register'].includes(new URLSearchParams(window.location.search).get('auth') || '')) return 'auth';
@@ -351,7 +352,11 @@ export default function App() {
   };
 
   const launchApplication = (applicationId: EcosystemApplicationId) => {
-    if (applicationId === 'learning-wall') { window.location.assign(LEARNING_WALL_URL); return; }
+    if (applicationId === 'learning-wall') {
+      if (currentUser && auth.currentUser) openLearningWallWorkspace(import.meta.env.BASE_URL);
+      else window.location.assign(LEARNING_WALL_URL);
+      return;
+    }
     if (applicationId === 'kpi-manager') {
       if (currentUser && auth.currentUser) setCurrentView('kpi-manager');
       else { sessionStorage.setItem('edukpi.pending', '1'); navigateToAuth('login'); }
