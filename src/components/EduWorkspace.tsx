@@ -1,13 +1,13 @@
 import React, { lazy, Suspense, useState, useRef, useEffect } from 'react';
 import { X, Minus, Square, PanelLeft, PanelRight, Monitor, RotateCcw } from 'lucide-react';
-import type { EcosystemApplicationId } from '../ecosystem';
+import { LEARNING_WALL_URL, type EcosystemApplicationId } from '../ecosystem';
 
 const ExcelMerger = lazy(() => import('./ExcelMerger'));
 const PdfMerger = lazy(() => import('./PdfMerger'));
 const SecretBoxGame = lazy(() => import('./SecretBoxGame'));
 const DragDropGame = lazy(() => import('./DragDropGame'));
 
-export const WINDOW_APPS = ['excel-merger', 'pdf-merger', 'secret-box', 'drag-drop-game'] as const;
+export const WINDOW_APPS = ['excel-merger', 'pdf-merger', 'secret-box', 'drag-drop-game', 'learning-wall'] as const;
 export type WindowAppId = typeof WINDOW_APPS[number];
 export type LauncherId = EcosystemApplicationId | 'smart-timetable';
 export function isWindowApp(id: string): id is WindowAppId {
@@ -16,6 +16,7 @@ export function isWindowApp(id: string): id is WindowAppId {
 type Layout = 'normal' | 'maximized' | 'left' | 'right';
 export type WorkspaceWindow = { id: WindowAppId; layout: Layout; minimized: boolean; x: number; y: number; width: number; height: number };
 const TITLES: Record<WindowAppId, string> = {
+  'learning-wall': 'Tường học tập AI',
   'excel-merger': 'Gộp tệp Excel',
   'pdf-merger': 'Tách, gộp file PDF',
   'secret-box': 'Mở ô bí mật',
@@ -25,7 +26,7 @@ export function openWindow(previous: WorkspaceWindow[], id: WindowAppId): Worksp
   const existing = previous.find(item => item.id === id);
   if (existing) return [...previous.filter(item => item.id !== id), { ...existing, minimized: false }];
   const offset = (previous.length % 4) * 3;
-  return [...previous, { id, layout: 'normal', minimized: false, x: 8 + offset, y: 4 + offset, width: 80, height: 86 }];
+  return [...previous, { id, layout: id === 'learning-wall' ? 'maximized' : 'normal', minimized: false, x: 8 + offset, y: 4 + offset, width: 80, height: 86 }];
 }
 export function useEduWindows() {
   const [windows, setWindows] = useState<WorkspaceWindow[]>([]);
@@ -57,6 +58,11 @@ class AppBoundary extends React.Component<{ children: React.ReactNode }, { error
 
 function WindowContent({ id, onBack }: { id: WindowAppId; onBack: () => void }) {
   switch (id) {
+    case 'learning-wall': return <iframe title="Tường học tập AI" src={LEARNING_WALL_URL}
+      className="block h-full w-full min-h-0 flex-1 border-0 bg-white"
+      allow="camera; microphone; clipboard-read; clipboard-write; fullscreen"
+      allowFullScreen referrerPolicy="no-referrer"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox allow-modals" />;
     case 'excel-merger': return <ExcelMerger onBack={onBack}/>;
     case 'pdf-merger': return <PdfMerger onBack={onBack}/>;
     case 'secret-box': return <SecretBoxGame onBack={onBack}/>;
@@ -96,6 +102,7 @@ export function EduWindowLayer({ controls }: { controls: Controls }) {
           }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}>
             <Monitor className="h-4 w-4 shrink-0 text-indigo-600"/><span className="truncate text-xs font-semibold sm:text-sm">{TITLES[item.id]}</span>
           </div>
+          {item.id === 'learning-wall' && <a href={LEARNING_WALL_URL} target="_blank" rel="noopener noreferrer" title="Mở riêng nếu trình duyệt chặn phiên đăng nhập nhúng" className="rounded-md px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">Mở riêng ↗</a>}
           {!compact && <><button type="button" title="Chia nửa trái" aria-label="Chia nửa trái" onClick={() => controls.patch(item.id, { layout: 'left' })} className={button}><PanelLeft className="h-4 w-4"/></button><button type="button" title="Chia nửa phải" aria-label="Chia nửa phải" onClick={() => controls.patch(item.id, { layout: 'right' })} className={button}><PanelRight className="h-4 w-4"/></button></>}
           <button type="button" title="Thu nhỏ" aria-label="Thu nhỏ" onClick={() => controls.patch(item.id, { minimized: true })} className={button}><Minus className="h-4 w-4"/></button>
           {!compact && <button type="button" title="Phóng to hoặc khôi phục" aria-label="Phóng to hoặc khôi phục" onClick={() => controls.patch(item.id, { layout: item.layout === 'maximized' ? 'normal' : 'maximized' })} className={button}>{item.layout === 'maximized' ? <RotateCcw className="h-4 w-4"/> : <Square className="h-4 w-4"/>}</button>}
