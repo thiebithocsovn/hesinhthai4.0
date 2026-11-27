@@ -4,7 +4,7 @@ import { Teacher } from './types';
 import { collection, onSnapshot, doc, setDoc, getDocFromServer } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithCredential, signInWithEmailAndPassword, signOut, type User as FirebaseUser } from 'firebase/auth';
 import { db, auth } from './firebase';
-import { ECOSYSTEM_APPLICATIONS, ECOSYSTEM_DEPENDENCY_LABELS, type EcosystemApplicationId } from './ecosystem';
+import { ECOSYSTEM_APPLICATIONS, ECOSYSTEM_DEPENDENCY_LABELS, LEARNING_WALL_URL, type EcosystemApplicationId } from './ecosystem';
 import { publishPlatformRegistrationMetrics } from './components/PlatformFooter';
 import FastLandingPage from './components/FastLandingPage';
 import EduPublicLanding from './components/EduPublicLanding';
@@ -25,7 +25,6 @@ const HeadShakeGame = lazy(() => import('./components/HeadShakeGame'));
 const LuckyDraw = lazy(() => import('./components/LuckyDraw'));
 const DragDropGame = lazy(() => import('./components/DragDropGame'));
 const SecretBoxGame = lazy(() => import('./components/SecretBoxGame'));
-const LearningWall = lazy(() => import('./components/LearningWall'));
 const GestureClass = lazy(() => import('./components/GestureClass'));
 const QuestionStudioApp = lazy(() => import('./components/QuestionStudioApp'));
 const ExcelMerger = lazy(() => import('./components/ExcelMerger'));
@@ -71,8 +70,7 @@ async function hasAdministratorAccess(user: FirebaseUser): Promise<boolean> {
 
 export default function App() {
   const requestedApplication = readRequestedApplication(window.location.search);
-  const [currentView, setCurrentView] = useState<'landing' | 'auth' | 'admin' | 'student_exam' | 'kpi-manager' | 'chatbot' | 'head-shake-game' | 'lucky-draw' | 'lucky-draw-cards' | 'drag-drop-game' | 'secret-box' | 'learning-wall' | 'gesture-class' | 'question-studio' | 'excel-merger' | 'pdf-merger'>(() => {
-    if (new URLSearchParams(window.location.search).get('app') === 'learning-wall') return 'learning-wall';
+  const [currentView, setCurrentView] = useState<'landing' | 'auth' | 'admin' | 'student_exam' | 'kpi-manager' | 'chatbot' | 'head-shake-game' | 'lucky-draw' | 'lucky-draw-cards' | 'drag-drop-game' | 'secret-box' | 'gesture-class' | 'question-studio' | 'excel-merger' | 'pdf-merger'>(() => {
     if (new URLSearchParams(window.location.search).get('app') === 'kpi-manager') return 'kpi-manager';
     if (requestedApplication === 'plicker') return 'admin';
     if (['login', 'register'].includes(new URLSearchParams(window.location.search).get('auth') || '')) return 'auth';
@@ -80,7 +78,7 @@ export default function App() {
     try {
       const restored = saved ? JSON.parse(saved) : 'landing';
       const isInternalView = ['landing', 'auth', 'admin', 'student_exam'].includes(restored);
-      const isAvailableApplication = ECOSYSTEM_APPLICATIONS.some(application => application.id === restored);
+      const isAvailableApplication = restored !== 'learning-wall' && ECOSYSTEM_APPLICATIONS.some(application => application.id === restored);
       return isInternalView || isAvailableApplication ? restored : 'landing';
     } catch {
       return 'landing';
@@ -272,7 +270,7 @@ export default function App() {
     }
   };
 
-  const handleGoogleSignIn = async (destination: 'admin' | 'learning-wall' = 'admin') => {
+  const handleGoogleSignIn = async (destination: 'admin' = 'admin') => {
     if (authBusy) return;
     const controller = new AbortController();
     googleAbort.current = controller;
@@ -301,12 +299,6 @@ export default function App() {
       setGooglePopupPending(false);
       setAuthBusy(false);
     }
-  };
-
-  const wallGoogleLogin = {
-    onLogin: () => { void handleGoogleSignIn(currentView === 'admin' ? 'admin' : 'learning-wall'); },
-    busy: authBusy, pending: googlePopupPending, message: authMessage,
-    onCancel: () => googleAbort.current?.abort(),
   };
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -359,6 +351,7 @@ export default function App() {
   };
 
   const launchApplication = (applicationId: EcosystemApplicationId) => {
+    if (applicationId === 'learning-wall') { window.location.assign(LEARNING_WALL_URL); return; }
     if (applicationId === 'kpi-manager') {
       if (currentUser && auth.currentUser) setCurrentView('kpi-manager');
       else { sessionStorage.setItem('edukpi.pending', '1'); navigateToAuth('login'); }
@@ -418,7 +411,7 @@ export default function App() {
       setTeachers([]);
       synchronizeTeacherBrowserSession(sessionStorage, null);
       setCurrentView('landing');
-    }} teachers={teachers} setTeachers={setTeachers} currentUser={currentUser} initialApplication={requestedApplication} googleLogin={wallGoogleLogin} />;
+    }} teachers={teachers} setTeachers={setTeachers} currentUser={currentUser} initialApplication={requestedApplication} />;
   }
 
   if (currentView === 'admin') {
@@ -475,10 +468,6 @@ export default function App() {
 
   if (currentView === 'secret-box') {
     return <SecretBoxGame onBack={() => setCurrentView('landing')} />;
-  }
-
-  if (currentView === 'learning-wall') {
-    return <LearningWall currentUser={currentUser} onBack={() => setCurrentView('landing')} onLogin={() => navigateToAuth('login')} googleLogin={wallGoogleLogin} />;
   }
 
   if (currentView === 'gesture-class') {
@@ -722,7 +711,7 @@ export default function App() {
     } : undefined}
   />;
   };
-  const showAgent = Boolean(currentUser && auth.currentUser && !['landing','auth','admin','student_exam'].includes(currentView) && !(currentView === 'learning-wall' && /^#wall=[a-f0-9]{48}$/.test(window.location.hash)));
+  const showAgent = Boolean(currentUser && auth.currentUser && !['landing','auth','admin','student_exam'].includes(currentView));
   return <>{renderCurrentView()}{showAgent && <EduAgentDock context={resolveAgentContext(currentView)} uid={auth.currentUser?.uid} onLaunch={launchFromAgent}/>}</>;
 
 }
