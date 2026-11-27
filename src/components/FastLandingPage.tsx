@@ -281,6 +281,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
       <header className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-950/35 px-4 py-3 backdrop-blur-md sm:px-8">
         <div className="flex items-center gap-3"><div className="rounded-2xl bg-white/15 p-2.5"><BookOpen className="h-6 w-6" style={{color:theme.accent}} /></div><div><div className="text-xl font-black tracking-tight">Edu AI</div><div className="text-[10px] uppercase tracking-[.2em] text-white/70">Education AI OS</div></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
+          <a href={import.meta.env.BASE_URL + "teaching-studio/index.html"} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20" title="Mở bộ công cụ dạy học độc lập (tab mới)">Teaching Studio</a>
           <button type="button" onClick={confirmNavigation(props.onStudentLogin)} className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">Học sinh</button>
 
           {props.onSignOut && <button type="button" onClick={confirmNavigation(props.onSignOut)} title="Đăng xuất" aria-label="Đăng xuất" className="rounded-lg bg-white/10 p-2 hover:bg-white/20"><Power className="h-5 w-5"/></button>}
