@@ -1,3 +1,5 @@
+export const LEARNING_WALL_URL = 'https://tuonghoctap.vercel.app/';
+
 export type EcosystemDependency = 'browser' | 'firebase' | 'ai-cloud' | 'ai-server';
 
 export type EcosystemApplicationId =
@@ -63,7 +65,7 @@ export const ECOSYSTEM_APPLICATIONS: EcosystemApplication[] = [
   {
     id: 'learning-wall',
     name: 'Tường học tập Ai',
-    description: 'Chia sẻ sản phẩm học tập, nhận xét và tổ chức nội dung theo lớp học.',
+    description: 'Mở Tường học tập AI độc lập: nộp bài, chấm đa môn và nhận xét giáo viên.',
     dependency: 'firebase',
     category: 'Quản lý',
   },
