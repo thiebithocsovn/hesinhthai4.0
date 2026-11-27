@@ -3,9 +3,14 @@ import { readFileSync } from 'node:fs';
 import { openWindow, isWindowApp, WINDOW_APPS } from '../src/components/EduWorkspace';
 import { ECOSYSTEM_APPLICATIONS } from '../src/ecosystem';
 
-assert.equal(WINDOW_APPS.length, 4);
-assert.ok(WINDOW_APPS.every(id => ECOSYSTEM_APPLICATIONS.some(app => app.id === id && app.dependency === 'browser')));
-for (const restricted of ['learning-wall', 'exam-manager', 'plicker', 'kpi-manager', 'smart-timetable', 'chatbot']) assert.equal(isWindowApp(restricted), false);
+assert.equal(WINDOW_APPS.length, 5);
+assert.equal(isWindowApp('learning-wall'), true);
+assert.ok(WINDOW_APPS.every(id => ECOSYSTEM_APPLICATIONS.some(app => app.id === id && (app.dependency === 'browser' || id === 'learning-wall'))));
+for (const restricted of ['exam-manager', 'plicker', 'kpi-manager', 'smart-timetable', 'chatbot']) assert.equal(isWindowApp(restricted), false);
+const wall = openWindow([], 'learning-wall');
+assert.equal(wall[0].layout, 'maximized');
+assert.equal(openWindow([{...wall[0], minimized: true}], 'learning-wall').length, 1);
+assert.equal(openWindow([{...wall[0], minimized: true}], 'learning-wall')[0].minimized, false);
 const first = openWindow([], 'excel-merger');
 assert.equal(first.length, 1);
 assert.equal(first[0].layout, 'normal');
