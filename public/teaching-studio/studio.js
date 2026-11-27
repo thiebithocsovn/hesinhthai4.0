@@ -22,5 +22,7 @@ const tools=[['Gọi tên, đua & chia nhóm',names],['Thi đấu kiến thức'
 let active=-1;function select(i){cleanup();cleanup=()=>{};active=i;say('');$('intro').hidden=true;tools[i][1]();navigation();$('workspace').focus()}
 function navigation(){const q=$('search').value.toLocaleLowerCase('vi');$('tools').replaceChildren();tools.forEach(([name],i)=>{if(!name.toLocaleLowerCase('vi').includes(q))return;const b=btn(name,()=>select(i));if(i===active)b.setAttribute('aria-current','true');$('tools').append(b)})}
 $('search').addEventListener('input',navigation);navigation();
+const requested=new URLSearchParams(location.search);const toolKeys=['race','quiz','flash','timer','noise','mind','words','puzzle'];const requestedIndex=toolKeys.indexOf(requested.get('tool')||'');if(requestedIndex>=0){if(requested.get('embedded')==='1'){document.body.classList.add('embedded');document.title=tools[requestedIndex][0];}select(requestedIndex);}
+
 $('fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{say('Trình duyệt không hỗ trợ toàn màn hình.')}});
 window.addEventListener('pagehide',()=>cleanup());
