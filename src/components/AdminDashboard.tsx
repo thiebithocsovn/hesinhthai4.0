@@ -1,3 +1,4 @@
+import { LEARNING_WALL_URL } from '../ecosystem';
 import React, { lazy, useState, useRef, useEffect, useMemo } from 'react';
 import EduAgentDock from './EduAgentDock';
 import TeacherDirectory from './TeacherDirectory';
@@ -36,7 +37,6 @@ const DragDropGame = lazy(() => import('./DragDropGame'));
 const ExcelMerger = lazy(() => import('./ExcelMerger'));
 const PdfMerger = lazy(() => import('./PdfMerger'));
 const GestureClass = lazy(() => import('./GestureClass'));
-const LearningWall = lazy(() => import('./LearningWall'));
 const KpiManager = lazy(() => import('./KpiManager'));
 
 interface CameraCaptureProps {
@@ -139,7 +139,6 @@ interface AdminDashboardProps {
   setTeachers: React.Dispatch<React.SetStateAction<Teacher[]>>;
   currentUser: Teacher | 'admin' | null;
   initialApplication?: 'plicker' | null;
-  googleLogin?: import('./learning-wall/WallAiProviderPicker').WallGoogleLogin;
 }
 
 interface DashboardStudent {
@@ -163,13 +162,13 @@ interface DashboardCategory {
   authorId?: string;
 }
 
-export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initialExam, teachers, setTeachers, currentUser, initialApplication, googleLogin }: AdminDashboardProps) {
+export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initialExam, teachers, setTeachers, currentUser, initialApplication }: AdminDashboardProps) {
   const accessScope = resolveTeacherAccessScope(currentUser, auth.currentUser?.uid);
   const currentUserId = accessScope.ownerUid;
   const currentUserName = currentUser === 'admin' ? 'Admin' : currentUser?.name;
   const studentsStorageKey = createTeacherStorageKey('students', accessScope.ownerUid);
   const [activeTab, setActiveTab] = useState<'teachers' | 'library'>(initialExam || initialApplication === 'plicker' || currentUser !== 'admin' ? 'library' : 'teachers');
-  const [activeLibraryView, setActiveLibraryView] = useState<'main' | 'gesture-class' | 'learning-wall' | 'lucky-draw' | 'lucky-draw-cards' | 'plicker' | 'head-shake-game' | 'chatbot' | 'create-exam' | 'kpi-manager' | 'secret-box' | 'drag-drop-game' | 'excel-merger' | 'pdf-merger'>(initialApplication === 'plicker' ? 'plicker' : initialExam ? 'create-exam' : 'main');
+  const [activeLibraryView, setActiveLibraryView] = useState<'main' | 'gesture-class' | 'lucky-draw' | 'lucky-draw-cards' | 'plicker' | 'head-shake-game' | 'chatbot' | 'create-exam' | 'kpi-manager' | 'secret-box' | 'drag-drop-game' | 'excel-merger' | 'pdf-merger'>(initialApplication === 'plicker' ? 'plicker' : initialExam ? 'create-exam' : 'main');
   const libraryFilter = useLibraryFilter();
   useLibraryFont();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -759,9 +758,9 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
                   <h3>Tương tác thẻ Plicker</h3>
                   <p>Công cụ đánh giá trắc nghiệm nhanh sử dụng thẻ mã QR.</p>
                 </LibraryCard>
-                <LibraryCard id="learning-wall" icon={<LayoutDashboard />} onOpen={() => setActiveLibraryView('learning-wall')}>
+                <LibraryCard id="learning-wall" icon={<LayoutDashboard />} onOpen={() => window.location.assign(LEARNING_WALL_URL)}>
                   <h3>Tường học tập Ai</h3>
-                  <p>Quản lý lớp học, học sinh, chấm điểm và tổ chức thư mục học tập.</p>
+                  <p>Mở website Tường học tập AI độc lập để nộp bài và chấm đa môn.</p>
                 </LibraryCard>
                 <LibraryCard id="head-shake-game" icon={<MonitorPlay />} onOpen={() => setActiveLibraryView('head-shake-game')}>
                   <h3>Trò chơi lắc đầu chọn đáp án</h3>
@@ -805,8 +804,6 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
               )}
             </div>
           </>
-        ) : activeLibraryView === 'learning-wall' ? (
-          <div className="flex-1 min-h-0 overflow-auto"><LearningWall key={accessScope.ownerUid} currentUser={currentUser} googleLogin={googleLogin} onBack={() => setActiveLibraryView('main')} /></div>
         ) : activeLibraryView === 'gesture-class' ? (
           <GestureClass onBack={() => setActiveLibraryView('main')} />
         ) : activeLibraryView === 'kpi-manager' ? (
@@ -1998,6 +1995,7 @@ export default function AdminDashboard({ onLogout, onHome, onAgentLaunch, initia
       {currentUser && auth.currentUser && <EduAgentDock context={resolveAgentContext(activeTab === 'teachers' || activeLibraryView === 'main' ? 'admin' : activeLibraryView)} uid={auth.currentUser.uid} onLaunch={id => {
         if (id === 'smart-timetable' || id === 'question-studio') { onAgentLaunch?.(id); return; }
         if (!window.confirm('Mở ứng dụng đề xuất? Hãy lưu công việc đang làm trước khi chuyển.')) return;
+        if (id === 'learning-wall') { window.location.assign(LEARNING_WALL_URL); return; }
         setActiveTab('library');
         setActiveLibraryView(id === 'exam-manager' ? 'create-exam' : id);
       }}/>}
