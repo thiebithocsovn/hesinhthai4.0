@@ -1,4 +1,10 @@
 export const LEARNING_WALL_URL = 'https://tuonghoctap.vercel.app/';
+export const LEARNING_WALL_WORKSPACE_APP = 'learning-wall-window';
+export function openLearningWallWorkspace(base: string) {
+  const url = new URL(base, window.location.origin);
+  url.searchParams.set('app', LEARNING_WALL_WORKSPACE_APP);
+  window.location.assign(url.toString());
+}
 
 export type EcosystemDependency = 'browser' | 'firebase' | 'ai-cloud' | 'ai-server';
 
