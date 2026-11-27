@@ -2,7 +2,7 @@ import React, { lazy, useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import App from '../App';
 import { auth } from '../firebase';
-import { ECOSYSTEM_APPLICATIONS, type EcosystemApplicationId } from '../ecosystem';
+import { ECOSYSTEM_APPLICATIONS, LEARNING_WALL_URL, type EcosystemApplicationId } from '../ecosystem';
 import { assignPlickerCardIds, removePlickerStudent, renamePlickerStudent } from '../lib/plickerStudents';
 import TrialAccessGate from './TrialAccessGate';
 
@@ -12,7 +12,7 @@ const TRIAL_ACTIVE_APPLICATION_KEY = 'smartclass_trial_active_application_v1';
 const GUEST_PLICKER_CLASSES_KEY = 'smartclass_trial_plicker_classes_v1';
 const GUEST_PLICKER_STUDENTS_KEY = 'smartclass_trial_plicker_students_v1';
 
-type TrialApplicationId = Exclude<EcosystemApplicationId, 'exam-manager' | 'kpi-manager'>;
+type TrialApplicationId = Exclude<EcosystemApplicationId, 'exam-manager' | 'kpi-manager' | 'learning-wall'>;
 
 interface GuestPlickerClass {
   id: string;
@@ -34,13 +34,13 @@ const PRODUCT_NAME_TO_ID = new Map(
 function readStoredApplication(): TrialApplicationId | null {
   try {
     const explicitTrial = sessionStorage.getItem(TRIAL_ACTIVE_APPLICATION_KEY) as EcosystemApplicationId | null;
-    if (explicitTrial && explicitTrial !== 'exam-manager' && explicitTrial !== 'kpi-manager' && ECOSYSTEM_APPLICATIONS.some(item => item.id === explicitTrial)) {
+    if (explicitTrial && explicitTrial !== 'exam-manager' && explicitTrial !== 'kpi-manager' && explicitTrial !== 'learning-wall' && ECOSYSTEM_APPLICATIONS.some(item => item.id === explicitTrial)) {
       return explicitTrial;
     }
 
     const savedView = sessionStorage.getItem('currentView');
     const parsed = savedView ? JSON.parse(savedView) as EcosystemApplicationId : null;
-    if (parsed && parsed !== 'exam-manager' && parsed !== 'kpi-manager' && ECOSYSTEM_APPLICATIONS.some(item => item.id === parsed)) return parsed;
+    if (parsed && parsed !== 'exam-manager' && parsed !== 'kpi-manager' && parsed !== 'learning-wall' && ECOSYSTEM_APPLICATIONS.some(item => item.id === parsed)) return parsed;
   } catch {
     return null;
   }
@@ -192,6 +192,7 @@ export default function ProductTrialController() {
       if (signedIn) return;
       const applicationId = findProductId(event.target);
       if (!applicationId) return;
+      if (applicationId === 'learning-wall') { event.preventDefault(); event.stopPropagation(); window.location.assign(LEARNING_WALL_URL); return; }
 
       if (applicationId === 'kpi-manager') {
         event.preventDefault();
@@ -229,13 +230,6 @@ export default function ProductTrialController() {
     }, 300);
     return () => window.clearInterval(timer);
   }, [activeApplication, signedIn]);
-
-  // A teacher-issued wall invitation is not a product trial. Ignore stale trial
-  // state so pupils can follow their class link without the subscription gate.
-  if (new URLSearchParams(window.location.search).get('app') === 'learning-wall' &&
-      /^#wall=[a-f0-9]{48}$/.test(window.location.hash)) {
-    return <App />;
-  }
 
   if (!signedIn && activeApplication === 'plicker') {
     return (
