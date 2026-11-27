@@ -142,6 +142,14 @@ export default function FastLandingPage(props: FastLandingPageProps) {
   prefsRef.current = prefs;
   const [start, setStart] = useState(false);
   const workspace = useEduWindows();
+  useEffect(() => {
+    if (!props.account) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('app') !== 'learning-wall-window') return;
+    url.searchParams.delete('app');
+    window.history.replaceState(window.history.state, '', url.toString());
+    workspace.open('learning-wall');
+  }, [props.account, workspace.open]);
   const personalKey = 'edu-ai-launcher-v2:' + (props.workspaceKey || 'guest');
   const [pins, setPins] = useState<LauncherId[]>(() => readLauncherList(personalKey + ':pins', DEFAULT_PINS));
   const desktopLayoutKey = personalKey + ':desktop-layout-v1';
@@ -342,7 +350,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
       </section>
       {tasks && <><div className="fixed inset-0 z-20 bg-black/25" onClick={()=>setTasks(false)} aria-hidden="true"/><section aria-label="Ứng dụng đang mở" className={'fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-2 z-30 w-[min(94vw,420px)] rounded-2xl border p-4 shadow-2xl '+panel}>
         <div className="mb-3 flex items-center justify-between"><h2 className="font-bold">Không gian đa nhiệm</h2><button aria-label="Đóng danh sách tác vụ" type="button" onClick={()=>setTasks(false)} className={'rounded-lg p-2 '+tile}><X className="h-4 w-4"/></button></div>
-        {!workspace.windows.length && <p className={'text-sm '+subtle}>{props.account?'Chưa có cửa sổ đang mở. Mở Excel, PDF, Ô bí mật hoặc Kéo thả từ Start.':'Đăng nhập tài khoản giáo viên đã được cấp quyền để sử dụng cửa sổ đa nhiệm.'}</p>}
+        {!workspace.windows.length && <p className={'text-sm '+subtle}>{props.account?'Chưa có cửa sổ đang mở. Mở Tường học tập AI, Excel, PDF, Ô bí mật hoặc Kéo thả từ Start.':'Đăng nhập tài khoản giáo viên đã được cấp quyền để sử dụng cửa sổ đa nhiệm.'}</p>}
         {workspace.windows.map(w=>{const Icon=iconFor(w.id);return <div key={w.id} className={'mb-2 flex items-center gap-2 rounded-xl border p-2 '+tile}><Icon className="h-5 w-5"/><button type="button" className="flex-1 text-left text-sm" onClick={()=>{workspace.focus(w.id);setTasks(false);}}>{labelFor(w.id)}<span className={'block text-[10px] '+subtle}>{w.minimized?'Đã thu nhỏ':'Đang mở'}</span></button><button type="button" aria-label={'Đóng '+labelFor(w.id)} onClick={()=>workspace.close(w.id)} className="rounded p-1 hover:bg-red-600 hover:text-white"><X className="h-4 w-4"/></button></div>;})}
         {!!workspace.windows.length && <button type="button" className={'mt-2 w-full rounded-lg border px-3 py-2 text-xs '+tile} onClick={()=>{workspace.minimizeAll();setTasks(false);}}>Hiện màn hình Desktop</button>}
       </section></>}
