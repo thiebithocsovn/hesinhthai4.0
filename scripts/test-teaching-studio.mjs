@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+const root='public/teaching-studio/';
+const js=readFileSync(root+'studio.js','utf8');
+const html=readFileSync(root+'index.html','utf8');
+execFileSync(process.execPath,['--check',root+'studio.js']);
+assert.ok(html.includes('lang="vi"'));
+assert.ok(html.includes('role="status"'));
+assert.ok(html.includes('./studio.js'));
+assert.ok(js.includes('getUserMedia({audio:true,video:false})'));
+assert.ok(js.includes('getTracks().forEach(t=>t.stop())'));
+assert.ok(!/\b(?:fetch|XMLHttpRequest|WebSocket|localStorage|sessionStorage|firebase)\s*\(/.test(js));
+assert.ok(js.includes('crypto.getRandomValues'));
+for(const name of ['names','quiz','flash','timer','noise','mind','words','puzzle'])assert.ok(js.includes('function '+name+'()'));
+console.log('Teaching Studio static checks passed. Browser/device and exam regression checks remain required.');
