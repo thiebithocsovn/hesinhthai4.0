@@ -3,8 +3,12 @@ import { createRoot } from 'react-dom/client';
 import PlatformBootstrap from './components/PlatformBootstrap';
 import './index.css';
 import { resolveApiUrl } from './lib/api';
-import { initializeLearningWallDashboardRename } from './lib/learningWallDashboardRename';
+import { LEARNING_WALL_URL } from './ecosystem';
 import { initializePwaInstallation, registerClassroomServiceWorker } from './lib/plickerPwa';
+
+const legacyWallEntry = new URLSearchParams(window.location.search).get('app') === 'learning-wall';
+// Never forward legacy invite tokens to the new origin.
+if (legacyWallEntry) window.location.replace(LEARNING_WALL_URL);
 
 initializePwaInstallation();
 
@@ -81,10 +85,9 @@ console.log = (...args) => {
   originalLog(...args);
 };
 
-createRoot(document.getElementById('root')!).render(
+if (!legacyWallEntry) createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <PlatformBootstrap />
   </StrictMode>,
 );
 
-if (!timetableEntry) initializeLearningWallDashboardRename();
