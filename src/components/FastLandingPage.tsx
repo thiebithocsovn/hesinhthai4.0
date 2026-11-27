@@ -18,7 +18,7 @@ import {
   Target,
   User,
   ShieldCheck,
-  Zap,
+  Zap, Users, Trophy, Timer, Volume2, Network, Puzzle,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -32,10 +32,11 @@ import EduAgentDock from './EduAgentDock';
 import DesktopShortcuts from './DesktopShortcuts';
 import { readDesktopPositions, type DesktopPositions } from '../lib/desktopLayout';
 import './edu-fluent-start.css';
+import { TEACHING_APPS, TEACHING_APP_IDS, isTeachingApp, type TeachingAppId } from '../lib/teachingApps';
 
 const PlatformFooter = lazy(() => import('./PlatformFooter'));
 
-const PRODUCT_ICONS: Record<EcosystemApplicationId, LucideIcon> = {
+const PRODUCT_ICONS: Record<EcosystemApplicationId | TeachingAppId, LucideIcon> = {
   'gesture-class': MonitorPlay,
   'question-studio': ListChecks,
   'lucky-draw': Target,
@@ -50,6 +51,7 @@ const PRODUCT_ICONS: Record<EcosystemApplicationId, LucideIcon> = {
   'drag-drop-game': Gamepad2,
   'excel-merger': FileSpreadsheet,
   'pdf-merger': FileText,
+  'teaching-race': Users, 'teaching-quiz': Trophy, 'teaching-flash': Layers, 'teaching-timer': Timer, 'teaching-noise': Volume2, 'teaching-mind': Network, 'teaching-words': Search, 'teaching-puzzle': Puzzle,
 };
 
 interface FastLandingPageProps {
@@ -116,23 +118,29 @@ function readPreferences(): Preferences {
     };
   } catch { return DEFAULT_PREFS; }
 }
-const DEFAULT_PINS: LauncherId[] = ['learning-wall', 'exam-manager', 'chatbot', 'smart-timetable', 'gesture-class', 'plicker', 'question-studio', 'kpi-manager', 'excel-merger', 'pdf-merger', 'secret-box', 'drag-drop-game', 'lucky-draw', 'lucky-draw-cards', 'head-shake-game'];
+const DEFAULT_PINS: LauncherId[] = ['learning-wall', 'exam-manager', 'chatbot', 'smart-timetable', 'gesture-class', 'plicker', 'question-studio', 'kpi-manager', 'excel-merger', 'pdf-merger', 'secret-box', 'drag-drop-game', 'lucky-draw', 'lucky-draw-cards', 'head-shake-game', ...TEACHING_APP_IDS];
 const APP_GRADIENTS: Record<LauncherId, string> = {
+  'teaching-race':'linear-gradient(145deg,#38bdf8,#0369a1)', 'teaching-quiz':'linear-gradient(145deg,#fbbf24,#b45309)', 'teaching-flash':'linear-gradient(145deg,#a78bfa,#6d28d9)', 'teaching-timer':'linear-gradient(145deg,#22d3ee,#0e7490)', 'teaching-noise':'linear-gradient(145deg,#34d399,#047857)', 'teaching-mind':'linear-gradient(145deg,#c084fc,#7e22ce)', 'teaching-words':'linear-gradient(145deg,#f472b6,#be185d)', 'teaching-puzzle':'linear-gradient(145deg,#fb923c,#c2410c)',
   'learning-wall': 'linear-gradient(145deg,#8b8cf8,#4f46e5)', 'exam-manager':'linear-gradient(145deg,#38bdf8,#2563eb)', chatbot:'linear-gradient(145deg,#c084fc,#6d28d9)', 'smart-timetable':'linear-gradient(145deg,#2dd4bf,#0e7490)', 'gesture-class':'linear-gradient(145deg,#38bdf8,#0284c7)', plicker:'linear-gradient(145deg,#60a5fa,#1d4ed8)', 'question-studio':'linear-gradient(145deg,#a78bfa,#4338ca)', 'kpi-manager':'linear-gradient(145deg,#34d399,#047857)', 'excel-merger':'linear-gradient(145deg,#22c55e,#166534)', 'pdf-merger':'linear-gradient(145deg,#fb923c,#dc2626)', 'secret-box':'linear-gradient(145deg,#fbbf24,#a8550b)', 'drag-drop-game':'linear-gradient(145deg,#60a5fa,#4338ca)', 'lucky-draw':'linear-gradient(145deg,#fbbf24,#ea580c)', 'lucky-draw-cards':'linear-gradient(145deg,#e879f9,#7c3aed)', 'head-shake-game':'linear-gradient(145deg,#fb7185,#db2777)',
 };
 function validLauncher(value: unknown): value is LauncherId {
-  return value === 'smart-timetable' || ECOSYSTEM_APPLICATIONS.some(app => app.id === value);
+  return isTeachingApp(value) || value === 'smart-timetable' || ECOSYSTEM_APPLICATIONS.some(app => app.id === value);
 }
 function readLauncherList(key: string, fallback: LauncherId[]): LauncherId[] {
   try {
     const raw = localStorage.getItem(key);
     if (raw === null) return fallback;
     const value: unknown = JSON.parse(raw);
-    return Array.isArray(value) ? [...new Set(value.filter(validLauncher))].slice(0, 15) : fallback;
+    return Array.isArray(value) ? [...new Set(value.filter(validLauncher))].slice(0, DEFAULT_PINS.length) : fallback;
   } catch { return fallback; }
 }
 function saveLauncherList(key: string, value: LauncherId[]) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* browser storage can be unavailable */ }
+}
+function readMigratedPins(key: string): LauncherId[] {
+  const saved = readLauncherList(key+':pins', DEFAULT_PINS);
+  try { if (localStorage.getItem(key+':teaching-apps-v1') === '1') return saved; } catch { /* storage unavailable */ }
+  return [...new Set([...saved, ...TEACHING_APP_IDS])];
 }
 const normalize = (value: string) => value.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 
@@ -151,7 +159,8 @@ export default function FastLandingPage(props: FastLandingPageProps) {
     workspace.open('learning-wall');
   }, [props.account, workspace.open]);
   const personalKey = 'edu-ai-launcher-v2:' + (props.workspaceKey || 'guest');
-  const [pins, setPins] = useState<LauncherId[]>(() => readLauncherList(personalKey + ':pins', DEFAULT_PINS));
+  const [pins, setPins] = useState<LauncherId[]>(() => readMigratedPins(personalKey));
+  useEffect(()=>{ try { if(localStorage.getItem(personalKey+':teaching-apps-v1')!=='1'){localStorage.setItem(personalKey+':pins',JSON.stringify(pins));localStorage.setItem(personalKey+':teaching-apps-v1','1');} } catch { /* storage unavailable */ } },[personalKey,pins]);
   const desktopLayoutKey = personalKey + ':desktop-layout-v1';
   const [desktopPositions,setDesktopPositions] = useState<DesktopPositions>(()=>{try{return readDesktopPositions(window.localStorage,desktopLayoutKey);}catch{return {};}});
   const updateDesktopPositions = (next:DesktopPositions) => {
@@ -181,7 +190,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
   const subtle = light ? 'text-slate-600' : 'text-slate-300';
   const tile = light ? 'bg-slate-100 hover:bg-slate-200 border-slate-200' : 'bg-white/5 hover:bg-white/15 border-white/10';
   const searchTerm = normalize(query.trim());
-  const catalog = ECOSYSTEM_APPLICATIONS.map(application => ({ ...application, Icon: PRODUCT_ICONS[application.id] }));
+  const catalog = [...ECOSYSTEM_APPLICATIONS, ...TEACHING_APPS].map(application => ({ ...application, Icon: PRODUCT_ICONS[application.id] }));
   const fluentTheme = light ? 'edu-fluent-light' : 'edu-fluent-dark';
   const matches = (name: string) => normalize(name).includes(searchTerm);
   const showSystemManagement = !pinMode && (category === 'all' || category === 'firebase') && matches('Quản trị hệ thống quản lý tài khoản giáo viên thư viện giáo viên admin');
@@ -215,6 +224,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
     setRecent(next); saveLauncherList(personalKey + ':recent', next);
     setStart(false); setTasks(false);
     if (windowed && isWindowApp(id)) { workspace.open(id); return; }
+    if (isTeachingApp(id)) { workspace.open(id); return; }
     if (id === 'smart-timetable') openTimetable(); else props.onOpenProduct(id);
   };
   const openTasks = () => { setStart(false); setSettings(false); setTasks(value => !value); };
@@ -281,7 +291,6 @@ export default function FastLandingPage(props: FastLandingPageProps) {
       <header className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-950/35 px-4 py-3 backdrop-blur-md sm:px-8">
         <div className="flex items-center gap-3"><div className="rounded-2xl bg-white/15 p-2.5"><BookOpen className="h-6 w-6" style={{color:theme.accent}} /></div><div><div className="text-xl font-black tracking-tight">Edu AI</div><div className="text-[10px] uppercase tracking-[.2em] text-white/70">Education AI OS</div></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <a href={import.meta.env.BASE_URL + "teaching-studio/index.html"} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20" title="Mở bộ công cụ dạy học độc lập (tab mới)">Teaching Studio</a>
           <button type="button" onClick={confirmNavigation(props.onStudentLogin)} className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">Học sinh</button>
 
           {props.onSignOut && <button type="button" onClick={confirmNavigation(props.onSignOut)} title="Đăng xuất" aria-label="Đăng xuất" className="rounded-lg bg-white/10 p-2 hover:bg-white/20"><Power className="h-5 w-5"/></button>}
@@ -293,7 +302,7 @@ export default function FastLandingPage(props: FastLandingPageProps) {
         <DesktopShortcuts pins={pins} positions={desktopPositions} onPositions={updateDesktopPositions} launch={launch} labelFor={labelFor} renderIcon={id=>renderAppIcon(id,25)}/>
       </main>
       {props.account && <EduWindowLayer controls={workspace}/>}
-      <EduAgentDock desktop context={workspace.windows.filter(w => !w.minimized).at(-1)?.id || 'desktop'} uid={props.account ? props.workspaceKey : undefined} onLaunch={props.account ? launch : undefined}/>
+      <EduAgentDock desktop context={workspace.windows.filter(w => !w.minimized).map(w=>w.id).filter((id): id is Exclude<typeof id, TeachingAppId>=>!isTeachingApp(id)).at(-1) || 'desktop'} uid={props.account ? props.workspaceKey : undefined} onLaunch={props.account ? launch : undefined}/>
       <div data-open={start} className="edu-start-scrim" onClick={closeStart} aria-hidden="true"/>
       <section ref={menuRef} tabIndex={-1} id="edu-start-menu" aria-label="Start Menu Edu AI" aria-hidden={!start} inert={!start} data-open={start} className={'edu-start-menu '+fluentTheme}>
         <div className="edu-start-head">

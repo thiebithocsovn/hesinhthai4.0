@@ -2,31 +2,34 @@ import React, { lazy, Suspense, useState, useRef, useEffect } from 'react';
 import { X, Minus, Square, PanelLeft, PanelRight, Monitor, RotateCcw } from 'lucide-react';
 import { LEARNING_WALL_URL, type EcosystemApplicationId } from '../ecosystem';
 
+import { TEACHING_APP_IDS, isTeachingApp, teachingApp, teachingAppUrl, type TeachingAppId } from '../lib/teachingApps';
+
 const ExcelMerger = lazy(() => import('./ExcelMerger'));
 const PdfMerger = lazy(() => import('./PdfMerger'));
 const SecretBoxGame = lazy(() => import('./SecretBoxGame'));
 const DragDropGame = lazy(() => import('./DragDropGame'));
 
-export const WINDOW_APPS = ['excel-merger', 'pdf-merger', 'secret-box', 'drag-drop-game', 'learning-wall'] as const;
+export const WINDOW_APPS = ['excel-merger', 'pdf-merger', 'secret-box', 'drag-drop-game', 'learning-wall', ...TEACHING_APP_IDS] as const;
 export type WindowAppId = typeof WINDOW_APPS[number];
-export type LauncherId = EcosystemApplicationId | 'smart-timetable';
+export type LauncherId = EcosystemApplicationId | 'smart-timetable' | TeachingAppId;
 export function isWindowApp(id: string): id is WindowAppId {
   return (WINDOW_APPS as readonly string[]).includes(id);
 }
 type Layout = 'normal' | 'maximized' | 'left' | 'right';
 export type WorkspaceWindow = { id: WindowAppId; layout: Layout; minimized: boolean; x: number; y: number; width: number; height: number };
-const TITLES: Record<WindowAppId, string> = {
+const TITLES: Record<Exclude<WindowAppId, TeachingAppId>, string> = {
   'learning-wall': 'Tường học tập AI',
   'excel-merger': 'Gộp tệp Excel',
   'pdf-merger': 'Tách, gộp file PDF',
   'secret-box': 'Mở ô bí mật',
   'drag-drop-game': 'Kéo thả đúng chỗ',
 };
+function windowTitle(id: WindowAppId): string { return isTeachingApp(id) ? teachingApp(id).name : TITLES[id]; }
 export function openWindow(previous: WorkspaceWindow[], id: WindowAppId): WorkspaceWindow[] {
   const existing = previous.find(item => item.id === id);
   if (existing) return [...previous.filter(item => item.id !== id), { ...existing, minimized: false }];
   const offset = (previous.length % 4) * 3;
-  return [...previous, { id, layout: id === 'learning-wall' ? 'maximized' : 'normal', minimized: false, x: 8 + offset, y: 4 + offset, width: 80, height: 86 }];
+  return [...previous, { id, layout: id === 'learning-wall' || isTeachingApp(id) ? 'maximized' : 'normal', minimized: false, x: 8 + offset, y: 4 + offset, width: 80, height: 86 }];
 }
 export function useEduWindows() {
   const [windows, setWindows] = useState<WorkspaceWindow[]>([]);
@@ -57,6 +60,7 @@ class AppBoundary extends React.Component<{ children: React.ReactNode }, { error
 }
 
 function WindowContent({ id, onBack }: { id: WindowAppId; onBack: () => void }) {
+  if (isTeachingApp(id)) return <iframe title={teachingApp(id).name} src={teachingAppUrl(id, import.meta.env.BASE_URL)} className="block h-full w-full min-h-0 flex-1 border-0 bg-white" allow={id === 'teaching-noise' ? 'microphone; fullscreen' : 'fullscreen'} allowFullScreen referrerPolicy="no-referrer"/>;
   switch (id) {
     case 'learning-wall': return <iframe title="Tường học tập AI" src={LEARNING_WALL_URL}
       className="block h-full w-full min-h-0 flex-1 border-0 bg-white"
@@ -87,7 +91,7 @@ export function EduWindowLayer({ controls }: { controls: Controls }) {
       const style: React.CSSProperties = maximized ? { inset: 0 } : item.layout === 'left' ? { left: 0, top: 0, width: '50%', height: '100%' } : item.layout === 'right' ? { right: 0, top: 0, width: '50%', height: '100%' } : { left: item.x + '%', top: item.y + '%', width: item.width + '%', height: item.height + '%' };
       const active = controls.windows.filter(w => !w.minimized).at(-1)?.id === item.id;
       const button = 'rounded-md p-1.5 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-indigo-500';
-      return <section key={item.id} data-edu-window={item.id} aria-label={TITLES[item.id]} aria-hidden={item.minimized || undefined} onPointerDown={() => controls.focus(item.id)} onFocusCapture={() => controls.focus(item.id)} style={{ ...style, zIndex: index + 1, display: item.minimized ? 'none' : 'flex' }} className={'pointer-events-auto absolute min-h-0 flex-col overflow-hidden rounded-xl border bg-white text-slate-900 shadow-2xl ' + (active ? 'border-indigo-400' : 'border-slate-300')}>
+      return <section key={item.id} data-edu-window={item.id} aria-label={windowTitle(item.id)} aria-hidden={item.minimized || undefined} onPointerDown={() => controls.focus(item.id)} onFocusCapture={() => controls.focus(item.id)} style={{ ...style, zIndex: index + 1, display: item.minimized ? 'none' : 'flex' }} className={'pointer-events-auto absolute min-h-0 flex-col overflow-hidden rounded-xl border bg-white text-slate-900 shadow-2xl ' + (active ? 'border-indigo-400' : 'border-slate-300')}>
         <header className="flex shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-100 px-2 py-1">
           <div className="flex min-w-0 flex-1 touch-none select-none items-center gap-2 px-1 py-1.5" onDoubleClick={() => controls.patch(item.id, { layout: item.layout === 'maximized' ? 'normal' : 'maximized' })} onPointerDown={event => {
             if (compact || item.layout !== 'normal' || event.button !== 0) return;
@@ -100,7 +104,7 @@ export function EduWindowLayer({ controls }: { controls: Controls }) {
             if (!rect.width || !rect.height) return;
             controls.patch(item.id, { x: Math.max(0, Math.min(100 - item.width, d.x + (event.clientX - d.sx) / rect.width * 100)), y: Math.max(0, Math.min(100 - item.height, d.y + (event.clientY - d.sy) / rect.height * 100)) });
           }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}>
-            <Monitor className="h-4 w-4 shrink-0 text-indigo-600"/><span className="truncate text-xs font-semibold sm:text-sm">{TITLES[item.id]}</span>
+            <Monitor className="h-4 w-4 shrink-0 text-indigo-600"/><span className="truncate text-xs font-semibold sm:text-sm">{windowTitle(item.id)}</span>
           </div>
           {item.id === 'learning-wall' && <a href={LEARNING_WALL_URL} target="_blank" rel="noopener noreferrer" title="Mở riêng nếu trình duyệt chặn phiên đăng nhập nhúng" className="rounded-md px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">Mở riêng ↗</a>}
           {!compact && <><button type="button" title="Chia nửa trái" aria-label="Chia nửa trái" onClick={() => controls.patch(item.id, { layout: 'left' })} className={button}><PanelLeft className="h-4 w-4"/></button><button type="button" title="Chia nửa phải" aria-label="Chia nửa phải" onClick={() => controls.patch(item.id, { layout: 'right' })} className={button}><PanelRight className="h-4 w-4"/></button></>}
